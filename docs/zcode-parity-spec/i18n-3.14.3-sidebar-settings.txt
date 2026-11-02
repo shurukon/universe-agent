@@ -1,0 +1,78 @@
+
+===== D:\ClaudeDesktop\Temp\opencode\zcode_extract\IntlProvider-BMWo3Clv.js :: /workspaceSidebar\.[a-zA-Z.]+/ -> 88 hits
+--- @68424: skList.codexConnectivityUnavailable":`Codex 预热检测到当前网络无法访问 {host}，后续对话可能无法正常开始`,"workspaceSidebar.workspaces":`任务`,"workspaceSidebar.archivedTasks":`归档任务`,"workspaceSidebar.taskViewOptions
+--- @68499: 开始`,"workspaceSidebar.workspaces":`任务`,"workspaceSidebar.archivedTasks":`归档任务`,"workspaceSidebar.taskViewOptions":`筛选和排序`,"workspaceSidebar.organize":`视图`,"workspaceSidebar.organizeGrouped":`分
+--- @68657: rkspaceSidebar.organizeGrouped":`分组`,"workspaceSidebar.organizeByProject":`项目`,"workspaceSidebar.conversationsSection":`任务`,"workspaceSidebar.projectsSection":`项目`,"workspaceSidebar.newConversation
+--- @68834: ebar.newConversation":`新建任务`,"workspaceSidebar.reorderSection":`移动{section}分区`,"workspaceSidebar.addProject":`添加项目`,"workspaceSidebar.noConversations":`还没有任务`,"workspaceSidebar.noProjects
+--- @68994: workspaceSidebar.noProjects":`尚未打开项目`,"workspaceSidebar.viewByWorkspace":`按项目`,"workspaceSidebar.organizeChronologicalList":`时间线`,"workspaceSidebar.sortBy":`排序方式`,"workspaceSidebar.sortByCreated":`创建时间`
+--- @69158: workspaceSidebar.sortByCreated":`创建时间`,"workspaceSidebar.sortByUpdated":`更新时间`,"workspaceSidebar.expandAllGroups":`展开全部`,"workspaceSidebar.collapseAllGroups":`收起全部`,"workspaceSidebar.searchTas
+--- @69282: rkspaceSidebar.collapseAllGroups":`收起全部`,"workspaceSidebar.searchTasks":`搜索任务`,"workspaceSidebar.searchTasksPlaceholder":`搜索任务...`,"workspaceSidebar.searchArchivedTasksPlaceholder":`搜索归档任务...`,"works
+--- @69440: hivedTasksPlaceholder":`搜索归档任务...`,"workspaceSidebar.closeTaskSearch":`关闭任务搜索`,"workspaceSidebar.remove":`移除`,"workspaceSidebar.removeRunningWorkspace.title":`移除运行中的项目？`,"workspaceSid
+--- @69634: RunningWorkspace.description":`该项目还有运行中的对话或 Agent。移除项目会停止并释放相关运行状态，历史任务不会被删除。`,"workspaceSidebar.removeRunningWorkspace.confirm":`移除并停止运行`,"workspaceSidebar.windowsReservedNameRisk":`已移除项目，但检测到 {count} 个 Win
+--- @69796: wsReservedNameRisk":`已移除项目，但检测到 {count} 个 Windows 保留名文件，可能影响后续删除或重命名目录：{path}`,"workspaceSidebar.reconnect":`重新连接`,"workspaceSidebar.connecting":`连接中`,"workspaceSidebar.notConnected":`未连
+--- @69950: rkspaceSidebar.notConnected":`未连接`,"workspaceSidebar.empty":`暂无工作区，请先打开一个工作区。`,"workspaceSidebar.unavailableLocalDirectory":`工作区目录不存在或无法访问，当前仅可查看历史记录。恢复该目录后重启 ZCode 即可继续使用。`,"workspaceSidebar.showSideba
+--- @70084: 无法访问，当前仅可查看历史记录。恢复该目录后重启 ZCode 即可继续使用。`,"workspaceSidebar.showSidebar":`显示侧边栏`,"workspaceSidebar.hideSidebar":`隐藏侧边栏`,"workspaceSidebar.toggleSidebar":`切换侧边栏`,"workspaceSidebar.resizeSideb
+--- @70251: ceSidebar.resizeSidebar":`调整侧边栏宽度`,"workspaceSidebar.toggleArchivedTasks":`归档`,"workspaceSidebar.showFileTree":`查看文件`,"workspaceSidebar.sshConnectionTitle":`SSH 连接`,"workspaceSidebar.sshCon
+--- @70427: idebar.sshConnectionAlias":`Alias`,"workspaceSidebar.sshConnectionHost":`Host`,"workspaceSidebar.sshConnectionPath":`Path`,"workspaceFileTree.title":`Workspace`,"workspaceFileTree.backToTasks":`
+--- @408166: each {host}. Starting a conversation may fail until the network is available.`,"workspaceSidebar.workspaces":`Tasks`,"workspaceSidebar.archivedTasks":`Archived`,"workspaceSidebar.taskView
+--- @408336: eSidebar.taskViewOptions":`Filter and sort`,"workspaceSidebar.organize":`View`,"workspaceSidebar.organizeGrouped":`Group`,"workspaceSidebar.organizeByProject":`Project`,"workspaceSidebar.conve
+--- @408520: ar.conversationsSection":`Tasks`,"workspaceSidebar.projectsSection":`Projects`,"workspaceSidebar.newConversation":`New task`,"workspaceSidebar.reorderSection":`Move {section} section`,"workspa
+--- @408669: rSection":`Move {section} section`,"workspaceSidebar.addProject":`Add project`,"workspaceSidebar.noConversations":`No tasks yet`,"workspaceSidebar.noProjects":`No open projects`,"workspaceSide
+--- @408816: noProjects":`No open projects`,"workspaceSidebar.viewByWorkspace":`By project`,"workspaceSidebar.organizeChronologicalList":`Timeline`,"workspaceSidebar.sortBy":`Sort by`,"workspaceSidebar.sortByCreated
+--- @408994: aceSidebar.sortByCreated":`Created`,"workspaceSidebar.sortByUpdated":`Updated`,"workspaceSidebar.expandAllGroups":`Expand all`,"workspaceSidebar.collapseAllGroups":`Collapse all`,"workspaceSid
+--- @409140: ollapseAllGroups":`Collapse all`,"workspaceSidebar.searchTasks":`Search tasks`,"workspaceSidebar.searchTasksPlaceholder":`Search tasks...`,"workspaceSidebar.searchArchivedTasksPlaceholder":`Search ar
+--- @409332: arch archived tasks...`,"workspaceSidebar.closeTaskSearch":`Close task search`,"workspaceSidebar.remove":`Remove`,"workspaceSidebar.removeRunningWorkspace.title":`Remove a running pro
+--- @409443: e`,"workspaceSidebar.removeRunningWorkspace.title":`Remove a running project?`,"workspaceSidebar.removeRunningWorkspace.description":`This project still has a running chat or Agent. Removing it will stop and rel
+--- @409646:  and release the related runtime state, but task history will not be deleted.`,"workspaceSidebar.removeRunningWorkspace.confirm":`Remove and stop`,"workspaceSidebar.windowsReservedNameRisk":`Project removed,
+--- @409889: ile(s) were detected and may affect later folder deletion or renaming: {path}`,"workspaceSidebar.reconnect":`Reconnect`,"workspaceSidebar.connecting":`Connecting`,"workspaceSidebar.notCo
+--- @409930:  folder deletion or renaming: {path}`,"workspaceSidebar.reconnect":`Reconnect`,"workspaceSidebar.connecting":`Connecting`,"workspaceSidebar.notConnected":`Not connected`,"workspaceSidebar
+--- @410100: "workspaceSidebar.empty":`No workspaces yet. Open a workspace to get started.`,"workspaceSidebar.unavailableLocalDirectory":`The workspace directory does not exist or cannot be accessed. You can only vi
+--- @410297: ly view history for now. Restore the directory and restart ZCode to continue.`,"workspaceSidebar.showSidebar":`Toggle sidebar`,"workspaceSidebar.hideSidebar":`Toggle sidebar`,"workspaceSid
+--- @410443: ideSidebar":`Toggle sidebar`,"workspaceSidebar.toggleSidebar":`Toggle sidebar`,"workspaceSidebar.resizeSidebar":`Resize sidebar`,"workspaceSidebar.toggleArchivedTasks":`Archived`,"workspaceS
+--- @410588: r.toggleArchivedTasks":`Archived`,"workspaceSidebar.showFileTree":`Show files`,"workspaceSidebar.sshConnectionTitle":`SSH connection`,"workspaceSidebar.sshConnectionAlias":`Alias`,"workspaceSideb
+--- @410733: idebar.sshConnectionAlias":`Alias`,"workspaceSidebar.sshConnectionHost":`Host`,"workspaceSidebar.sshConnectionPath":`Path`,"workspaceFileTree.title":`Workspace`,"workspaceFileTree.backToTasks":`
+
+===== D:\ClaudeDesktop\Temp\opencode\zcode_extract\IntlProvider-BMWo3Clv.js :: /projectBar\.[a-zA-Z.]+/ -> 0 hits
+
+===== D:\ClaudeDesktop\Temp\opencode\zcode_extract\IntlProvider-BMWo3Clv.js :: /settings\.[a-zA-Z]+Title/ -> 16 hits
+--- @89319: idebar.newTask":`新建任务`,"settings.title":`设置`,"settings.breadcrumbLabel":`设置路径`,"settings.subtitle":`从左侧切换主要设置项，右侧查看详细配置。`,"settings.navLabel":`主要项`,"settings.sidebar.group.basic
+--- @89625: alDescription":`语言与当前窗口体验`,"settings.nav.appearanceDescription":`主题、界面字号与代码显示`,"settings.themeCardTitle":`主题`,"settings.themeCardDescription":`使用浅色、深色，或匹配系统设置`,"chat.empty.greeting.of
+--- @90452: ight":`浅色`,"settings.themeMode.zai-dark":`深色`,"settings.themeMode.system":`系统`,"settings.appearanceTitle":`外观`,"settings.shortcuts.title":`键盘快捷键`,"settings.shortcuts.searchPlaceholder"
+--- @93577: uiFontSize":`界面字号`,"settings.uiFontSizeDescription":`调整应用界面的文字大小，图标和布局尺寸不受影响。`,"settings.systemTitle":`常规`,"settings.systemDescription":`这些设置会影响当前窗口的显示与交互。`,"settings.locale":`界面语言
+--- @103597: eason.session_not_found_or_workspace_mismatch":`源会话不存在，或已经不匹配当前 workspace 筛选。`,"settings.usageTitle":`使用统计`,"settings.usageDescription":`查看会话活跃度与模型用量的粗略统计。`,"resourceManager.stora
+--- @110591: ttings.fontSize":`代码字号`,"settings.fontSizeDescription":`调整代码块、文件预览和差异视图的默认字号。`,"settings.previewSectionTitle":`代码预览`,"settings.previewLight":`浅色预览`,"settings.previewDark":`深色预览`,"settings.
+--- @110864: e":`当前生效`,"settings.previewBadge.light":`浅色`,"settings.previewBadge.dark":`深色`,"settings.modelProviderTitle":`模型设置`,"settings.mcpTitle":`MCP 服务器`,"settings.mcp.description":`管理 ZCode Agen
+--- @110901: t":`浅色`,"settings.previewBadge.dark":`深色`,"settings.modelProviderTitle":`模型设置`,"settings.mcpTitle":`MCP 服务器`,"settings.mcp.description":`管理 ZCode Agent 使用的 MCP 服务器配置。`,"settings
+--- @436190: w task`,"settings.title":`Settings`,"settings.breadcrumbLabel":`Settings path`,"settings.subtitle":`Switch major settings on the left and edit the details in the panel on the ri
+--- @436647: ttings.nav.appearanceDescription":`Theme, UI font size, and code presentation`,"settings.themeCardTitle":`Theme`,"settings.themeCardDescription":`Use light, dark, or follow the system
+--- @437802: ght`,"settings.themeMode.zai-dark":`Dark`,"settings.themeMode.system":`System`,"settings.appearanceTitle":`Appearance`,"settings.shortcuts.title":`Keyboard Shortcuts`,"settings.shortcu
+--- @441908: cription":`Adjust interface text without changing icons or layout dimensions.`,"settings.systemTitle":`General`,"settings.systemDescription":`These preferences affect the current w
+--- @456613:  session was not found, or it no longer matches the current workspace filter.`,"settings.usageTitle":`Usage stats`,"settings.usageDescription":`Review rough activity and model usa
+--- @466690: `Adjust the default font size for code blocks, file previews, and diff views.`,"settings.previewSectionTitle":`Code preview`,"settings.previewLight":`Light preview`,"settings.previewDark":
+--- @467070: ive`,"settings.previewBadge.light":`Light`,"settings.previewBadge.dark":`Dark`,"settings.modelProviderTitle":`Model settings`,"settings.mcpTitle":`MCP Servers`,"settings.mcp.description":
+
+===== D:\ClaudeDesktop\Temp\opencode\zcode_extract\IntlProvider-BMWo3Clv.js :: /rail\.[a-zA-Z.]+/ -> 0 hits
+
+===== D:\ClaudeDesktop\Temp\opencode\zcode_extract\IntlProvider-BMWo3Clv.js :: /topBar\.[a-zA-Z.]+/ -> 0 hits
+
+===== D:\ClaudeDesktop\Temp\opencode\zcode_extract\IntlProvider-BMWo3Clv.js :: /composer\.[a-zA-Z.]{2,30}/ -> 40 hits
+--- @6814: 开此文件`,"settings.modelProvider.connectionMode.switchToStartPlan":`切换至体验套餐`,"chat.composer.contextSearchHint":`输入内容以搜索插件、文件和对话`,"chat.composer.contextShortcut":`添加上下文`,"chat.composer.capab
+--- @6906: textSearchHint":`输入内容以搜索插件、文件和对话`,"chat.composer.contextShortcut":`添加上下文`,"chat.composer.capabilityShortcut":`选择能力`,"chat.composer.skillShortcut":`选择技能`,"chat.composer.addSection":`添加`,"c
+--- @7051: :`选择技能`,"chat.composer.addSection":`添加`,"chat.composer.addWorkflow":`工作流`,"chat.composer.attachment":`附件`,"chat.permission.feedback.ariaLabel":`拒绝时给模型的可选反馈`,"chat.permission.feedb
+--- @214652: "chat.placeholder.loading":`初始化任务中`,"chat.attachments.dragHint":`松开以添加附件`,"chat.composer.workspaceFileDragHint":`松开以引用此文件或目录`,"chat.send":`发送`,"chat.scrollToBottom":`滚动到底部`,"chat.message.edi
+--- @222512: k":`停止运行中的后台任务`,"chat.summaryPanel.openRunningSubagentSession":`打开子智能体会话`,"chat.composer.backgroundWorks.tooltipTerminal":`运行中的终端`,"chat.composer.backgroundWorks.tooltipAgent":`打开运行中的智能体`,"chat.compo
+--- @222569: sion":`打开子智能体会话`,"chat.composer.backgroundWorks.tooltipTerminal":`运行中的终端`,"chat.composer.backgroundWorks.tooltipAgent":`打开运行中的智能体`,"chat.composer.backgroundWorks.tooltipWorkflow":`打开运行中的工作流`,"chat.
+--- @222751: 运行中的工作流`,"chat.composer.backgroundWorks.tooltipWorkflowDetails":`打开工作流详情`,"chat.composer.backgroundWorks.tooltipMixed":`打开运行中的终端与智能体`,"chat.composer.backgroundWorks.ariaLabel":`打开运行中的后台任务：Bash {bas
+--- @265692: 传失败：{message}`,"chat.attachments.upload.runtimeRestarted":`运行时已重启，附件引用失效`,"chat.composer.draftRuntimeRebuilding":`会话正在重建，请稍候`,"chat.attachments.upload.remoteMaterializationRequired":`远端附件未完成物
+--- @265862: onRequired":`远端附件未完成物化，已阻止发送本地路径。`,"chat.attachments.upload.retry":`重试上传`,"chat.composer.actionMenu":`添加上下文`,"chat.composer.insertMentionShortcut":`使用 @ 添加上下文`,"chat.composer.inse
+--- @265948: er.actionMenu":`添加上下文`,"chat.composer.insertMentionShortcut":`使用 @ 添加上下文`,"chat.composer.insertSessionShortcut":`插入 # 会话`,"chat.composer.insertSlashShortcut":`使用 / 选择能力`,"chat.composer.inser
+--- @322523: gs.modelProvider.connectionMode.switchToStartPlan":`Switch to Start Plan`,"chat.composer.contextSearchHint":`Type to search plugins, files, and chats`,"chat.composer.contextShortcut":`Ad
+--- @322600: at.composer.contextSearchHint":`Type to search plugins, files, and chats`,"chat.composer.contextShortcut":`Add context`,"chat.composer.capabilityShortcut":`Choose capabilities`,"chat.c
+--- @322749: tcut":`Choose capabilities`,"chat.composer.skillShortcut":`Choose skills`,"chat.composer.addSection":`Add`,"chat.composer.addWorkflow":`Workflow`,"chat.composer.attachment":`Attac
+--- @597645: itializing task...`,"chat.attachments.dragHint":`Drop to add attachments`,"chat.composer.workspaceFileDragHint":`Drop to mention this file or folder`,"chat.send":`Send`,"chat.scrollToBottom"
+--- @607597: k`,"chat.summaryPanel.openRunningSubagentSession":`Open subagent session`,"chat.composer.backgroundWorks.tooltipTerminal":`Open running terminals`,"chat.composer.backgroundWorks.tooltipAgent":`Open r
+--- @607737: inals`,"chat.composer.backgroundWorks.tooltipAgent":`Open running agents`,"chat.composer.backgroundWorks.tooltipWorkflow":`Open running workflows`,"chat.composer.backgroundWorks.tooltipWorkflowDetail
+--- @607889: .composer.backgroundWorks.tooltipWorkflowDetails":`Open workflow details`,"chat.composer.backgroundWorks.tooltipMixed":`Open running terminals and agents`,"chat.composer.backgroundWorks.ariaLabel":
+--- @661876: runtimeRestarted":`The runtime restarted and invalidated this attachment`,"chat.composer.draftRuntimeRebuilding":`Rebuilding session, please wait`,"chat.attachments.upload.remoteMaterializati
+--- @662130:  local path was not sent.`,"chat.attachments.upload.retry":`Retry upload`,"chat.composer.actionMenu":`Add context`,"chat.composer.insertMentionShortcut":`Use @ to add context`,"ch
+--- @662289:  to add context`,"chat.composer.insertSessionShortcut":`Insert # session`,"chat.composer.insertSlashShortcut":`Use / for capabilities`,"chat.composer.insertSkillShortcut":`Use $ for skills

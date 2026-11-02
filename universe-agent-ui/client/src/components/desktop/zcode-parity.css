@@ -1,0 +1,2431 @@
+/**
+ * components/desktop/zcode-parity.css â€” the measured ZCode surface, pinned
+ * to the values sampled off the live app (2026-10-10, 1616x876 capture).
+ *
+ * Measured ZCode tokens (see docs/zcode-tokens.md):
+ *   canvas        #161616   panel #2b2b2b   raised #363636   line #414141
+ *   ink #d4d4d4   ink-dim #999999   ink-faint #5e5e5e
+ *   accent #46bf72 (green)   permission #ff8a30 (orange)
+ *   sidebar 264px   row 30px   topbar 38px   card radius 10px
+ *
+ * This file is imported LAST (main.tsx, after shell.css) so it wins the
+ * cascade against the earlier design-system / desktop / redesign passes
+ * without disturbing their behaviour â€” only the surface is re-pinned.
+ * The universe orb, the WebGL canvas and every interaction stay untouched.
+ */
+
+:root {
+  /* --- ZCode surface scale (sampled, not invented) --- */
+  --zc-canvas: #161616;
+  --zc-panel: #2b2b2b;
+  --zc-raised: #363636;
+  --zc-active: #414141;
+  --zc-line: #414141;
+  --zc-ink: #d4d4d4;
+  --zc-ink-dim: #999999;
+  --zc-ink-faint: #5e5e5e;
+  --zc-accent: #46bf72;
+  --zc-accent-ink: #0d1f14;
+  --zc-permission: #ff8a30;
+  --zc-danger: #e5484d;
+
+  --zc-r-sm: 5px;
+  --zc-r-md: 8px;
+  --zc-r-lg: 10px;
+
+  --zc-sb-w: 264px;
+  --zc-row-h: 30px;
+  --zc-tb-h: 56px;
+  --zc-fs: 13px;
+  --zc-fs-sm: 12px;
+}
+
+/* the shell chrome runs the ZCode surface everywhere it shows */
+.app-root,
+.app,
+.sidebar,
+.topbar,
+.rail,
+.composer,
+.composer-wrap,
+.welcome,
+.sb-sechead,
+.side-foot,
+.main {
+  background-color: var(--zc-canvas);
+}
+
+/* =====================================================================
+   TOP BAR â€” measured 38px. The leading 264px (over the sidebar column)
+   is the panel tone; the rest is canvas. The active tab is the SAME
+   canvas tone with a 2px indicator underneath (#2e2e2e), never a filled
+   pill â€” that is what makes ZCode's strip read as flat.
+   ===================================================================== */
+.topbar {
+  height: var(--zc-tb-h);
+  min-height: var(--zc-tb-h);
+  background: var(--zc-canvas) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* the leading segment keeps the sidebar's tone â€” no hairline, a colour step */
+.topbar .tb-left {
+  background: var(--zc-panel) !important;
+  width: var(--zc-sb-w);
+  min-width: var(--zc-sb-w);
+  height: 100%;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+/* the app tile: 24px rounded square, ZCode's logo slot */
+.zc-tile {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--zc-ink);
+  margin: 0 6px 0 2px;
+}
+.topbar .tb-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--zc-r-sm);
+  color: var(--zc-ink-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar .tb-btn:hover:not(:disabled) {
+  background: var(--zc-raised);
+  color: var(--zc-ink);
+}
+.topbar .tb-btn:disabled {
+  color: #3d3d3d;
+}
+
+/* the update pill â€” the only saturated chip on the bar */
+.zc-update {
+  height: 22px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--zc-accent);
+  color: var(--zc-accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 8px 0 4px;
+}
+
+/* ---- the tab strip ---- */
+.tb-tabs {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tb-tabs::-webkit-scrollbar {
+  display: none;
+}
+.tb-tab {
+  position: relative;
+  height: 26px;
+  max-width: 220px;
+  padding: 0 10px;
+  border-radius: var(--zc-r-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--zc-ink-faint);
+  font-size: var(--zc-fs);
+  white-space: nowrap;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.tb-tab .tb-tab-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-tab:hover {
+  color: var(--zc-ink-dim);
+}
+.tb-tab.active {
+  color: var(--zc-ink);
+}
+/* the active tab is marked by a 2px indicator under it, not a fill */
+.tb-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -6px;
+  height: 2px;
+  border-radius: 2px;
+  background: #2e2e2e;
+}
+.tb-tab-x {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--zc-ink-faint);
+  opacity: 0;
+}
+.tb-tab:hover .tb-tab-x,
+.tb-tab.active .tb-tab-x {
+  opacity: 1;
+}
+.tb-tab-x:hover {
+  background: var(--zc-active);
+  color: var(--zc-ink);
+}
+
+/* the title lives on the tab; the standalone bar title stays hidden while
+   tabs are showing (ZCode has no duplicate title text) */
+.topbar .tb-title-wrap {
+  display: none;
+}
+
+/* =====================================================================
+   SIDEBAR â€” 264px, panel tone, 30px rows, no brand block (the logo is
+   on the bar). Section heads are 12px sentence case, faint.
+   ===================================================================== */
+.sidebar {
+  width: var(--zc-sb-w);
+  min-width: var(--zc-sb-w);
+  background: var(--zc-panel) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* ---- ZCode sidebar order (measured live 3.12.1): menu rows, the
+   Group|Project segmented row, Projects, then Tasks — the DOM keeps its
+   history but the flex order reproduces the reference layout ---- */
+.sidebar > .sb-topmenu { order: 0; }
+.sidebar > .sb-seg-row { order: 0; }
+.sidebar > .side-search-row { order: 0; }
+.sidebar > .sb-sechead { order: 2; }
+.sidebar > .proj-tree { order: 2; }
+.sidebar > .side-sec-h { order: 3; }
+.sidebar > .task-list { order: 3; }
+.sidebar > .sb-more { order: 3; }
+.sidebar > .arch-row { order: 5; }
+.sidebar > .task-list.archived { order: 5; }
+.sidebar > .side-foot { order: 9; }
+
+/* top menu rows: New task / Search / Automations / Plugin Marketplace */
+.sb-topmenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px 2px;
+}
+.sb-menu-row {
+  height: var(--zc-row-h);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  border-radius: var(--zc-r-sm);
+  border: 0;
+  background: transparent;
+  color: var(--zc-ink);
+  font-size: var(--zc-fs);
+  text-align: left;
+}
+.sb-menu-row:hover { background: var(--zc-raised); }
+.sb-menu-row svg { color: var(--zc-ink-dim); flex: none; }
+.sb-menu-row span { flex: 1; }
+.sb-menu-row kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: #4f4f4f;
+}
+/* the Group | Project segmented row */
+.sb-seg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px;
+}
+.sb-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--zc-raised);
+  border-radius: 8px;
+  padding: 2px;
+}
+.sb-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--zc-ink-dim);
+  font-size: 11.5px;
+}
+.sb-seg-btn.on {
+  background: var(--zc-panel);
+  color: var(--zc-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.sb-seg-row .side-tools { margin-left: auto; display: inline-flex; gap: 2px; }
+/* the plain "Tasks" section head label */
+.side-sec-h {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px 4px;
+}
+.side-sec-h .side-label {
+  font-size: 11px;
+  color: var(--zc-ink-faint);
+}
+/* ZCode section labels are sentence case ("Projects", "Tasks") — measured
+   with the live window; the triple-class selectors outrank the older
+   desktop.css house style no matter the injection order */
+.sidebar .sb-sechead .side-label,
+.sidebar .side-sec-h .side-label,
+.rail .rail-pane-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11.5px;
+  color: var(--zc-ink-faint);
+}
+/* the project tree's empty hint stays out of the way (ZCode shows none) */
+.sb-nested-empty { display: none; }
+/* project rows carry a folder glyph before the name (ZCode anatomy) */
+.pi-btn { display: inline-flex; align-items: center; gap: 6px; }
+.pi-ic { color: var(--zc-ink-dim); flex: none; }
+
+/* ---- the floating plan phase pill (PlanPill.tsx) --------------------- */
+.main { position: relative; }
+.plan-pill {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  max-width: min(560px, 70%);
+  padding: 0 12px 0 8px;
+  border-radius: 15px;
+  background: #232323;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--zc-ink-dim);
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.plan-pill:hover { background: #2b2b2b; color: var(--zc-ink); }
+/* while the status strip is pinned above the timeline the pill clears it */
+.plan-pill.at-strip { top: 96px; }
+.plan-pill svg { flex: none; color: var(--zc-ink-faint); }
+.plan-pill .pp-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ZCode's model slot is plain text ("Choose model ⌄") — Universe keeps the
+   REAL model name but drops the pill chrome. Two-class selectors so the
+   component-imported desktop.css cannot win by injection order. */
+.composer .mp-chip {
+  border: 0;
+  background: transparent;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--zc-ink-faint);
+}
+.composer .mp-chip:hover { background: var(--zc-raised); color: var(--zc-ink); }
+.composer .mp-chip .mp-model {
+  color: var(--zc-ink-dim);
+  font-family: inherit;
+  font-size: 11.5px;
+}
+.composer .mp-chip .mp-prov { display: none; }
+
+.side-nav {
+  padding: 6px 8px 2px;
+  gap: 1px;
+}
+.side-nav-btn {
+  height: var(--zc-row-h);
+  border-radius: var(--zc-r-sm);
+  padding: 0 8px;
+  gap: 9px;
+  color: var(--zc-ink);
+  font-size: var(--zc-fs);
+}
+.side-nav-btn:hover {
+  background: var(--zc-raised);
+}
+.side-nav-btn svg {
+  color: var(--zc-ink-dim);
+}
+.side-nav-k {
+  margin-left: auto;
+  font-size: 11px;
+  color: #4f4f4f;
+}
+
+/* ---- the Group / Project segmented switch + the three view tools ---- */
+.sb-seg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 4px;
+}
+.sb-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.sb-seg-btn {
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: var(--zc-fs-sm);
+  color: var(--zc-ink-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sb-seg-btn.on {
+  background: var(--zc-canvas);
+  color: var(--zc-ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.sb-tools {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.sb-tool {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--zc-r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b6b6b;
+}
+.sb-tool:hover {
+  background: var(--zc-raised);
+  color: var(--zc-ink-dim);
+}
+
+/* ---- section heads ---- */
+.sb-sechead {
+  padding: 12px 14px 4px;
+  background: transparent !important;
+}
+.side-label {
+  font-size: var(--zc-fs-sm);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--zc-ink-faint);
+}
+.sb-sechead .sb-add-btn {
+  color: var(--zc-ink-faint);
+}
+
+/* ---- project + task rows ---- */
+.proj-tree,
+.task-list {
+  padding: 0 8px;
+  gap: 1px;
+}
+.pi-btn {
+  height: var(--zc-row-h);
+  border-radius: var(--zc-r-sm);
+  padding: 0 8px;
+  gap: 8px;
+  color: var(--zc-ink);
+  font-size: var(--zc-fs);
+}
+.pi-btn:hover {
+  background: var(--zc-raised);
+}
+.pi-btn svg,
+.pn-chevron {
+  color: var(--zc-ink-dim);
+}
+.proj-node.active > .pn-row .pi-btn {
+  background: var(--zc-active);
+}
+
+.task-item {
+  height: var(--zc-row-h);
+  border-radius: var(--zc-r-sm);
+  padding: 0 8px;
+  gap: 8px;
+  color: var(--zc-ink);
+  font-size: var(--zc-fs);
+}
+.task-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.task-item.selected,
+.task-item.viewing {
+  background: var(--zc-active);
+}
+.t-hash {
+  width: 15px;
+  min-width: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--zc-ink-faint);
+  font-family: var(--mono, monospace);
+}
+.task-item.viewing .t-hash,
+.task-item.selected .t-hash {
+  color: var(--zc-ink-dim);
+}
+.t-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.t-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #5e5e5e;
+  flex-shrink: 0;
+}
+
+/* the "Show more" disclosure under a long list */
+.sb-more {
+  height: 26px;
+  margin: 2px 8px 0;
+  padding: 0 8px;
+  border-radius: var(--zc-r-sm);
+  font-size: var(--zc-fs-sm);
+  color: var(--zc-ink-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sb-more:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--zc-ink-dim);
+}
+
+/* ---- the user card ---- */
+.side-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent !important;
+  padding: 8px 10px;
+}
+.side-foot .user {
+  height: 34px;
+  border-radius: var(--zc-r-md);
+  padding: 0 6px;
+  gap: 9px;
+}
+.side-foot .user:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.side-foot .avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: #1f1f1f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--zc-ink-dim);
+}
+.u-meta b {
+  font-size: var(--zc-fs);
+  font-weight: 500;
+  color: var(--zc-ink);
+}
+.u-meta span {
+  font-size: 11px;
+  color: var(--zc-ink-faint);
+}
+
+/* =====================================================================
+   COMPOSER â€” panel card (#2b2b2b) with a #414141 hairline on the canvas,
+   10px radius. Chips are 12px with a 16px icon gutter; the permission
+   chip is the orange one, the model chip is plain.
+   ===================================================================== */
+.composer {
+  background: var(--zc-panel) !important;
+  border: 1px solid var(--zc-line) !important;
+  border-radius: var(--zc-r-lg) !important;
+}
+.composer .composer-bar {
+  gap: 2px;
+}
+.cx-chip {
+  height: 24px;
+  padding: 0 7px;
+  border-radius: var(--zc-r-sm);
+  font-size: var(--zc-fs-sm);
+  color: var(--zc-ink-dim);
+  gap: 5px;
+}
+.cx-chip:hover {
+  background: var(--zc-raised);
+  color: var(--zc-ink);
+}
+.cx-chip b {
+  font-weight: 500;
+}
+.cx-lv {
+  color: var(--zc-ink-faint);
+}
+/* the permission chip carries the orange, exactly like ZCode's Full access */
+.cx-chip.perm {
+  color: var(--zc-permission);
+}
+.cx-chip.perm svg {
+  color: var(--zc-permission);
+}
+/* calm (gated) modes keep the neutral ink — only un-gated modes go orange */
+.cx-chip.perm.calm,
+.cx-chip.perm.calm svg {
+  color: var(--zc-ink);
+}
+/* the Computer Use chip mirrors ZCode's monitor chip; the on state is
+   the plain chip + the small green activity dot (not a tinted pill) */
+.cx-chip.comp b {
+  font-weight: 500;
+  color: var(--zc-ink-dim);
+}
+.cx-chip.comp.on {
+  background: transparent;
+}
+.cx-chip.comp.on b,
+.cx-chip.comp.on svg {
+  color: var(--zc-ink-dim);
+}
+.comp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  /* ZCode's tone light: bg-foreground-subtlest while Computer Use is off,
+     bg-success once the flag is on (their dot is always drawn) */
+  background: rgba(229, 229, 229, 0.3);
+  opacity: 1;
+  transform: none;
+  transition: background 0.14s;
+  flex: none;
+}
+.cx-chip.comp.on .comp-dot {
+  background: var(--zc-accent, #46bf72);
+  opacity: 1;
+  transform: none;
+}
+
+/* =====================================================================
+   RIGHT RAIL â€” canvas pane, panel cards at 10px, 13px head + a dim
+   score, green ring checks, muted body text, footer hairline.
+   ===================================================================== */
+.rail {
+  background: var(--zc-canvas) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+.rail-pane-head {
+  background: transparent !important;
+}
+.rail-pane-title {
+  font-size: var(--zc-fs);
+  font-weight: 400;
+  color: var(--zc-ink);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rail-pane-score {
+  font-size: var(--zc-fs-sm);
+  color: var(--zc-ink-faint);
+  margin-left: 8px;
+}
+.rail-tool {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--zc-r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--zc-ink-faint);
+}
+.rail-tool:hover {
+  background: var(--zc-raised);
+  color: var(--zc-ink);
+}
+.rail-pane-head .rail-tool {
+  margin-left: auto;
+}
+.rail-pane-head .rail-tool + .rail-tool {
+  margin-left: 2px;
+}
+
+/* the composer bar: the left group leads, the model/voice/send group is
+   pushed to the right edge exactly like ZCode's */
+.composer .composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.prog-row {
+  font-size: var(--zc-fs-sm);
+  line-height: 1.45;
+  color: var(--zc-ink-dim);
+  gap: 9px;
+}
+.prog-row.current {
+  color: var(--zc-ink);
+}
+.prog-row.done {
+  color: var(--zc-ink-faint);
+}
+.pr-mark {
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
+  margin-top: 1px;
+}
+.prog-row.done .pr-mark {
+  color: var(--zc-accent);
+}
+
+/* =====================================================================
+   WELCOME â€” the universe orb stays exactly as it is (the one surface the
+   brief pins); only the surrounding type is re-pinned to ZCode.
+   ===================================================================== */
+.welcome h1 {
+  font-size: 30px;
+  font-weight: 500;
+  color: var(--zc-ink);
+  letter-spacing: -0.2px;
+}
+.w-eyebrow {
+  color: var(--zc-ink-faint);
+  letter-spacing: 3px;
+  font-size: 11px;
+}
+.starter {
+  height: 32px;
+  padding: 0 15px;
+  border-radius: 999px;
+  font-size: var(--zc-fs);
+  color: var(--zc-ink);
+  background: transparent;
+  border: 1px solid var(--zc-line);
+}
+.starter:hover {
+  background: var(--zc-raised);
+}
+
+/* =====================================================================
+   PROJECT BAR â€” its OWN card, sitting just above the composer bubble:
+   same column width, its own prominent #4b4b4b border and a darker
+   recessed tone (#1f1f1f, one step below the composer's #2b2b2b) so the
+   two never read as one merged mass. Deliberately NOT z-indexed: the
+   composer creates its own stacking context (backdrop-filter), so any
+   positive z-index here would trap the composer's popovers (the model
+   picker) beneath this strip. The strip's own dropdown escapes with a
+   z-index of its own in the root context.
+   ===================================================================== */
+.project-bar {
+  position: relative; /* anchors .pb-menu; z-index stays auto on purpose */
+  background: #1f1f1f !important;
+  border: 1px solid #4b4b4b;
+  border-radius: var(--zc-r-lg);
+  min-height: 40px;
+  padding: 0 8px 0 6px;
+  margin-bottom: 6px;
+}
+.project-bar .pb-ic {
+  color: var(--zc-ink-faint);
+  flex-shrink: 0;
+}
+.pb-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--zc-r-sm);
+  background: transparent;
+  color: var(--zc-ink-dim);
+  font-size: var(--zc-fs);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.pb-trigger:hover {
+  background: var(--zc-raised);
+  color: var(--zc-ink);
+}
+.pb-trigger.set {
+  color: var(--zc-ink);
+}
+.pb-trigger.set .pb-ic {
+  color: var(--zc-ink-dim);
+}
+.project-bar .pb-name {
+  font-size: var(--zc-fs);
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.pb-chev {
+  color: var(--zc-ink-faint);
+  flex-shrink: 0;
+  transition: transform 0.14s;
+}
+.pb-chev.open {
+  transform: rotate(180deg);
+}
+.pb-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--zc-ink-dim);
+  background: var(--zc-raised);
+  border: 1px solid var(--zc-line);
+  flex-shrink: 0;
+}
+.pb-branch svg {
+  color: var(--zc-ink-faint);
+}
+
+/* the dropdown: panel card, hairline, one row per project */
+.pb-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 268px;
+  max-width: 380px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 5px;
+  border-radius: var(--zc-r-lg);
+  background: var(--zc-panel);
+  border: 1px solid var(--zc-line);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+.pb-head {
+  padding: 5px 9px 6px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--zc-ink-faint);
+}
+.pb-empty {
+  margin: 0;
+  padding: 6px 9px 10px;
+  font-size: var(--zc-fs-sm);
+  line-height: 1.5;
+  color: var(--zc-ink-faint);
+}
+.pb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--zc-r-sm);
+  background: transparent;
+  color: var(--zc-ink-dim);
+  font-size: var(--zc-fs);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.pb-row:hover {
+  background: var(--zc-raised);
+  color: var(--zc-ink);
+}
+.pb-row.on {
+  color: var(--zc-ink);
+}
+.pb-row.on svg:last-child {
+  color: var(--zc-accent);
+}
+.pb-rowname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-row .pb-branch {
+  height: 18px;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+.pb-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--zc-line);
+}
+.pb-new {
+  color: var(--zc-ink-dim);
+}
+.pb-new:hover {
+  color: var(--zc-ink);
+}
+.pb-new:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* the composer block rides ABOVE the welcome layer (welcome-dark.css gives
+   .welcome z-index:1, which otherwise buries the whole composer subtree â€”
+   the slash popup and the model menu included â€” under the greeting). */
+.composer-wrap {
+  position: relative;
+  z-index: 5;
+}
+
+/* the two cards stay separate: the strip keeps its own border and radius,
+   so the composer's top edge is left exactly as its own rule draws it */
+
+/* ---- Rail: the ZCode "Open tab" picker cards ---- */
+.rail-open {
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* ZCode centers the "Open tab" block vertically in the empty pane */
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+}
+.rail-open-head {
+  text-align: center;
+}
+.rail-open-head b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--zc-ink);
+}
+.rail-open-head span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--zc-ink-faint);
+}
+/* ZCode's picker: a 3-across grid of tall centered cards (icon above the
+   label), the fourth wraps — measured from the live 3.12.1 window */
+.rail-open-cards {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, 168px);
+  gap: 10px;
+  justify-content: center;
+}
+.rail-open-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 78px;
+  padding: 12px 10px;
+  border-radius: 10px;
+  background: var(--zc-panel);
+  border: 1px solid var(--zc-line);
+  color: var(--zc-ink);
+  cursor: pointer;
+  text-align: center;
+}
+.rail-open-card:hover {
+  background: var(--zc-raised);
+  border-color: var(--zc-strong);
+}
+.oc-ic {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--zc-ink-dim);
+  flex-shrink: 0;
+}
+.oc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+/* ZCode's four main picker cards: icon + label only, taller rows */
+.rail-open-card.tall b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--zc-ink);
+}
+.oc-meta b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--zc-ink);
+}
+.oc-meta span {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--zc-ink-faint);
+}
+.rail-open-div {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--zc-ink-faint);
+  text-align: center;
+}
+/* the quiet chip row that keeps Universe's extra panes reachable */
+.rail-open-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.rail-open-more button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--zc-line);
+  color: var(--zc-ink-faint);
+  font-size: 11px;
+}
+.rail-open-more button:hover {
+  background: var(--zc-raised);
+  border-color: var(--zc-strong);
+  color: var(--zc-ink);
+}
+
+/* ============================================================
+   2026-10-22 — ZCode-literal chrome rebuild (P3 final pass)
+   Two-row window chrome: session tab strip + view header; the
+   workspace-sidebar head; ZCode chip bar; strip below the composer.
+   Loaded last on purpose: measured values win the cascade.
+   ============================================================ */
+
+/* ---- single-strip window chrome (ZCode 3.12.1, measured 2026-10-23) ---- */
+.topbar-rows { position: relative; height: 56px; flex: none; }
+.zt-strip {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 10px;
+  /* two-tone (2026-10-24 user pass, "make it same color"): the leading
+     sidebar-width rides the sidebar tone, the rest the chat canvas — no
+     seam where the strip meets the columns under it. The 4px resize gutter
+     and the panel's 1px left edge continue through the strip, matching the
+     reference at x 264..268. */
+  background: linear-gradient(
+    90deg,
+    var(--zc-panel, #2b2b2b) 0 calc(var(--zc-sb-w, 264px) + 4px),
+    #2e2e2e calc(var(--zc-sb-w, 264px) + 4px) calc(var(--zc-sb-w, 264px) + 5px),
+    var(--zc-canvas, #161616) calc(var(--zc-sb-w, 264px) + 5px) 100%
+  );
+  -webkit-app-region: drag;
+}
+/* sidebar collapsed: the whole strip falls back to canvas so no darker
+   block floats over the main column */
+.zt-strip.sb-off {
+  background: var(--zc-canvas, #161616);
+}
+/* interactive children of the drag strip MUST opt out, or the window
+   swallows every click (min/max/close, sidebar and panel toggles) */
+.zt-strip button,
+.zt-strip .tb-win,
+.zt-strip .zt-tab,
+.zt-strip .zt-tab-title {
+  -webkit-app-region: no-drag;
+}
+.zt-strip .tb-btn {
+  width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--zc-ink-dim, #999);
+}
+.zt-strip .tb-btn:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.zt-strip .tb-btn:disabled { opacity: .35; }
+.zt-strip .tb-btn[aria-pressed="true"] { color: var(--zc-ink, #d4d4d4); }
+.zt-strip-flex { flex: 1; height: 100%; }
+/* ---- the chat column's task title row (TaskHeader.tsx) ---------------- */
+.zc-task-head {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  flex: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.tth-folder {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--zc-ink-dim, #999);
+}
+.tth-folder:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.tth-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--zc-ink, #d4d4d4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
+/* the GOAL chip (.tth-goalrun) is retired 2026-10-28 with goal mode */
+.tth-flex { flex: 1; height: 100%; }
+.zc-task-head .tb-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--zc-ink-dim, #999);
+}
+.zc-task-head .tb-btn:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.zc-task-head .cx-menu.side-menu { top: calc(100% + 8px); left: 0; right: auto; }
+
+/* ---- two-row window chrome ------------------------------------------- */
+.zt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  max-width: 240px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--zc-panel, #2b2b2b);
+  color: var(--zc-ink, #d4d4d4);
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+}
+.zt-tab svg { flex: none; opacity: .8; }
+.zt-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zc-header {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  background: var(--z-topbar-bg, #262626);
+}
+.zc-header .tb-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--zc-ink-dim, #999);
+}
+.zc-header .tb-btn:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.zc-header .tb-btn[aria-pressed="true"] { color: var(--zc-ink, #d4d4d4); }
+.zt-head-flex { flex: 1; height: 100%; }
+
+/* the old .topbar two-tone strip is gone — window buttons re-home onto the
+   tab strip */
+.zt-strip .tb-win { display: inline-flex; gap: 2px; margin-left: 4px; }
+.zt-strip .tb-win button {
+  width: 30px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--tb-ink, #f5f5f5);
+}
+.zt-strip .tb-win button:hover { background: var(--zc-chip, #2b2b2b); }
+.zt-strip .tb-win .tb-close:hover { background: #e5484d; color: #fff; }
+
+/* ---- workspace sidebar head + tools ----------------------------------- */
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 6px 14px;
+  gap: 6px;
+}
+.side-title { font-size: 12px; font-weight: 600; letter-spacing: .1px; color: var(--zc-ink, #d4d4d4); }
+.side-tools { display: inline-flex; gap: 2px; }
+.side-tool {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--zc-ink-dim, #999);
+}
+.side-tool:hover, .side-tool.on { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.side-search-row { display: flex; align-items: center; gap: 4px; padding: 0 10px 6px 14px; }
+.side-search {
+  flex: 1;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--zc-line, #414141);
+  background: transparent;
+  color: var(--zc-ink, #d4d4d4);
+  font-size: 12px;
+  padding: 0 9px;
+  min-width: 0;
+}
+.side-search::placeholder { color: var(--zc-ink-faint, #777); }
+.side-search:focus { outline: none; border-color: var(--zc-line, #414141); }
+
+.side-menu { right: 8px; left: auto; width: 190px; }
+.cx-menu-h {
+  padding: 7px 10px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--zc-ink-faint, #777);
+}
+
+/* ---- composer chip bar: ZCode keeps it chrome-less -------------------- */
+.composer .cx-chip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 8px;
+  padding: 5px 9px;
+  color: var(--zc-ink-dim, #999);
+}
+.composer .cx-chip b { font-weight: 500; color: inherit; }
+.composer .cx-chip:hover { background: rgba(255,255,255,.06) !important; }
+.add-sep {
+  height: 1px;
+  margin: 5px 10px;
+  background: rgba(255,255,255,.08);
+}
+.add-item.on { color: var(--zc-ink, #d4d4d4); }
+
+/* send button: ZCode's rounded-square */
+.composer .send-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--zc-panel, #2b2b2b) !important;
+  border: 0;
+  color: var(--zc-ink, #d4d4d4);
+}
+.composer .send-btn:disabled { opacity: .45; }
+.composer .send-btn.stop { color: #fff; background: var(--zc-raised, #363636) !important; }
+
+/* welcome: the orb stands alone (no greeting), like ZCode's wordmark slot */
+.welcome .w-universe { margin-bottom: 26px; }
+.welcome h1 { display: none; }
+.welcome .w-eyebrow { display: none; }
+
+/* --- 2026-10-22 additions II: header title, machine slot, hint --------- */
+.zc-header-title {
+  margin-left: 10px;
+  font-size: 12.5px;
+  color: var(--zc-ink-dim, #999);
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-machine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 14px;
+  font-size: 12px;
+  color: var(--zc-ink-dim, #999);
+}
+.pb-machine-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--zc-accent, #46bf72);
+}
+
+.zt-tab-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--zc-accent, #46bf72);
+}
+
+/* --- 2026-10-22 additions III: task-list truth (pinned section, groups,
+   archive actions) + sub-head styling --- */
+.side-sub-h {
+  padding: 10px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: var(--zc-ink-faint, #5e5e5e);
+}
+.side-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 6px;
+  width: 190px;
+  background: var(--zc-panel, #2b2b2b);
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  padding: 4px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+}
+.side-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--zc-ink, #d4d4d4);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-menu > button:hover { background: var(--zc-raised, #363636); }
+.side-menu > button.on { color: var(--zc-accent, #46bf72); }
+.pn-chevron {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--zc-ink-dim, #999);
+  flex: none;
+  margin-left: 2px;
+}
+.pn-chevron:hover { background: var(--zc-raised, #363636); }
+.arch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 12px;
+}
+.arch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--zc-ink-dim, #999);
+  font-size: 12px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+.arch-toggle:hover { color: var(--zc-ink, #d4d4d4); }
+.arch-pop { position: relative; display: inline-flex; }
+
+/* header actions: the ⋯ next to the session title anchors its own menu */
+.header-pop { position: relative; display: inline-flex; }
+.zc-header .cx-menu.side-menu { top: calc(100% + 8px); right: 0; }
+
+/* model menu: search row + manage-models footer row (ZCode anatomy) */
+.mp-manage {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  margin: 4px 4px 0;
+  padding: 0 8px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 0 0 8px 8px;
+  background: transparent;
+  color: var(--zc-ink-dim, #999);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.mp-manage:hover { background: var(--zc-raised, #363636); color: var(--zc-ink, #d4d4d4); }
+
+/* ============================================================
+   2026-10-24 · PASS 2 — EXACT ZCode home composer. Every number
+   below is ZCode 3.12.1's own (renderer bundle + Tailwind tokens)
+   confirmed against the reference screenshot at 1600x900 by pixel
+   sampling:
+
+     shell   rgba(255,255,255,.05) over the canvas → #222 surface,
+             radius 16, carries the workspace crumb band
+     band    p-1.5 (6px) + h-7 (28px) crumbs = 40px tall
+     card    radius 16 · 1px rgba(250,250,250,.10) · #2b2b2b
+             · p-3 (12px) · row gap 12
+     editor  min-h-10 (40px) · max-h-40 (160px) · 14px / 21px
+             · placeholder = 30% ink (#e5e5e5 at 30%)
+     bar     items-end gap-3 · 28px controls · 4px left gaps
+     send    size-7 rounded-lg (28×28, r8) · #959595 fill with a
+             #343434 arrow while the input is empty
+     chips   h-8 · r8 · 1px hairline · 16px icons · 14px labels
+   ============================================================ */
+
+/* ---- shell: the workspace surface that holds the crumb band ---------- */
+.zc-shell {
+  max-width: 780px;
+  max-width: 672px;
+  margin: 0 auto;
+}
+.zc-shell.has-head {
+  /* --color-surface = #ffffff0d → tuned +1/255 so the composited band
+     reads #222 (34) over the #161616 canvas, as in the reference */
+  background: rgba(255, 255, 255, 0.055);
+  border-radius: 16px;
+  /* ZCode: `chat-composer-input-surface … rounded-2xl bg-surface shadow-xl/5`
+     (Tailwind shadow-xl at 5% — a hair of depth under the band) */
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.05),
+    0 8px 10px -6px rgba(0, 0, 0, 0.05);
+}
+/* the card fills the shell edge to edge (redesign.css pins
+   `.composer-wrap.centered .composer` to 640px — the measured width is
+   max-w-2xl = 672px, the same as the wrapper) */
+.zc-shell > .composer {
+  max-width: 672px !important;
+  width: 100%;
+  transition: max-width 250ms ease;
+}
+.main--expanded .zc-shell {
+  max-width: 874px;
+}
+.main--expanded .zc-shell > .composer {
+  max-width: 874px !important;
+}
+
+/* ---- the crumb band (6px pad + 28px crumbs = 40px) ------------------- */
+.zc-c-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 16px 16px 0 0;
+  position: relative;
+}
+.zc-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--zc-ink, #d4d4d4);
+  font-size: 14px;
+  line-height: 1.625;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 320px;
+}
+.zc-crumb:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.zc-crumb svg {
+  color: rgba(212, 212, 212, 0.6);
+  flex: none;
+}
+.zc-crumb.static {
+  cursor: default;
+  padding: 0 12px;
+}
+.zc-crumb.static:hover {
+  background: transparent;
+}
+.zc-crumb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zc-crumb-chev {
+  color: rgba(212, 212, 212, 0.6) !important;
+  transition: transform 0.14s;
+  flex: none;
+}
+.zc-crumb-chev.open {
+  transform: rotate(180deg);
+}
+.zc-c-menu {
+  left: 6px;
+  z-index: 45;
+}
+
+/* ---- the card ------------------------------------------------------- */
+.composer {
+  max-width: 780px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px !important;
+  padding: 12px !important;
+  background: var(--zc-panel, #2b2b2b) !important;
+  /* theme-zai-dark --color-input-border = --color-border = #ffffff1a,
+     nudged to 0.106 so the 1px hairline lands on 65 as in the reference */
+  border: 1px solid rgba(255, 255, 255, 0.106) !important;
+  /* bar ink: ZCode's bar labels/icons are foreground-subtle over the card
+     (#e5e5e5 at 60% → renders 155, the reference's peak) */
+  --zc-bar-ink: rgba(229, 229, 229, 0.6);
+  border-radius: 16px !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.composer:hover {
+  /* --color-input-border-hover = --color-border-hover = #ffffff26 (15%) */
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+/* zai-dark keeps #2b2b2b on focus and only lifts the hairline
+   (focus-within:!border-input-border-focused · bg-input-focused = input) */
+.composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  background: var(--zc-panel, #2b2b2b) !important;
+}
+
+/* ---- the editor: ZCode's Lexical box, 40px min, 14px type ----------- */
+.composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 40px !important;
+  max-height: 160px;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  outline: none !important;
+  resize: none;
+  font-size: 14px !important;
+  line-height: 21px !important;
+  color: var(--zc-ink, #d4d4d4);
+}
+.composer textarea::placeholder {
+  /* --color-foreground-subtlest = #d4d4d4 at 30% (theme-zai-dark) */
+  color: rgba(212, 212, 212, 0.3) !important;
+  /* redesign.css dims the placeholder with opacity .8 — cancel it */
+  opacity: 1 !important;
+}
+
+/* ---- the bar -------------------------------------------------------- */
+.composer .composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 !important;
+}
+.composer .flex-sp {
+  flex: 1;
+}
+
+/* + — a bare glyph: redesign.css paints every .icon-btn as a glass chip
+   (rgba(26,28,31,.55) + hairline + edge light), so the resting chrome is
+   cancelled here and only the hover wash survives */
+.composer .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  /* the + reads brighter than the labels in ZCode (169 vs 155) */
+  color: rgba(212, 212, 212, 0.74);
+}
+.composer .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* permission + Computer Use chips */
+.composer .cx-chip {
+  height: 28px;
+  padding: 0 9px;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 14px;
+  line-height: 1.25;
+  gap: 6px;
+  color: var(--zc-bar-ink, rgba(229, 229, 229, 0.6));
+}
+.composer .cx-chip svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: inherit;
+}
+.composer .cx-chip b {
+  font-weight: 400;
+  color: inherit;
+}
+.composer .cx-chip:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+/* the ungated modes take ZCode's warning tint; gated ones stay neutral */
+.cx-chip.perm {
+  color: #ff8a30 !important;
+}
+.cx-chip.perm svg {
+  color: #ff8a30;
+}
+.cx-chip.perm.calm {
+  color: var(--zc-bar-ink, rgba(229, 229, 229, 0.6)) !important;
+}
+.cx-chip.perm.calm svg {
+  color: inherit;
+}
+/* Ask/Edit expansion handled by base max-width */
+/* Legacy ask/edit expansion — base is now wide enough */
+/*  — give the bar room so the send pair does not overlap */
+.composer:has(.cx-chip.perm:not(.calm)) {
+  max-width: 780px;
+}
+.composer:has(.cx-chip.perm.calm) {
+  max-width: 780px;
+}
+
+/* Computer Use reads as ZCode's compact chip: h-7 rounded-lg px-1.5 */
+.cx-chip.comp {
+  border-radius: 8px;
+  padding: 0 6px;
+  gap: 4px;
+}
+
+/* the model slot: "Manage models ⌄" as plain 14px text */
+.composer .mp-chip {
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  gap: 4px;
+  color: var(--zc-bar-ink, rgba(229, 229, 229, 0.6));
+}
+.composer .mp-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--zc-bar-ink, rgba(229, 229, 229, 0.6));
+}
+.composer .mp-chip .mp-model {
+  font-family: inherit;
+  font-size: 14px;
+  color: inherit;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer .mp-chip .mp-prov {
+  display: none;
+}
+.composer .mp-chip svg {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+/* the send control: size-7 rounded-lg, ZCode's disabled brand button —
+   white fill + inverse (black) arrow at 50% → renders #959595 with a
+   near-black glyph, exactly as the reference measures */
+.composer .send-btn {
+  margin-left: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.08) !important;
+  color: rgba(255,255,255,0.72) !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.composer .send-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.composer .send-btn.ready {
+  opacity: 1 !important;
+  background: var(--zc-accent, #46bf72) !important;
+  color: var(--zc-accent-ink, #0d1f14) !important;
+}
+.composer .send-btn.stop {
+  opacity: 1 !important;
+  background: #6b6b6b !important;
+  color: #ffffff !important;
+}
+
+/* ---- the suggested prompts under the card (h-8 · r8 · gap-4) -------- */
+.zc-suggests {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.zc-suggests::-webkit-scrollbar {
+  display: none;
+}
+.zc-suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.102);
+  border-radius: 8px;
+  background: transparent;
+  /* ZCode: text-foreground opacity-70 over the canvas (#d4d4d4 at 70%) */
+  color: rgba(212, 212, 212, 0.7);
+  font-size: 14px;
+  line-height: 18px;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.zc-suggest svg {
+  width: 16px;
+  height: 16px;
+  opacity: 1;
+  flex: none;
+}
+.zc-suggest:hover {
+  color: #d4d4d4;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* =====================================================================
+   SIDEBAR — literal reconstruction of ZCode 3.14.3 (measured live
+   2026-10-24 via CDP on the running app: every size/colour/rhythm below
+   is a read computed value, not an eyeballed one).
+
+     nav       4 rows x 32px on a 4px gap, 8px side padding
+     organize  28px row: 28px Group|Project pill (2px pad), 24px icon buttons
+     headers   28px, 14px/500 at 30% ink, hover reveals chevron + actions
+     rows      32px project rows, 32px task rows (2px gap inside a project)
+     footer    56px: pt-8 px-16/pr-12 pb-16, 32px avatar, 14px/600 name
+     type      14px/21px body, 12px/18px meta, 10px/15px kbd
+   Never restyle these from the old .sb-* / .task-item rules below: those
+   target the previous markup and no longer match anything rendered.
+   ===================================================================== */
+.zsb {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  background: #2b2b2b !important;
+  border-right: 0 !important;
+  color: #d4d4d4;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- menu rows ------------------------------------------------------
+   ZCode 3.14.3 stacks them with NO top padding: its aside starts 8px
+   higher than Universe's 56px strip, and the first row must land on the
+   same pixel either way (row 1 top = 56 in both windows). */
+.zsb-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px 8px;
+  flex: none;
+}
+.zsb-newtask,
+.zsb-navrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #d4d4d4;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+/* the buttons carry ZCode's 1px transparent ghost border, the div row
+   does not — that 1px is why Search's icon sits at 19 and New task's at
+   18 in the reference */
+.zsb-navrow {
+  border: 1px solid transparent;
+}
+.zsb-newtask:hover,
+.zsb-navrow:hover {
+  background: rgba(255, 255, 255, 0.102);
+}
+.zsb-newtask-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.zsb-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zsb-grow {
+  flex: 1 1 auto;
+}
+.zsb-kbd {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 15px;
+  color: rgba(212, 212, 212, 0.3);
+}
+
+/* ---- scroll body ---------------------------------------------------- */
+.zsb-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.zsb-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* ZCode ships `*{scrollbar-color:var(--color-border) transparent}`, which
+     makes Chromium drop the ::-webkit-scrollbar rules and paint the 15px
+     standard bar: track 249..264, 9px rounded thumb at 10% white */
+  scrollbar-width: auto;
+  /* the reference thumb composites to 65 over #2b2b2b; 0.104 is the alpha
+     that lands on that exact value in Chromium (0.1 -> 64, 0.11 -> 66) */
+  scrollbar-color: rgba(255, 255, 255, 0.104) transparent;
+}
+
+/* ---- organize row --------------------------------------------------- */
+.zsb-org {
+  display: flex;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  flex: none;
+}
+.zsb-org-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.zsb-org-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.zsb-org-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.zsb-tabs {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 2px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.051);
+  overflow: hidden;
+}
+.zsb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background: none;
+  color: rgba(212, 212, 212, 0.6);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.zsb-tab:hover {
+  color: #d4d4d4;
+}
+/* ZCode paints the active tab with an absolutely positioned pill
+   (inset-y-0.5 rounded-full bg-background); the tab itself is the same
+   24x24 box, so the fill can live on the button and look identical */
+.zsb-tab.on {
+  background: #161616;
+  color: #d4d4d4;
+}
+.zsb-icon24 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: rgba(212, 212, 212, 0.6);
+  cursor: pointer;
+  flex: none;
+}
+.zsb-icon24:hover,
+.zsb-icon24.on {
+  background: rgba(255, 255, 255, 0.051);
+  color: #d4d4d4;
+}
+
+/* ---- sections ------------------------------------------------------- */
+.zsb-sections {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 12px;
+  padding: 0 8px;
+}
+.zsb-section {
+  position: relative;
+  min-width: 0;
+}
+.zsb-sechead {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  min-width: 0;
+}
+.zsb-seclabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: 500;
+  color: rgba(212, 212, 212, 0.3);
+  text-align: left;
+  cursor: pointer;
+}
+.zsb-seclabel > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zsb-seclabel:hover {
+  color: #d4d4d4;
+}
+.zsb-secchev {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.zsb-seclabel:hover .zsb-secchev {
+  opacity: 1;
+}
+.zsb-secacts {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.zsb-section:hover .zsb-secacts,
+.zsb-secacts:focus-within {
+  opacity: 1;
+}
+.zsb-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: rgba(212, 212, 212, 0.3);
+}
+
+/* ---- project rows --------------------------------------------------- */
+.zsb-plist {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 16px;
+}
+.zsb-plist > .zsb-pitem + .zsb-pitem {
+  margin-top: 8px;
+}
+.zsb-pnode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.zsb-prowwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+}
+.zsb-prow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #d4d4d4;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.zsb-prow:hover {
+  background: rgba(255, 255, 255, 0.102);
+}
+.zsb-prowin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.zsb-picon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: rgba(212, 212, 212, 0.6);
+}
+.zsb-plabel {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 21px;
+  color: rgba(212, 212, 212, 0.6);
+}
+.zsb-pmenu {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  visibility: hidden;
+}
+.zsb-prowwrap:hover .zsb-pmenu,
+.zsb-pmenu:focus-within {
+  visibility: visible;
+}
+
+/* ---- task rows ------------------------------------------------------ */
+.zsb-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.zsb-taskul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.zsb-taskul > li + li {
+  margin-top: 2px;
+}
+.zsb-task {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+.zsb-task:hover {
+  background: rgba(255, 255, 255, 0.102);
+}
+.zsb-task.on {
+  background: rgba(255, 255, 255, 0.102);
+}
+.zsb-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.zsb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+}
+.zsb-dot[data-status="failed"] {
+  background: #ff5c5c;
+}
+.zsb-spin {
+  animation: zsb-spin 1s linear infinite;
+  color: rgba(212, 212, 212, 0.6);
+}
+@keyframes zsb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.zsb-tw {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+}
+.zsb-ttl {
+  margin: 0;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 21px;
+  color: #d4d4d4;
+}
+.zsb-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-right: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(212, 212, 212, 0.6);
+}
+.zsb-meta > span {
+  margin-right: 4px;
+}
+.zsb-rowmenu {
+  display: none;
+  position: relative;
+}
+.zsb-task:hover .zsb-meta {
+  display: none;
+}
+.zsb-task:hover .zsb-rowmenu {
+  display: inline-flex;
+}
+.zsb-rowbtn24 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: rgba(212, 212, 212, 0.6);
+  cursor: pointer;
+}
+.zsb-rowbtn24:hover {
+  background: rgba(255, 255, 255, 0.051);
+  color: #d4d4d4;
+}
+
+/* ---- disclosure + empties ------------------------------------------- */
+.zsb-more {
+  padding-left: 34px;
+  cursor: pointer;
+}
+.zsb-more > span {
+  font-size: 14px;
+  line-height: 21px;
+  color: rgba(212, 212, 212, 0.3);
+}
+.zsb-more:hover > span {
+  color: rgba(212, 212, 212, 0.6);
+}
+.zsb-empty,
+.zsb-empty-tight {
+  font-size: 14px;
+  line-height: 21px;
+  color: rgba(212, 212, 212, 0.3);
+}
+.zsb-empty {
+  padding: 4px 0 0 34px;
+  list-style: none;
+}
+/* px-8.5 py-2 in ZCode: text at x=42, 8px of air above and below */
+.zsb-empty-tight {
+  padding: 8px 0 8px 34px;
+}
+
+/* popovers inside the sidebar open downward (the buttons sit at the top
+   of the list, where the shared .cx-menu default opens off-screen) */
+.zsb .side-menu {
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
+/* ---- footer --------------------------------------------------------- */
+.zsb-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 12px 16px 16px;
+  flex: none;
+}
+.zsb-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+}
+.zsb-usermain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px 0 0;
+  border: 0;
+  border-radius: 16px 8px 8px 16px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.zsb-usermain:hover {
+  background: rgba(255, 255, 255, 0.051);
+}
+.zsb-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 9999px;
+  background: #3a3a3a;
+  color: #d4d4d4;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+}
+.zsb-uname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: 600;
+  color: #d4d4d4;
+}
+.zsb-uacts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+}
+.zsb-icon32 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  /* full-strength ink: the reference footer buttons compute to
+     oklch(0.87 0 0), unlike the 60% chrome icons in the organize row */
+  color: #d4d4d4;
+  cursor: pointer;
+}
+.zsb-icon32:hover {
+  background: rgba(255, 255, 255, 0.051);
+  color: #d4d4d4;
+}
+
+/* ---- top-strip cluster (ZCode's absolute strip, ported to Universe's
+   shared 56px bar: same 28px buttons on the same 4px gap, 12px+1px lead) */
+.zsb-strip-lead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 3px;
+  margin-top: 2px;
+}
+.zsb-tb {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: #d4d4d4;
+  cursor: pointer;
+}
+.zsb-tb:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.051);
+}
+.zsb-tb:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.zsb-tb-logo > svg:first-child {
+  transition: opacity 0.15s ease;
+}
+.zsb-tb-logo-alt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.zsb-tb-logo:hover > svg:first-child {
+  opacity: 0;
+}
+.zsb-tb-logo:hover .zsb-tb-logo-alt {
+  opacity: 1;
+}
+
+/* ZCode's shell keeps a 4px resize gutter between the sidebar and the chat
+   panel (x 264..267 in panel tone) and the panel's 1px left edge at x=268
+   (#2e2e2e over the canvas). Universe has no draggable split, so this band is
+   purely the seam the reference shows: it paints over the canvas without
+   touching layout, and the composer stays centred on the same pixels. */
+.main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  background: linear-gradient(90deg, #2b2b2b 0 4px, #2e2e2e 4px 5px);
+  pointer-events: none;
+  /* above .composer-wrap (z-index 5), which paints an opaque canvas band
+     across the full width in the empty state — the gutter is shell chrome
+     and must stay on top of it, exactly as in the reference */
+  z-index: 6;
+}

@@ -1,0 +1,105 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "universe-agent"
+version = "1.0.0"
+description = "Universe Agent v1 — the mind that remembers everything. An AI agent harness with a single universe agent + on-demand subagents."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [{name = "Universe Agent"}]
+keywords = ["ai", "agent", "cli", "memory", "llm"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "rich>=13.0",
+    "openai>=1.0",
+    "httpx>=0.25",
+    "tiktoken>=0.5",
+    "loguru>=0.7",
+    "pydantic>=2.0",
+    "cryptography>=41.0",
+    "keyring>=24.0",
+    "rank-bm25>=0.2",
+    "watchfiles>=0.21",
+    "aiofiles>=23.0",
+    # Phase 1: real Playwright browser tools (browser_navigate/click/fill/snapshot/
+    # screenshot/extract/console/tabs/upload/connect). One-time post-install step:
+    #   python -m playwright install chromium
+    "playwright>=1.40",
+    # Phase 2: HTML parsing for DuckDuckGo web_search; curl_cffi is the TLS-
+    # impersonating fallback for Cloudflare-protected sites and DDG's anti-bot
+    # challenge page
+    "beautifulsoup4>=4.12",
+    "curl_cffi>=0.7",
+    # Phase 3: pandas for pandas_query/data_validate; PIL+pytesseract for image_ocr
+    # (also requires system `tesseract` binary on PATH)
+    "pandas>=2.0",
+    "pillow>=10.0",
+    "pytesseract>=0.3.10",
+    # Desktop: the FastAPI bridge that serves the Electron UI (bound to
+    # 127.0.0.1 only). TestClient needs httpx which is already above.
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    # pandas_query safety (audit 2026-10): pandas' own eval fallback can
+    # execute arbitrary code via attribute chains; numexpr is the safe
+    # engine and the tool refuses to run queries without it
+    "numexpr>=2.8",
+]
+
+[project.optional-dependencies]
+# The desktop voice channel: local wake-word STT via faster-whisper (int8
+# CPU), webrtcvad for segment gating (webrtcvad-wheels ships the wheel the
+# original doesn't for py3.11+), edge-tts for free default TTS. The shipped
+# wake matcher is STT-based fuzzy matching over the transcript (no
+# openwakeword model training required).
+voice = [
+    "faster-whisper>=1.0",
+    "webrtcvad-wheels>=2.0.14",
+    "edge-tts>=6.1",
+]
+composio = ["composio-core>=0.5", "composio-langchain"]
+telegram = ["python-telegram-bot>=21.0"]
+tree-sitter = ["tree-sitter>=0.20", "tree-sitter-python", "tree-sitter-javascript", "tree-sitter-typescript", "tree-sitter-rust", "tree-sitter-go"]
+# Phase D: the computer-use broker's UIA ops (app_state/set_value) need
+# pywinauto over comtypes; psutil names window processes. The broker's
+# core ops (windows/screenshot/mouse/frames) run on stdlib + pillow only
+# and report honest errors when the extra is absent.
+computer-use = ["pywinauto>=0.6.8", "comtypes>=1.2", "psutil>=5.9"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "pytest-cov>=4.0"]
+
+[project.scripts]
+universe = "cli.repl:main"
+
+[tool.ruff]
+# vendored upstream sources and the desktop app have their own toolchains —
+# keep the Python lint scoped to Universe itself
+extend-exclude = ["vendor", "universe-agent-ui"]
+
+[tool.ruff.lint.per-file-ignores]
+# registration-order imports: tool/connectors registration intentionally
+# happens AFTER the core objects exist (audit decision, not an accident)
+"core/agent/orchestrator.py" = ["E402"]
+"core/memory/layers/l3_semantic.py" = ["E402"]
+"universe_desktop_bridge/app.py" = ["E402"]
+# env-var setup must run before the heavy imports below it
+"tests/test_live_universe_validation.py" = ["E402"]
+
+[tool.hatch.build.targets.wheel]# config.py = the top-level module every package imports. Without
+# it, an installed wheel crashes on `import config`.
+packages = ["core", "providers", "connectors", "channels", "security", "concurrency", "failure", "context", "resources", "observability", "schema", "skill", "skills", "eval", "data", "storage", "cli", "universe_desktop_bridge", "scheduling", "hooks"]
+# single-module packages need explicit inclusion alongside the dirs
+include = ["config.py", "universe_cua_helper.py"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "llm: needs a real LLM provider from env (UNIVERSE_TEST_BASE_URL / UNIVERSE_TEST_API_KEY / UNIVERSE_TEST_MODEL); skipped without them",
+]

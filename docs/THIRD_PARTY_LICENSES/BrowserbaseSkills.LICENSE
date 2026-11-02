@@ -1,0 +1,4 @@
+Browserbase's skills repo (github.com/browserbase/skills) has no top-level
+LICENSE file. License basis for inclusion here is the explicit per-file
+declaration present in every SKILL.md's own front-matter (license: MIT),
+verified directly in the cloned repo (2026-07) across all 16 skill files.

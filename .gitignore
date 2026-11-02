@@ -1,0 +1,58 @@
+# Secrets and local credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*token*
+*credential*
+# design token docs are not secrets (the *token* rule catches credential
+# files; this keeps the palette source of truth in the repo)
+!docs/zcode-tokens.md
+
+# Runtime databases, logs, and local state
+*.db
+*.sqlite
+*.sqlite3
+*.jsonl
+*.log
+
+# Python and tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Generated benchmark/runtime directories
+tmp/
+frames/
+output/
+probe_artifacts/
+project/
+
+# Node/build artifacts
+node_modules/
+dist/
+build/
+coverage/
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
+release/
+
+# Agent plan folders (local session artifacts)
+.zcode/
+.kilo/
+
+# Stale build output that should never ship
+dist-electron/main.js
+
+# Memory snapshot exports (generated at runtime; the live source is /api/memory)
+universe-memory.json
+
+test_file.txt

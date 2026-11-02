@@ -1,0 +1,72 @@
+# CI for Universe Agent — the 2026-10 audit's missing gate.
+#
+# Matrix is deliberately lean (windows 3.11 + ubuntu 3.11); add 3.12 after
+# the first green runs. The pytest invocation is verified locally:
+#   pytest -m "not llm" -x -q
+# collects ~550 tests (the llm-marked ones deselect honestly — they need
+# UNIVERSE_TEST_* real-provider credentials).
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ["3.11"]
+        # TODO: widen to ["3.11", "3.12"] after the first green runs
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install Universe + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      # tests/test_browser.py launches a REAL Chromium (Phase-1 contract:
+      # no mocks of Playwright) — the browser binary must be installed.
+      - name: Install Playwright Chromium (Linux, with system deps)
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps chromium
+
+      - name: Install Playwright Chromium (Windows)
+        if: runner.os == 'Windows'
+        run: python -m playwright install chromium
+
+      - name: Test (non-LLM)
+        env:
+          # documented dev contract: the bridge's token gate is exercised
+          # per-test via fresh_home; a process-level default keeps any
+          # stray client from tripping the fail-closed gate
+          UNIVERSE_BRIDGE_TOKEN: dev
+        run: pytest -m "not llm" -x -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      # BLOCKING quality gate (audit 2026-10): the lint cleanup landed the
+      # same day — repo went 195 findings → 0, and the excludes moved into
+      # pyproject ([tool.ruff] extend-exclude), so the --exclude flag here
+      # is redundant but harmless.
+      - name: Ruff check (blocking)
+        run: ruff check . --exclude universe-agent-ui

@@ -1,0 +1,2 @@
+TOOLTEST-WRITE-NEW-CONTENT
+second line

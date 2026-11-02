@@ -1,0 +1,173 @@
+/*
+ * design-system.css — Universe Agent unified design tokens.
+ * ZCode-literal identity (2026-10 restyle) — every value below is measured
+ * from the actual ZCode UI (docs/zcode-tokens.md: pixel samples of the 8
+ * reference screenshots + a live window probe, palette stable).
+ *
+ * ZCode is near-monochrome: neutral-gray canvas and panels, #d4d4d4 ink,
+ * green #46BF72 for positive/status accents only, orange #FF8A30 for the
+ * permission chip, white primary buttons. No colored side bars, no glass.
+ *
+ * This file OVERRIDES the older token sets in index.css and the glass
+ * interaction layer in redesign.css — every surface reads from these
+ * variables so the app speaks one language instead of three.
+ */
+
+:root {
+  /* -- ZCode: structure (measured) --------------------------------------- */
+  --canvas: #161616;            /* app canvas (ZCode chat background) */
+  --ds-surface-1: #2b2b2b;      /* panels: sidebar, cards, composer, menus */
+  --ds-surface-2: #363636;      /* raised: hover lifts, selected rows */
+  --ds-surface-3: #414141;      /* highest: active pills, active menu items */
+  --ds-line: #414141;           /* hairline borders */
+  --ds-line-strong: #4b4b4b;    /* emphasized borders (composer card) */
+  --ds-ink: #d4d4d4;            /* primary text */
+  --ds-ink-2: #d4d4d4;          /* secondary — ZCode renders it equally bright */
+  --ds-ink-3: #999999;          /* muted: ages, counters, icons */
+  --ds-ink-4: #5e5e5e;          /* faint: section headers, placeholders */
+
+  /* -- ZCode: accents ----------------------------------------------------- */
+  --ds-accent: #46bf72;         /* the green accent: positive/status, focus */
+  --ds-accent-hover: #5bc987;
+  --ds-accent-dim: rgba(70, 191, 114, 0.14);
+  --ds-teal: var(--ds-accent);             /* legacy alias */
+  --ds-teal-hover: var(--ds-accent-hover);
+  --ds-teal-dim: var(--ds-accent-dim);
+
+  /* -- semantic mapping (the legacy variables now point here) ----------- */
+  --bg: var(--canvas);
+  --panel: var(--ds-surface-1);
+  --panel-solid: var(--ds-surface-1);
+  --raise2: var(--ds-surface-2);
+  --raise3: var(--ds-surface-3);
+  --line: var(--ds-line);
+  --line-soft: var(--ds-surface-2);
+  --ink: var(--ds-ink);
+  --ink2: var(--ds-ink-2);
+  --ink3: var(--ds-ink-3);
+  --accent-cyan: var(--ds-accent);        /* legacy name -> ZCode green */
+  --accent2: var(--ds-accent-hover);
+  --accent-dim: var(--ds-accent-dim);
+  --success: #46bf72;                     /* ZCode green */
+  --warning: #ff8a30;                     /* ZCode permission orange */
+  --amber: #ff8a30;                       /* fixes dangling flow.css refs */
+  --rose: #e5484d;
+  --teal: var(--success);                 /* legacy success-teal */
+
+  /* -- shape & type (Linear discipline) --------------------------------- */
+  --ds-r-sm: 6px;
+  --ds-r-md: 8px;
+  --ds-r-lg: 10px;
+  --ds-ui-fs: 13px;
+  --ds-sidebar-w: 264px;
+
+  /* -- motion ----------------------------------------------------------- */
+  --ds-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ds-dur: 0.14s;
+}
+
+/* the glass/blur language is retired: flat surfaces, hairlines only.
+   ZCode separates sidebar and chat with a pure color step — no border. */
+.sidebar {
+  background: var(--ds-surface-1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-right: none;
+}
+
+/* ---- sidebar: Linear navigation list --------------------------------- */
+.sidebar .side-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ds-ink-4);
+  padding: 2px 16px 6px;
+}
+
+.sidebar .task-item {
+  padding: 6px 10px;
+  border-radius: var(--ds-r-md);
+  margin-bottom: 1px;
+}
+.sidebar .task-item:hover { background: rgba(255, 255, 255, 0.045); }
+/* ZCode's active task is a plain gray pill — no colored side bar */
+.sidebar .task-item.active { background: var(--ds-surface-3); border-color: transparent; }
+.sidebar .t-title {
+  font-size: var(--ds-ui-fs);
+  color: var(--ds-ink-2);
+}
+.sidebar .task-item.active .t-title {
+  color: var(--ds-ink);
+  font-weight: 500;
+}
+.sidebar .t-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.sidebar .t-dot[data-status="running"] {
+  background: var(--ds-ink-3);   /* ZCode marks a running task with a neutral spinner */
+}
+.sidebar .t-dot[data-status="completed"] { background: var(--success); }
+.sidebar .t-dot[data-status="failed"] { background: var(--rose); }
+.sidebar .t-dot[data-status="cancelled"] { background: var(--ds-ink-4); }
+/* idle draft container: a quiet unfilled ring — nothing is running */
+.sidebar .t-dot[data-status="idle"] {
+  background: transparent;
+  border: 1px solid var(--ds-ink-4);
+}
+.sidebar .t-time {
+  font-size: 10px;
+  color: var(--ds-ink-3);   /* ZCode task ages are #999999 */
+}
+
+/* New task lives in the side-nav stack now (ZCode order: New task →
+   Search → Automations → Marketplace) — see .side-nav-btn in shell.css. */
+
+/* New project ghost + inline form */
+.sidebar .new-proj {
+  border: 1px dashed var(--ds-line-strong);
+  border-radius: var(--ds-r-md);
+  color: var(--ds-ink-3);
+  font-size: 12.5px;
+}
+.sidebar .new-proj:hover { color: var(--ds-ink); border-color: var(--ds-ink-4); }
+
+/* brand: quiet, no glow */
+.sidebar .brand-sub { letter-spacing: 0.32em; color: var(--ds-ink-4); }
+.sidebar .brand-mark { color: var(--ds-ink); }
+
+/* ---- composer: Perplexity ask-bar ------------------------------------ */
+.composer {
+  background: var(--ds-surface-1);
+  border: 1px solid var(--ds-line-strong);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: border-color var(--ds-dur) var(--ds-ease);
+}
+.composer:focus-within { border-color: var(--ds-ink-3); }
+.composer textarea {
+  font-size: 14px;
+  color: var(--ds-ink);
+}
+.composer textarea::placeholder { color: var(--ds-ink-4); }
+.send-btn.ready {
+  background: #d4d4d4;   /* ZCode's square composer button */
+  color: #161616;
+}
+.send-btn.stop {
+  background: var(--ds-surface-3);
+  color: var(--ds-ink);
+  border: 1px solid var(--ds-line-strong);
+}
+
+/* ---- topbar: flat, hairline ------------------------------------------ */
+.topbar { border-bottom: 1px solid transparent; }
+
+/* ---- icon buttons: quiet squares -------------------------------------- */
+.icon-btn {
+  border-radius: var(--ds-r-md);
+  color: var(--ds-ink-3);
+}
+.icon-btn:hover {
+  color: var(--ds-ink);
+  background: var(--ds-surface-2);
+}

@@ -1,0 +1,42 @@
+# electron-builder — Universe Agent v1 (NSIS, Windows x64)
+#
+# v1 contract (plan §5): the installer ships the desktop shell; the Universe
+# backend stays a source checkout driven by the user's Python (dev-first).
+# The app finds it via the UNIVERSE_ROOT env var (see README) or relative
+# candidates next to the install.
+
+appId: computer.universe.desktop
+productName: Universe Agent
+copyright: MIT
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  # only what the packaged app actually loads: the Electron entry + the
+  # vite client served over app://universe/
+  - dist-electron/**
+  - dist/**
+  - package.json
+
+asar: true
+
+compression: maximum
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # no icon override: build/icon.ico is not in the repo — electron-builder
+  # falls back to its default icon (add build/icon.ico to re-enable)
+  # the backend needs Python anyway — don't ship a bundled runtime in v1
+  artifactName: UniverseComputer-Setup-${version}-x64.${ext}
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+  shortcutName: Universe Agent

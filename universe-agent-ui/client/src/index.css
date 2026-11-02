@@ -1,0 +1,103 @@
+/* Universe Desktop — ZCode-literal identity (2026-10 restyle).
+   Neutral-gray dark canvas, measured ZCode palette (docs/zcode-tokens.md):
+   #161616 canvas, #2b2b2b panels, #262626 top bar, #d4d4d4 ink,
+   #46bf72 green accent, #ff8a30 permission orange. design-system.css is
+   the canonical token source; the values below seed the shadcn layer
+   before it loads. */
+@import "tailwindcss";
+@import "tw-animate-css";
+/* streamdown (agent-reply markdown) ships Tailwind classes inside its dist
+   bundle — without this @source the Tailwind v4 scan purges them. */
+@source "../node_modules/streamdown/dist/*.js";
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px); --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background); --color-foreground: var(--foreground); --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground); --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground); --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground); --color-destructive: var(--destructive); --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+}
+
+:root {
+  /* shadcn surface tokens remapped onto the measured ZCode identity */
+  --radius: 0.625rem;
+  --background: #161616;           /* ZCode canvas */
+  --foreground: #d4d4d4;           /* ZCode primary ink */
+  --card: #2b2b2b;                  /* ZCode panels/cards */
+  --card-foreground: #d4d4d4;
+  --popover: #2b2b2b;
+  --popover-foreground: #d4d4d4;
+  --primary: #ffffff;               /* white primary (ZCode CTA) */
+  --primary-foreground: #161616;
+  --secondary: #363636;            /* selected/hover rows */
+  --secondary-foreground: #d4d4d4;
+  --muted: #363636;
+  --muted-foreground: #999999;
+  --accent: #363636;
+  --accent-foreground: #d4d4d4;
+  --destructive: #e5484d;
+  --destructive-foreground: #fff;
+  --border: #414141;               /* ZCode hairline */
+  --input: rgba(255,255,255,.12);
+  --ring: #46bf72;                 /* ZCode green focus ring */
+
+  /* universe reference tokens — overridden by design-system.css; kept so the
+     chat shell renders correctly before/without that file */
+  --void: #161616;
+  --panel: #2b2b2b;
+  --panel-solid: #2b2b2b;
+  --raise: #363636;
+  --raise2: #363636;
+  --raise3: #414141;
+  --line: #414141;
+  --line-soft: #363636;
+  --ink: #d4d4d4;
+  --ink2: #d4d4d4;
+  --ink3: #999999;
+  --accent-cyan: #46bf72;          /* legacy name — now the ZCode green accent */
+  --accent2: #5bc987;
+  --accent-dim: rgba(70, 191, 114, .14);
+  --blue: #6cb5e8;
+  --teal: #46bf72;                  /* success = ZCode green */
+  --amber: #ff8a30;                 /* ZCode permission orange (fixes flow.css refs) */
+  --rose: #e5484d;                  /* stopped / failure */
+
+  --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --serif: 'Source Serif 4', Georgia, serif;
+  --mono: 'JetBrains Mono', Menlo, monospace;
+
+  color-scheme: dark;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body, #root { min-height: 100%; margin: 0; }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--sans);
+    letter-spacing: normal;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea { font: inherit; }
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), [type="button"]:not(:disabled), [type="submit"]:not(:disabled) { cursor: pointer; }
+  ::selection { background: rgba(70, 191, 114, .3); }
+  :focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+}
+
+/* tabular digits for every counter/duration readout */
+.mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* Motion tiers: kill all CSS animation for reduced-motion users — the JS
+   canvases (starfield, MiniUniverse, universe) each check the same media
+   query and render one static frame instead. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

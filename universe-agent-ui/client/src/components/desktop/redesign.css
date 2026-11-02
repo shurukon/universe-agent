@@ -1,0 +1,530 @@
+/*
+ * redesign.css — the professional interaction layer (2026-09 redesign).
+ *
+ * Same CSS tokens as index.css/desktop.css (nothing redefined here), but a
+ * completely new interaction language built from three sources:
+ *   · ui-ux-pro-max: Linear-grade density (8px grid, hairline borders,
+ *     surface-ladder depth, 14px/500 button labels, no decorative color)
+ *   · liquid-glass-design: real translucency — blur + saturate + top-edge
+ *     highlight on interactive surfaces; glass reserved for controls and
+ *     floating layers, never for body text
+ *   · awesome-design-md (linear.app): single chromatic accent (photon cyan),
+ *     pill status badges, charcoal secondary buttons, surface-ladder cards
+ *
+ * Load order: index.css (tokens) → desktop.css (legacy shell) → this file.
+ * Every rule below wins ties with desktop.css by source order.
+ */
+
+/* ------------------------------------------------------------------ */
+/* motion language: one easing family, meaningful durations            */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --dur-instant: 120ms;
+  --dur-fast: 180ms;
+  --dur-med: 260ms;
+  --glass-blur: blur(20px) saturate(140%);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, .07);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 5, .45);
+  --lift-shadow: 0 14px 44px rgba(0, 0, 5, .55);
+  --cyan-glow: 0 0 0 1px rgba(255,255,255,.16), 0 4px 18px rgba(255,255,255,.05);
+}
+
+/* ------------------------------------------------------------------ */
+/* buttons — rebuilt from zero. 4 tiers, one geometry family.          */
+/* 44px touch floor on icon buttons stays; visual size tightens.       */
+/* ------------------------------------------------------------------ */
+
+/* send-btn parity: handled by zcode-parity.css (28×28 r8) — redesign glass removed */
+
+/* tier 2 — glass icon buttons (mic, add, topbar). Translucent, edge-lit */
+.mic-btn, .icon-btn {
+  border-radius: 11px;
+  background: rgba(26, 28, 31, .55);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--glass-edge);
+  color: var(--ink3);
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-instant) var(--ease-out);
+}
+.mic-btn { width: 36px; height: 36px; display: grid; place-items: center; }
+.mic-btn:hover, .icon-btn:hover { background: rgba(34, 37, 41, .75); color: var(--ink); }
+.mic-btn:active, .icon-btn:active { transform: scale(.92); }
+.mic-btn.live {
+  color: var(--accent2);
+  border-color: rgba(255,255,255,.16);
+  background: var(--accent-dim);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  animation: rdx-live-ring 1.6s ease-out infinite;
+}
+@keyframes rdx-live-ring {
+  0% { box-shadow: var(--glass-edge), 0 0 0 0 rgba(255,255,255,.16); }
+  100% { box-shadow: var(--glass-edge), 0 0 0 9px rgba(255,255,255,.05); }
+}
+
+/* tier 3 — pill tool chips (Research). Charcoal, lift on arm */
+.tool-chip {
+  border-radius: 999px;
+  background: rgba(26, 28, 31, .6);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-edge);
+  padding: 7px 14px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--ink2);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.tool-chip.on {
+  color: #071014;
+  background: linear-gradient(180deg, var(--accent2), var(--accent-cyan));
+  border-color: rgba(255,255,255,.16);
+  box-shadow: var(--cyan-glow);
+}
+.tool-chip.on .ic { color: #071014; }
+
+/* tier 4 — modal + consent buttons. Charcoal secondary, cyan primary */
+.cm-btn {
+  border-radius: 10px;
+  padding: 9px 20px;
+  font-size: 13px; font-weight: 500;
+  background: var(--raise2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.cm-btn:hover { background: var(--raise3); transform: translateY(-1px); }
+.cm-btn:active { transform: translateY(0) scale(.97); }
+.cm-btn.ok {
+  background: linear-gradient(180deg, var(--accent2), var(--accent-cyan));
+  border-color: rgba(255,255,255,.16);
+  color: #071014; font-weight: 600;
+  box-shadow: var(--cyan-glow);
+}
+.cm-btn.ok:hover { filter: brightness(1.08); background: linear-gradient(180deg, var(--accent2), var(--accent-cyan)); }
+.cm-btn.deny:hover { color: var(--rose); border-color: rgba(205, 125, 149, .45); }
+
+/* starter pills on the empty state */
+.starter {
+  border-radius: 999px;
+  background: rgba(26, 28, 31, .6);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-edge);
+  padding: 10px 18px;
+  font-size: 13px; color: var(--ink2);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.starter:hover {
+  color: var(--ink);
+  border-color: rgba(255,255,255,.16);
+  transform: translateY(-2px);
+  box-shadow: var(--glass-edge), var(--glass-shadow);
+}
+.starter:active { transform: translateY(0) scale(.98); }
+
+/* ------------------------------------------------------------------ */
+/* composer — floating glass dock                                      */
+/* ------------------------------------------------------------------ */
+
+.composer {
+  position: relative; /* anchors the slash-command popup (Phase C) — surface handled by zcode-parity.css */
+}
+
+/* ---- slash-command autocomplete (Phase C, ZCode-literal) ---- */
+.slash-pop {
+  position: absolute; left: 10px; right: 10px; bottom: calc(100% + 8px);
+  max-height: 264px; overflow-y: auto;
+  background: #2b2b2b;
+  border: 1px solid #4b4b4b;
+  border-radius: 10px;
+  padding: 4px;
+  z-index: 40;
+}
+.slash-item {
+  display: flex; align-items: baseline; gap: 10px;
+  width: 100%;
+  padding: 7px 10px; border-radius: 7px;
+  border: 0; background: transparent;
+  cursor: pointer; text-align: left;
+  color: #d4d4d4; font-size: 13px;
+}
+.slash-item .mono { font-weight: 500; flex-shrink: 0; }
+.slash-item.on { background: #363636; }
+.slash-desc {
+  color: #999999; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.composer:focus-within {
+  border-color: rgba(255,255,255,.16);
+  box-shadow: var(--glass-edge), var(--lift-shadow),
+              0 0 0 1px rgba(255,255,255,.05),
+              0 0 32px rgba(255,255,255,.05);
+  transform: translateY(-1px);
+}
+.composer textarea { font-size: 15px; line-height: 1.7; }
+.composer textarea::placeholder { color: var(--ink3); opacity: .8; }
+.composer-bar { gap: 8px; }
+
+/* working strip above the composer while a goal runs */
+
+/* ------------------------------------------------------------------ */
+/* messages — the ZCode single bubble wins: the row carries NO card of
+   its own (zcode-flow.css owns the pill). The old glass card here was
+   the SECOND bubble the user flagged (2026-10-30) — deleted.            */
+/* ------------------------------------------------------------------ */
+
+.m-bubble { font-size: 14.5px; line-height: 1.75; }
+
+.msg-agent { animation: rdx-rise .3s var(--ease-out); }
+@keyframes rdx-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.a-head { margin-bottom: 10px; }
+.a-name {
+  font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink3);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.a-flag {
+  font-size: 10.5px; font-weight: 500;
+  padding: 2px 10px; border-radius: 999px;
+}
+.a-flag.ok { color: var(--teal); border-color: rgba(127, 184, 166, .4); background: rgba(127, 184, 166, .08); }
+.a-flag.bad { color: var(--rose); border-color: rgba(205, 125, 149, .4); background: rgba(205, 125, 149, .08); }
+.a-body:hover .a-copy, .msg-agent:hover .a-copy { opacity: 1; transform: none; }
+
+/* ------------------------------------------------------------------ */
+/* activity feed — surface-ladder cards, Linear-grade status pills     */
+/* ------------------------------------------------------------------ */
+
+.activity-feed {
+  border-radius: 14px;
+  background: rgba(19, 20, 23, .6);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  backdrop-filter: blur(14px) saturate(130%);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--glass-edge);
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ */
+/* sidebar — quieter rows, glowing active state, better hierarchy      */
+/* ------------------------------------------------------------------ */
+
+.task-item {
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+  position: relative;
+}
+.task-item:hover { background: rgba(255, 255, 255, .04); }
+.task-item.active {
+  background: var(--accent-dim);
+  border-color: rgba(255,255,255,.05);
+}
+.task-item.active::before {
+  content: ''; position: absolute; left: -9px; top: 8px; bottom: 8px;
+  width: 3px; border-radius: 3px;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 10px rgba(255,255,255,.16);
+}
+.new-task {
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.05));
+  border: 1px solid rgba(255,255,255,.16);
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: var(--glass-edge);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.new-task:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.05));
+  transform: translateY(-1px);
+  box-shadow: var(--glass-edge), 0 6px 20px rgba(255,255,255,.05);
+}
+.new-task:active { transform: translateY(0) scale(.98); }
+
+/* ------------------------------------------------------------------ */
+/* consent modal — floating glass card with presence                  */
+/* ------------------------------------------------------------------ */
+
+.cm-card {
+  border-radius: 20px;
+  background: rgba(25, 26, 29, .82);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(255,255,255,.05);
+  box-shadow: var(--glass-edge), var(--lift-shadow),
+              0 0 60px rgba(255,255,255,.05);
+  animation: rdx-pop .3s var(--ease-spring);
+}
+@keyframes rdx-pop {
+  from { opacity: 0; transform: scale(.94) translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.modal-root { animation: rdx-fade .2s var(--ease-out); }
+@keyframes rdx-fade { from { opacity: 0; } to { opacity: 1; } }
+.cm-timer-fill {
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent2));
+  box-shadow: 0 0 8px rgba(255,255,255,.16);
+}
+
+/* ------------------------------------------------------------------ */
+/* topbar + offline — glass chips                                      */
+/* ------------------------------------------------------------------ */
+
+.offbanner {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.offbanner-retry { border-radius: 999px; transition: all var(--dur-fast) var(--ease-out); }
+
+/* ------------------------------------------------------------------ */
+/* scrollbars — slimmer, glowing on hover                              */
+/* ------------------------------------------------------------------ */
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #2a3036; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.16); }
+
+/* ------------------------------------------------------------------ */
+/* agents panel — the right sidebar. Glass rail, slides in on agent    */
+/* invocation only; a plain conversation never mounts it.              */
+/* ------------------------------------------------------------------ */
+
+/* agents-panel parity: handled by flow.css rail 336px fixed — redesign glass removed */
+.ag-row.working {
+  background: var(--accent-dim);
+  border-color: rgba(255,255,255,.05);
+  box-shadow: var(--glass-edge);
+}
+.ag-row.failed { border-color: rgba(205, 125, 149, .3); }
+.ag-row.done .ag-glyph { color: var(--teal); background: rgba(127,184,166,.08); border-color: rgba(127,184,166,.25); }
+.ag-row.failed .ag-glyph { color: var(--rose); background: rgba(205,125,149,.08); border-color: rgba(205,125,149,.3); }
+.ag-row.waiting .ag-glyph { color: var(--ink3); background: transparent; }
+.ag-row.working .ag-sub { color: var(--accent2); }
+.ag-row.working .ag-right { color: var(--accent-cyan); }
+.ag-row.done .ag-right { color: var(--teal); }
+.ag-row.failed .ag-right { color: var(--rose); }
+.ag-handoffs .side-label { padding: 8px 0 6px; }
+
+/* ------------------------------------------------------------------ */
+/* thinking spark — a 44px memory universe floating on the chat surface. */
+/* Zero background: transparent canvas, no panel, no ring. The old     */
+/* text-only .a-thinking shimmer is gone.                              */
+/* ------------------------------------------------------------------ */
+
+.a-thinking { display: none; }
+.thinking-spark.waiting .ts-canvas { opacity: .85; }
+.thinking-spark.thinking .ts-canvas {
+  filter: drop-shadow(0 0 6px rgba(255,255,255,.16));
+  animation: rdx-spark-breathe 2.2s ease-in-out infinite;
+}
+@keyframes rdx-spark-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+.thinking-spark.thinking .ts-label { color: var(--accent2); }
+@keyframes rdx-bars {
+  0%, 100% { opacity: .35; transform: scaleY(.6); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+/* ------------------------------------------------------------------ */
+/* settings page — glass section cards, same language as the chat      */
+/* ------------------------------------------------------------------ */
+
+.st-page { max-width: 720px; }
+.st-chip.on {
+  color: #071014; font-weight: 600;
+  background: linear-gradient(180deg, var(--accent2), var(--accent-cyan));
+  border-color: rgba(255,255,255,.16);
+}
+
+/* ------------------------------------------------------------------ */
+/* centered empty state (2026-09): greeting + composer vertically      */
+/* centered like ChatGPT; after the first send the column docks down.  */
+/* ------------------------------------------------------------------ */
+
+/* the scroller becomes the centering stage while empty */
+.chat-scroll.empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.chat-scroll.empty .chat-inner {
+  width: 100%;
+  justify-content: center;
+  padding: 12px 26px;
+}
+
+/* the greeting: centered, minimal, directly above where the docked
+   composer will sit — eyebrow + one line, nothing else */
+.welcome {
+  margin: 0;
+  padding: 0 0 26px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.w-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: .5em;
+  text-indent: .5em;
+  color: var(--accent-cyan);
+  opacity: .85;
+  margin-bottom: 14px;
+  animation: rise .5s ease backwards;
+}
+.welcome h1 {
+  font-family: var(--serif);
+  font-size: clamp(26px, 3.4vw, 34px);
+  font-weight: 500;
+  letter-spacing: -.01em;
+  color: #f2f7fa;
+  margin: 0;
+  text-wrap: balance;
+  animation: rise .5s ease .07s backwards;
+}
+.w-noprovider {
+  margin: 22px auto 0;
+  max-width: 520px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: rgba(205, 125, 149, .08);
+  border: 1px solid rgba(205, 125, 149, .3);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink2);
+  animation: rise .5s ease .14s backwards;
+}
+.w-noprovider b { color: var(--rose); }
+
+/* centered composer while empty: same dock, wider stage */
+.composer-wrap.centered { padding: 0 26px 8px; }
+.composer-wrap.centered .composer,
+.composer-wrap.centered .composer-hint { max-width: 640px; }
+.composer-wrap.centered .composer-hint { display: none; }
+
+/* ------------------------------------------------------------------ */
+/* backdrop: deleted. Flat canvas everywhere — no cyan washes, no      */
+/* vignette, no starfield. The only universe left is the transparent 3D  */
+/* thinking indicator that sits directly on the UI.                    */
+/* ------------------------------------------------------------------ */
+
+/* centered empty column: the whole greeting + composer block floats in the
+   vertical middle; the first message flips .empty off and the normal
+   top-flow + bottom dock take over */
+.main.empty {
+  justify-content: center;
+}
+.main.empty .chat-scroll {
+  flex: none;
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------ */
+/* premium welcome wizard (2026-09) — refined-tech + liquid glass.     */
+/* Same tokens. Old flat .wiz rules in desktop.css lose by source order*/
+/* ------------------------------------------------------------------ */
+
+.welcome-page.premium {
+  background: #050608;
+}
+.wp-aurora.a {
+  width: 640px; height: 640px; left: 50%; top: -260px; transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(255,255,255,.05), transparent 65%);
+  animation: rdx-aurora 9s ease-in-out infinite alternate;
+}
+.wp-aurora.b {
+  width: 520px; height: 520px; left: 8%; bottom: -200px;
+  background: radial-gradient(circle, rgba(138, 123, 216, .1), transparent 65%);
+  animation: rdx-aurora 12s ease-in-out infinite alternate-reverse;
+}
+@keyframes rdx-aurora {
+  from { opacity: .7; transform: translateX(-50%) scale(1); }
+  to { opacity: 1; transform: translateX(-46%) scale(1.08); }
+}
+@keyframes rdx-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+.wiz-node.active .wn-dot {
+  border-color: rgba(255,255,255,.16);
+  color: var(--accent-cyan);
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.05), 0 0 18px rgba(255,255,255,.05);
+}
+.wiz-node.done .wn-dot {
+  border-color: rgba(127, 184, 166, .5);
+  color: var(--teal);
+  background: rgba(127, 184, 166, .1);
+}
+.wiz-node.active .wn-label { color: var(--ink); }
+.wiz-node.done .wn-link { background: rgba(127, 184, 166, .4); }
+@keyframes rdx-card-in {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+.wiz.premium .wiz-card.open {
+  border-color: rgba(255,255,255,.16);
+  box-shadow: var(--glass-edge), 0 0 26px rgba(255,255,255,.05);
+}
+.wiz.premium .wiz-card.online { border-color: rgba(127, 184, 166, .4); }
+.wc-badge.paid { background: rgba(255,138,48,.13); color: #ff8a30; }
+.wc-badge.local { display: inline-flex; align-items: center; gap: 5px; }
+.wc-badge.local.on { background: rgba(127, 184, 166, .13); color: var(--teal); }
+.wc-badge.local.on .wc-pulse { animation: rdx-blink 1.6s ease infinite; }
+@keyframes rdx-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.wiz.premium .wc-form.custom {
+  background: rgba(11, 13, 17, .45);
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 12px;
+}
+.wiz-voice.on {
+  border-color: rgba(255,255,255,.16);
+  background: var(--accent-dim);
+  box-shadow: var(--glass-edge);
+}
+.wiz-voice.on .wv-dot {
+  border-color: var(--accent-cyan);
+  background: linear-gradient(180deg, var(--accent2), var(--accent-cyan));
+  box-shadow: 0 0 10px rgba(255,255,255,.16);
+}
+.wiz-voice.on .wv-label { color: var(--ink); }
+
+/* ---- Add (+) menu: file picker + hints (replaces the text input) ---- */
+.add-menu {
+  padding: 4px;
+  background: #2b2b2b;
+  border: 1px solid #4b4b4b;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.add-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 10px; border-radius: 7px;
+  border: 0; background: transparent;
+  color: #d4d4d4; font-size: 13px; cursor: pointer; text-align: left;
+}
+.add-item:hover { background: #363636; }
+.add-hints {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 10px 6px; border-top: 1px solid #414141; margin-top: 2px;
+}
+.add-hints span { font-size: 11.5px; color: #5e5e5e; }
+.add-hints b { color: #999999; font-weight: 500; }

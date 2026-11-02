@@ -1,0 +1,711 @@
+/*
+ * shell.css — the ZCode-literal chrome (Phase 2): TopBar, command
+ * palette, composer chips (mode / max / context usage / attachments),
+ * the Progress pane, and the message action rows — plus the shell token
+ * layer they read from.
+ *
+ * The tokens live HERE, not in a separate tokens.css: the repo's
+ * .gitignore carries a `*token*` rule (review finding, Phase 2) that
+ * swallowed the standalone file — a fresh clone would fail its first
+ * build on the import. Colors/type have their canonical source in
+ * index.css :root (seeded globally) and design-system.css (refined);
+ * the block below adds what the shell needs and nothing else: a spacing
+ * scale, the chrome heights, the overlay z-layers, and the shell
+ * surface mappings.
+ */
+
+:root {
+  /* ---- spacing scale (4px base, Linear discipline) ------------------ */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* ---- chrome heights ------------------------------------------------- */
+  --tb-h: 56px;           /* single strip chrome (ZCode 3.12.1, measured) */
+  --sb-w: var(--ds-sidebar-w, 264px); /* matches the sidebar sheet */
+
+  /* ---- overlay layers (palette above everything in-app) ---------------- */
+  --z-topbar: 40;
+  --z-palette: 90;
+  --z-toast: 100;        /* sonner stays above the palette */
+
+  /* ---- shell surfaces (ZCode-measured — docs/zcode-tokens.md) ---------- */
+  /* ZCode's top bar is a distinct #262626 strip; the segment over the
+     sidebar shares the panel tone. No bottom hairline — a pure color step. */
+  --tb-bg: #262626;
+  --tb-line: transparent;
+  --tb-ink: #f5f5f5;             /* ZCode's bright window-control glyphs */
+  --tb-ink-strong: var(--ink, #d4d4d4);
+
+  /* chips (mode / max / context) are text-level in ZCode: transparent
+     until hovered — --chip-bg is the shared hover surface */
+  --chip-bg: var(--ds-surface-2, #363636);
+  --chip-line: var(--ds-line, #414141);
+  --chip-ink: var(--ds-ink-2, #d4d4d4);
+  --chip-ink-muted: var(--ds-ink-3, #999999);
+}
+
+/* ---- TopBar --------------------------------------------------------------- */
+
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--tb-h);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  background: var(--tb-bg);
+  border-bottom: 1px solid var(--tb-line);
+  z-index: var(--z-topbar);
+  /* the whole strip drags the window; interactive children opt out */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.topbar button,
+.topbar .tb-title,
+.topbar .tb-more,
+.topbar .tb-win {
+  -webkit-app-region: no-drag;
+}
+
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border: none;
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--tb-ink);
+  transition: background var(--ds-dur, .14s) var(--ds-ease, ease),
+              color var(--ds-dur, .14s) var(--ds-ease, ease);
+}
+.tb-btn:hover { background: var(--chip-bg); color: var(--tb-ink-strong); }
+.tb-btn:disabled { opacity: .35; cursor: default; }
+.tb-btn:disabled:hover { background: transparent; color: var(--tb-ink); }
+
+.tb-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-1) 0 var(--sp-2);
+  color: var(--tb-ink-strong);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+}
+
+/* the session title block: sits centered-left, truncates */
+.tb-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: var(--sp-3);
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.tb-title {
+  font-size: 12.5px;
+  color: var(--ink2, #d4d4d4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+.tb-title:hover { color: var(--ink, #d4d4d4); }
+.tb-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px var(--sp-2);
+  border-radius: 9999px;
+  border: 1px solid var(--chip-line);
+  color: var(--chip-ink-muted);
+}
+
+.tb-sp { flex: 1; }
+
+.tb-win {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--sp-2);
+}
+.tb-win button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px; height: var(--tb-h);
+  border: none;
+  background: transparent;
+  color: var(--tb-ink);
+}
+.tb-win button:hover { background: var(--chip-bg); color: var(--tb-ink-strong); }
+.tb-win button.tb-close:hover { background: #e5484d; color: #fff; }
+
+/* the More (⋯) menu — same dropdown language as the sidebar chat menu */
+.tb-more {
+  position: relative;
+}
+.tb-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  background: var(--raise3, #414141);
+  border: 1px solid var(--line-strong, #4b4b4b);
+  border-radius: var(--ds-r-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  padding: var(--sp-1);
+  z-index: calc(var(--z-topbar) + 10);
+}
+.tb-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border: none;
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--ink2, #d4d4d4);
+  font-size: 12px;
+  text-align: left;
+}
+.tb-menu button:hover { background: var(--chip-bg); color: var(--ink, #d4d4d4); }
+.tb-menu button.danger { color: var(--rose, #e5484d); }
+.tb-menu button.danger:hover { background: rgba(229, 72, 77, .12); }
+
+/* pages yield their fixed inset to the TopBar strip — the offset lives in
+   desktop.css's own .app-root rule (this sheet loads before the page CSS
+   and would lose the cascade; see the Phase-2 review) */
+
+/* ---- Command palette -------------------------------------------------------- */
+
+.cmdk-overlay {
+  position: fixed;
+  inset: var(--tb-h) 0 0 0;
+  background: rgba(0, 0, 0, .45);
+  z-index: var(--z-palette);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.cmdk-card {
+  width: min(640px, calc(100vw - 48px));
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-surface-1, #2b2b2b);
+  border: 1px solid var(--line-strong, #4b4b4b);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+  overflow: hidden;
+}
+.cmdk-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+}
+.cmdk-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--chip-ink-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 9999px;
+}
+.cmdk-tab[aria-selected="true"] {
+  color: var(--ink, #d4d4d4);
+  background: var(--ds-surface-3, #414141);
+}
+.cmdk-list {
+  overflow-y: auto;
+  padding: var(--sp-2);
+}
+.cmdk-sec {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--chip-ink-muted);
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px var(--sp-2);
+  border: none;
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--ink2, #d4d4d4);
+  font-size: 12.5px;
+  text-align: left;
+}
+.cmdk-item[data-highlighted="true"],
+.cmdk-item:hover {
+  background: var(--chip-bg);
+  color: var(--ink, #d4d4d4);
+}
+.cmdk-item .k {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #d4d4d4;
+  background: #404040;           /* ZCode kbd chip */
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--mono, monospace);
+}
+.cmdk-empty {
+  padding: var(--sp-4);
+  text-align: center;
+  color: var(--chip-ink-muted);
+  font-size: 12px;
+}
+
+/* ---- message action rows (user/assistant buttons) --------------------------- */
+
+.m-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity var(--ds-dur, .14s) var(--ds-ease, ease);
+}
+.msg-user:hover .m-actions,
+.msg-agent:hover .m-actions,
+.m-actions:focus-within { opacity: 1; }
+
+.m-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: none;
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--ink3, #999999);
+}
+.m-act:hover { background: var(--chip-bg); color: var(--ink, #d4d4d4); }
+.m-act.on { color: var(--accent-cyan, #46bf72); }
+.m-act.off-active { color: var(--rose, #e5484d); }
+.m-ts {
+  font-size: 10px;
+  color: var(--chip-ink-muted);
+  margin-left: var(--sp-1);
+  font-family: var(--mono, monospace);
+}
+
+/* working-for / worked-for badge */
+.m-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--chip-ink-muted);
+  font-family: var(--mono, monospace);
+}
+.m-duration.live { color: var(--accent-cyan, #46bf72); }
+
+/* the Hooks popover on an assistant message */
+.m-hooks-pop {
+  position: relative;
+}
+.m-hooks-card {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 280px;
+  background: var(--raise3, #414141);
+  border: 1px solid var(--line-strong, #4b4b4b);
+  border-radius: var(--ds-r-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  padding: var(--sp-2) var(--sp-3);
+  z-index: 30;
+  font-size: 11px;
+  color: var(--ink2, #d4d4d4);
+}
+.m-hooks-card b { color: var(--ink, #d4d4d4); }
+.m-hooks-card .hk-row {
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--line, #414141);
+}
+.m-hooks-card .hk-row:last-child { border-bottom: none; }
+
+/* ---- composer chips (mode / max / context / attachments) --------------------- */
+
+.cx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chip-ink);
+  font-size: 11.5px;
+  white-space: nowrap;
+  transition: background var(--ds-dur, .14s) var(--ds-ease, ease);
+}
+.cx-chip:hover { background: var(--chip-bg); }
+.cx-chip b { font-weight: 500; color: var(--ink, #d4d4d4); }
+.cx-chip .cx-lv { color: var(--chip-ink-muted); font-size: 10px; }
+
+.cx-pop {
+  position: relative;
+}
+.cx-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 170px;
+  background: var(--raise3, #414141);
+  border: 1px solid var(--line-strong, #4b4b4b);
+  border-radius: var(--ds-r-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  padding: var(--sp-1);
+  z-index: 50;
+}
+.cx-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border: none;
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--ink2, #d4d4d4);
+  font-size: 12px;
+  text-align: left;
+}
+.cx-menu button:hover { background: var(--chip-bg); color: var(--ink, #d4d4d4); }
+.cx-menu button.on { color: var(--accent-cyan, #46bf72); }
+.cx-menu .cx-note {
+  padding: var(--sp-1) var(--sp-2);
+  font-size: 10px;
+  color: var(--chip-ink-muted);
+}
+
+.cx-ctx {
+  font-size: 10.5px;
+  font-family: var(--mono, monospace);
+  color: var(--chip-ink-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.cx-ctx b { color: var(--chip-ink); font-weight: 500; }
+.cx-ctx .cx-ctx-bar {
+  width: 44px; height: 3px;
+  border-radius: 2px;
+  background: var(--chip-line);
+  overflow: hidden;
+}
+.cx-ctx .cx-ctx-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent-cyan, #46bf72);
+  border-radius: 2px;
+}
+
+/* queued follow-up indicator */
+.cx-queued {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--accent-cyan, #46bf72);
+}
+.cx-queued .fl-spin { display: inline-flex; }
+
+/* attachments (v1: text file paths) */
+.cx-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3) 0;
+}
+.cx-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  color: var(--chip-ink);
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-line);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  max-width: 260px;
+}
+.cx-attach-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cx-attach-chip button {
+  border: none;
+  background: transparent;
+  color: var(--chip-ink-muted);
+  padding: 0;
+  display: inline-flex;
+}
+.cx-attach-chip button:hover { color: var(--rose, #e5484d); }
+
+/* ---- Progress pane (the Rail's fourth tab) ---------------------------------- */
+
+.prog-list { padding: var(--sp-2); }
+.prog-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: 5px var(--sp-2);
+  border-radius: var(--ds-r-sm, 6px);
+  font-size: 12px;
+  color: var(--ink3, #999999);
+}
+.prog-row.current { color: var(--ink, #d4d4d4); background: var(--chip-bg); }
+.prog-row .pr-mark {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--chip-ink-muted);
+}
+.prog-row.done .pr-mark { color: var(--success, #46bf72); }
+.prog-row .pr-txt { min-width: 0; }
+.prog-empty {
+  padding: var(--sp-3);
+  font-size: 12px;
+  color: var(--chip-ink-muted);
+}
+.prog-waiting-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: 6px var(--sp-2);
+  border: 1px dashed var(--chip-line);
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--chip-ink-muted);
+  font-size: 11.5px;
+}
+.prog-waiting-btn:hover { color: var(--ink2, #d4d4d4); }
+.prog-jumps {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  border-top: 1px solid var(--line, #414141);
+  flex-wrap: wrap;
+}
+.prog-jump {
+  border: 1px solid var(--chip-line);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--chip-ink-muted);
+  font-size: 10.5px;
+  font-family: var(--mono, monospace);
+  padding: 2px 9px;
+}
+.prog-jump:hover { color: var(--ink, #d4d4d4); border-color: var(--line-strong, #4b4b4b); }
+
+/* the rail's collapsed capsule */
+.rail-capsule {
+  position: absolute;
+  right: var(--sp-2);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--chip-line);
+  border-radius: 9999px;
+  background: var(--raise2, #363636);
+  color: var(--chip-ink);
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  z-index: 5;
+}
+.rail-capsule:hover { color: var(--ink, #d4d4d4); }
+
+/* ---- question banner (ask_user options inline, consent-line language) ------- */
+
+.q-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  margin: 0 var(--sp-3) var(--sp-2);
+  background: var(--ds-surface-1, #2b2b2b);
+  border: 1px solid var(--ds-line, #414141);
+  border-radius: 12px;
+}
+.q-banner .q-text { font-size: 13px; color: var(--ink, #d4d4d4); }
+.q-opts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.q-opt {
+  border: 1px solid var(--chip-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chip-ink);
+  font-size: 12.5px;
+  padding: 6px 12px;
+}
+.q-opt:hover { border-color: var(--accent-cyan, #46bf72); color: var(--ink, #d4d4d4); }
+.q-free {
+  display: flex;
+  gap: var(--sp-2);
+}
+.q-free input {
+  flex: 1;
+  min-width: 120px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--ink, #d4d4d4);
+  font-size: 12.5px;
+}
+.q-free input:focus { outline: none; border-color: var(--accent-cyan, #46bf72); }
+
+/* ---- tool-row additions (ZCode rows: hooks badge + events counter) --------- */
+
+.fl-hook-badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 138, 48, .45);
+  color: #ff8a30;
+  background: rgba(255, 138, 48, .08);
+}
+.fl-ev-count {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  color: var(--chip-ink-muted);
+}
+.fl-think-dur {
+  margin-left: 4px;
+  color: var(--chip-ink-muted);
+  font-size: 10px;
+}
+.fl-group-body {
+  padding-left: 14px;
+  border-left: 1px solid var(--line, #414141);
+  margin: 2px 0 2px 6px;
+}
+
+/* the rail in capsule mode: no surface, just the floating pill */
+.rail.rail-capsule-mode {
+  background: transparent;
+  border: none;
+  position: relative;
+}
+
+/* ---- sidebar nav row + view chips (ZCode Phase 2) --------------------------- */
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.side-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border: none;
+  border-radius: var(--ds-r-sm, 6px);
+  background: transparent;
+  color: var(--ds-ink-2, #d4d4d4);
+  font-size: 12px;
+  text-align: left;
+}
+.side-nav-btn:hover {
+  background: var(--chip-bg);
+  color: var(--ink, #d4d4d4);
+}
+.side-nav-k {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: #d4d4d4;
+  background: #404040;           /* ZCode kbd chip */
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--mono, monospace);
+}
+
+.side-chips {
+  display: flex;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2) var(--sp-2);
+}
+.side-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--chip-line);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--chip-ink-muted);
+  font-size: 10.5px;
+}
+.side-chip.on {
+  color: var(--ink, #d4d4d4);
+  border-color: var(--line-strong, #4b4b4b);
+  background: var(--chip-bg);
+}
+
+/* ---- two-tone top bar (ZCode) ------------------------------------------------ */
+
+/* the leading segment (over the sidebar column) shares the panel tone;
+   the rest of the strip is the darker --tb-bg — a pure color step */
+.tb-left {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 100%;
+  margin-left: calc(var(--sp-2) * -1);
+  padding: 0 var(--sp-2);
+  background: var(--ds-surface-1, #2b2b2b);
+}
+
+/* ---- transparency bar (ZCode-style control strip) ---------------------------- */
+
+/* the always-on-top yellow strip: shown only while a machine-control tool
+   (browser / computer-use) is in flight — overlays, never pushes layout */
+.transparency-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  background: #f5c518;              /* ZCode yellow (docs/zcode-tokens.md) */
+  color: #161616;
+  font-size: 11.5px;
+  font-weight: 600;
+  z-index: calc(var(--z-toast, 100) + 5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+  -webkit-app-region: no-drag;
+}
