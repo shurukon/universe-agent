@@ -57,12 +57,6 @@ async def _gate_call(tool_name: str, *, args: dict, turn_id: str = "g7"):
 async def test_edit_mode_ladder(monkeypatch, tmp_path):
     """edit mode: Write-family flows without prompt; commands
     still ask; explicit never drops."""
-    import sys
-    import shutil
-    if not (sys.platform == "win32" or shutil.which("pwsh")
-            or shutil.which("powershell.exe") or shutil.which("powershell")):
-        pytest.skip("no PowerShell binary on this host — the command ladder "
-                    "is only reachable where the tool can actually run")
     work = tmp_path / "proj"
     work.mkdir()
 
@@ -89,8 +83,16 @@ async def test_edit_mode_ladder(monkeypatch, tmp_path):
 
     # commands still consent in auto (Bash capability, no auto-grant wired)
     gate.set_permission_mode("edit")
-    out_cmd = await _gate_call("PowerShell", args={
-        "command": "Write-Output parityauto"})
+    # the shell tool is platform-native: PowerShell on Windows, Bash elsewhere
+    import sys as _sys
+    if _sys.platform == "win32":
+        shell_tool, ask_cmd, yolo_cmd = ("PowerShell",
+                                         "Write-Output parityauto",
+                                         "Write-Output yoloauto")
+    else:
+        shell_tool, ask_cmd, yolo_cmd = ("Bash", "echo parityauto",
+                                         "echo yoloauto")
+    out_cmd = await _gate_call(shell_tool, args={"command": ask_cmd})
     blocked = (not out_cmd.get("ok")
                and "consent" in str(out_cmd.get("error", "")))
     assert blocked, f"auto mode must still ask for commands: {out_cmd}"
@@ -100,8 +102,7 @@ async def test_edit_mode_ladder(monkeypatch, tmp_path):
     gate = reset_gate_for_tests()
     gate.set_auto_grant(True)
     gate.set_permission_mode("full")
-    out_cmd2 = await _gate_call("PowerShell", args={
-        "command": "Write-Output yoloauto"})
+    out_cmd2 = await _gate_call(shell_tool, args={"command": yolo_cmd})
     assert out_cmd2.get("ok") is True, out_cmd2
     stdout = ((out_cmd2.get("result") or {}).get("stdout") or "").strip()
     assert "yoloauto" in stdout
@@ -232,10 +233,6 @@ async def test_notebook_edit(tmp_path, monkeypatch):
                         lambda: work)
     from hooks import reset_hook_manager_for_tests
     reset_hook_manager_for_tests()
-    # disarm the built-in factguard: pre_write covers NotebookEdit now
-    # (hook domain widening) and this test exercises the TOOL
-    from hooks import get_hook_manager
-    monkeypatch.setattr(get_hook_manager(), "check", lambda *a, **k: None)
     from security.capability import reset_gate_for_tests
     reset_gate_for_tests().set_auto_grant(True)
 
@@ -262,10 +259,6 @@ async def test_apply_patch(tmp_path, monkeypatch):
                         lambda: work)
     from hooks import reset_hook_manager_for_tests
     reset_hook_manager_for_tests()
-    # disarm the built-in factguard: pre_write covers ApplyPatch now
-    # (hook domain widening) and this test exercises the TOOL
-    from hooks import get_hook_manager
-    monkeypatch.setattr(get_hook_manager(), "check", lambda *a, **k: None)
     from security.capability import reset_gate_for_tests
     reset_gate_for_tests().set_auto_grant(True)
 
@@ -405,13 +398,14 @@ def test_slash_round7_additions():
 
 def test_parity_doc_records_evidence_paths():
     """The RE evidence files must exist and carry the findings — the
-    implementation's provenance trail."""
-    import os
-    import sys
-    if sys.platform != "win32":
-        pytest.skip("the RE evidence corpus lives on the author's Windows "
-                    f"volume (os.name={os.name!r}) — unmountable here")
+    implementation's provenance trail.
+
+    The evidence dir is machine-local (the RE workstation's temp), not
+    part of the repo — on any other machine the honest outcome is a
+    skip, not a failure."""
     base = pathlib.Path(r"D:\ClaudeDesktop\Temp\opencode\re7")
+    if not base.is_dir():
+        pytest.skip(f"RE evidence dir is machine-local and absent: {base}")
     for f in ("zcode_findings.md", "claude_findings.md", "parity_spec.md",
               "zcode_prompts.txt", "claude_prompts.txt"):
         assert (base / f).exists(), f"missing RE evidence: {f}"

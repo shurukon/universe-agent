@@ -80,8 +80,11 @@ def test_turn_prompt_has_no_goal_mode_annex(fresh_home):
     assert "TURN MODE" not in sys_msg
     params = inspect.signature(Orchestrator.run_turn).parameters
     assert "goal_mode" not in params
-    from core.agent.orchestrator import GOAL_MODE_ANNEX
-    assert GOAL_MODE_ANNEX is None
+    # the goal-mode annex is not just disabled — the symbol is PURGED
+    # (2026-10-28: the goal era is over). Only the plan-mode annex exists.
+    import core.agent.universe_agent as ua
+    assert not hasattr(ua, "GOAL_MODE_ANNEX")
+    assert "goal mode" not in sys_msg.lower()
 
 
 def test_engine_is_unbounded_operator_cap_replaces_budget(fresh_home, monkeypatch):

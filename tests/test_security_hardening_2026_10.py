@@ -63,10 +63,6 @@ async def test_apply_patch_rejects_absolute_and_traversal(fresh_home, tmp_path,
     work.mkdir()
     (work / "t.txt").write_text("hello\n", encoding="utf-8")
     monkeypatch.setattr("connectors.builtin.files._project_root", lambda: work)
-    # disarm the built-in factguard: pre_write covers ApplyPatch now (hook
-    # domain widening) and this test pins the TOOL's scope locks
-    from hooks import get_hook_manager
-    monkeypatch.setattr(get_hook_manager(), "check", lambda *a, **k: None)
 
     evil_abs = ("*** Begin Patch\n"
                 f"*** Update File: {work.parent / 'evil.txt'}\n"

@@ -41,10 +41,15 @@ def _probe_media(path: Path) -> dict[str, Any]:
     if not ffprobe:
         return {"ok": True, "path": str(path), "bytes": path.stat().st_size,
                 "probe": "ffprobe_unavailable"}
+    import os as _os
     proc = subprocess.Popen(
         [ffprobe, "-v", "error", "-show_entries", "format=duration:stream=codec_type",
          "-of", "json", str(path)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        # its own process group: the timeout path killpg()s the tree —
+        # without this the probe shares OUR group and a hung ffprobe
+        # takes down the whole server/runner (found by the suite 2026-11)
+        start_new_session=(_os.name != "nt"),
     )
     try:
         out, err = proc.communicate(timeout=30)

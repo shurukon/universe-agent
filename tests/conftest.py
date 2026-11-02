@@ -13,12 +13,6 @@ from pathlib import Path
 
 import pytest
 
-# The secrets fallback FAILS CLOSED without an explicit passphrase (audit
-# 2026-10) and CI/sandboxes have no OS keychain. Provide the documented
-# user-supplied env source so tests exercise real encrypt/decrypt instead
-# of erroring out with SecretsUnavailableError.
-os.environ.setdefault("UNIVERSE_PASSPHRASE", "universe-test-passphrase")
-
 # ensure the universe-agent package root is on sys.path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -127,11 +121,72 @@ def fresh_home(monkeypatch):
 
 
 @pytest.fixture
-def fresh_home_with_skills(fresh_home):
-    """Fresh home with the real bundled skills (ECC, UI UX Pro Max, Open
-    Design, Anthropic Skills — see SOURCES.md) ingested."""
-    from skills.loader import load_all_skills
-    load_all_skills()
+def fresh_home_with_skills(fresh_home, monkeypatch, tmp_path):
+    """Fresh home with a SMALL SEEDED skills corpus.
+
+    The bundled 1,584-skill library was purged (2026-10-31 — skills/loader.py
+    is an empty-catalog stub, config.TRUSTED_SKILL_SOURCES == ()), so this
+    fixture seeds a handful of skills through the product's own ingestion
+    pipeline (skill.ingestion.ingest_source + skill.taxonomy.rebuild_taxonomy)
+    from a temp corpus dir. The trusted-source allowlist is a TEST allowlist
+    (the tier machinery in quarantine_check/approve is live product code);
+    tests that need the purge reality itself use plain fresh_home.
+    """
+    import config as config_mod
+    import skill.ingestion as ingestion_mod
+    allow = ("ECC", "UIUXProMax", "OpenDesign", "AnthropicSkills")
+    monkeypatch.setattr(config_mod, "TRUSTED_SKILL_SOURCES", allow)
+    monkeypatch.setattr(ingestion_mod, "TRUSTED_SKILL_SOURCES", allow)
+
+    def md(name: str, source: str, desc: str, *, category: str,
+           target_agent: str = "") -> str:
+        return (
+            "---\n"
+            f"name: {name}\n"
+            f"source: {source}\n"
+            'version: "1.0.0"\n'
+            f"description: {desc}\n"
+            'tags: ["seed"]\n'
+            "triggers: []\n"
+            "license: MIT\n"
+            f"target_agent: {target_agent}\n"
+            f"category: {category}\n"
+            "---\n"
+            f"{desc}. Step 1: prepare. Step 2: verify the result.\n")
+
+    corpus = tmp_path / "skills_data"
+    files = {
+        "ECC": [
+            ("python-debugging", "Debug python tracebacks and fix errors fast",
+             "code_generation", "code"),
+            ("express-backend-api", "Express backend API with routes and tests",
+             "code_generation", "code"),
+            ("api-design", "Design a REST API with resources and versioning",
+             "api_design", ""),
+        ],
+        "UIUXProMax": [
+            ("web-ui-checklist", "Web UI checklist for accessible interfaces",
+             "ui_ux_design", "design"),
+        ],
+        "OpenDesign": [
+            ("design-review", "Design review pass over visual systems",
+             "design_system", ""),
+        ],
+        "AnthropicSkills": [
+            ("version-control", "Version control hygiene with git",
+             "tech_stack", "code"),
+        ],
+    }
+    for source, skills in files.items():
+        src_dir = corpus / source
+        src_dir.mkdir(parents=True)
+        for name, desc, category, target in skills:
+            (src_dir / f"{name}.md").write_text(
+                md(name, source, desc, category=category, target_agent=target),
+                encoding="utf-8")
+        ingestion_mod.ingest_source(src_dir)
+    from skill.taxonomy import rebuild_taxonomy
+    rebuild_taxonomy()
     return fresh_home
 
 

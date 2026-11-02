@@ -55,8 +55,11 @@ def test_prune_expired_keeps_running(fresh_home):
     assert st.get("g-run") is not None
 
 
-def test_run_turn_persists_project_meta(fresh_home):
+def test_run_turn_persists_project_meta(fresh_home, monkeypatch):
     import asyncio
+    # goals-row persistence is the LEGACY goal-state path (GAX_ENGINE=goal);
+    # the default session engine writes zero goals rows by contract.
+    monkeypatch.setenv("GAX_ENGINE", "goal")
     from core.agent.orchestrator import get_orchestrator
     orch = get_orchestrator()
 
@@ -86,7 +89,7 @@ def test_provider_halt_single_choke_point(fresh_home):
         conn.execute(
             "INSERT INTO goals(id,text,status,created_at,owner_session_id) "
             "VALUES(?,?,?,?,?);", ("g-halt", "t", "running", time.time(), "s"))
-    from core.agent.orchestrator import record_provider_halt
+    from core.agent.universe_agent import record_provider_halt
     out = record_provider_halt("g-halt", "halt reason", error="root cause",
                                goal_text="t", owner_session_id="s")
     assert out["success"] is False and out["halted"] is True

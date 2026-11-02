@@ -120,35 +120,23 @@ def test_runtime_init_sweeps_stale_running_goals(fresh_home):
     assert "interrupted" in json.loads(row["final_summary"])["summary"]
 
 
-# ---- root #5: skill miss suggestions -------------------------------------------
+# ---- root #5: skill miss behavior ----------------------------------------------
+# The purged corpus (2026-10-31) removed the suggestion engine with it —
+# connectors/builtin/skills.py is now an honest disabled-tool stub. These
+# pin the stub contract: a miss never fabricates a success.
 
-@pytest.fixture()
-def skill_corpus(fresh_home):
-    """A tiny trusted corpus so the suggestion path is deterministic."""
-    from core.memory.layers.l4_procedural import L4Procedural, Skill
-    l4 = L4Procedural()
-    for name, desc in (
-        ("react-performance", "React performance profiling and optimization"),
-        ("react-testing", "Testing React components and hooks"),
-        ("python-packaging", "Packaging and distributing Python projects"),
-    ):
-        l4.upsert(Skill(name=name, source="test", description=desc,
-                        body=desc, tags=["test"], triggers=[name],
-                        status="trusted"))
-    return l4
+def test_skill_search_on_empty_catalog_is_an_honest_empty_hit():
+    from connectors.builtin import get_registry
+    res = get_registry().get("Skill").handler(query="react perfomance")
+    assert res["ok"] is True and res["count"] == 0 and res["skills"] == []
 
 
-def test_skill_miss_returns_suggestions(skill_corpus):
-    from connectors.builtin.skills import _suggest
-    hits = _suggest("react perfomance")  # (typo'd, like the model's guesses)
-    assert hits and any("react" in h.lower() for h in hits)
-
-
-def test_skill_read_miss_error_carries_suggestions(fresh_home, skill_corpus):
+def test_skill_read_miss_error_refuses_without_suggestions(fresh_home):
     from connectors.builtin import reset_registry_for_tests
     reg = reset_registry_for_tests()
     tool = reg.get("Skill")
     res = tool.handler(skill_name="no-such-skill-xyz")
     assert res["ok"] is False
-    assert "suggestions" in res and res["suggestions"]
-    assert "Skill" in res["error"]
+    # the miss stays a structured miss: no invented skill, no fake success
+    assert "suggestions" in res and res["suggestions"] == []
+    assert "disabled" in res["error"]

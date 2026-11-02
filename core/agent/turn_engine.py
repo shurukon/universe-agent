@@ -339,13 +339,11 @@ async def run_turn(
             delta_state["at"] = time.monotonic()
             _flush_delta()
 
-    operator_cap = 200  # session-loop default budget (Claude maxTurns parity):
-    # the loop is FINITE by default now; "0" set explicitly restores the
-    # old unbounded behavior, any positive N overrides the cap
+    operator_cap = 0
     try:
-        operator_cap = int(os.environ.get(TOOL_STEP_LIMIT_ENV, "200") or "200")
+        operator_cap = int(os.environ.get(TOOL_STEP_LIMIT_ENV, "0") or "0")
     except ValueError:
-        operator_cap = 200
+        operator_cap = 0
     # why the while-loop broke early (the tail returns this honestly):
     # "operator_limit" via the cap check, "breaker" via the circuit breaker
     turn_stop_pending: str | None = None

@@ -61,9 +61,6 @@ def _voiced_gate(frame: bytes, vad, level: float) -> bool:
 
 def test_vad_gates_frames(fresh_home):
     """The combined gate: a 440Hz tone passes, digital silence never does."""
-    pytest.importorskip("webrtcvad",
-                        reason="the pip webrtcvad wheel is not installed — "
-                               "the VAD half of the gate cannot run here")
     eng = VoiceEngine()
     vad = eng.vad()
     tone = _tone_pcm(0.09)
@@ -86,17 +83,13 @@ def test_settings_default_to_local_stt_and_edge_tts(fresh_home):
 async def test_edge_tts_synthesizes_real_audio(fresh_home, monkeypatch):
     """The default TTS truly produces playable mp3 bytes on this machine.
 
-    Three isolation fixes:
+    Two isolation fixes:
     - fresh_home: without it the test read the USER'S real ~/.universe
       config (e.g. tts_provider=fish-audio) and failed on the user's
       billing instead of testing Universe's default edge-tts path.
-    - missing wheel: the edge-tts package is an optional dependency —
-      skip honestly when it is not installed.
     - live-network skip: when Microsoft's endpoint is unreachable from
       this box, skip honestly instead of reporting an environment
       failure as a code failure."""
-    pytest.importorskip("edge_tts",
-                        reason="edge-tts is not installed in this environment")
     import socket
     try:
         socket.create_connection(("speech.platform.bing.com", 443), timeout=5).close()

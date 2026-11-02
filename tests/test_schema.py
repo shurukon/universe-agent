@@ -230,12 +230,12 @@ def test_v22_row_transforms_on_fresh_database(raw_home):
     assert st.query_one("SELECT agent FROM agent_models WHERE agent='general';") is None
     row = st.query_one("SELECT provider, model FROM agent_models WHERE agent='universe';")
     assert row == {"provider": "p1", "model": "m1"}
+    # v28 single-universe purge empties the bundled skills corpus HONESTLY
+    # (the 1,584-skill library is gone by design) — the seeded legacy skill
+    # row does not survive to be renamed; the ownership row is gone with it.
+    assert st.query_one("SELECT id FROM skills WHERE id='s-old';") is None
     assert st.query_one(
         "SELECT agent FROM skill_agent_ownership WHERE agent='general';") is None
-    # v28 (single universe) purges the ENTIRE skills corpus ("honest empty",
-    # 2026-10-31): the seeded s-old row never survives to be renamed — the
-    # corpus ends at zero rows by design
-    assert st.query_one("SELECT COUNT(*) AS c FROM skills;")["c"] == 0
 
     g = st.query_one("SELECT project_id FROM goals WHERE id='g-old';")
     assert g["project_id"] == "proj-real"   # re-parented to the oldest REAL project

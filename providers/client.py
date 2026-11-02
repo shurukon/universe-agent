@@ -148,17 +148,7 @@ async def _stream_completion(client: Any, kwargs: dict[str, Any],
     Raises on any provider hiccup; the caller falls back to the proven
     non-streaming call."""
     from types import SimpleNamespace
-    try:
-        # m6 (audit 2026-10): without stream_options the provider never
-        # sends the final usage-only chunk, so every streamed call was
-        # accounted as 0 tokens. TypeError guard: OpenAI SDKs predating
-        # stream_options reject the kwarg; a provider that rejects the
-        # FIELD fails the stream transport and the caller's existing
-        # non-stream fallback applies (same as other stream failures).
-        stream = await client.chat.completions.create(
-            **kwargs, stream=True, stream_options={"include_usage": True})
-    except TypeError:
-        stream = await client.chat.completions.create(**kwargs, stream=True)
+    stream = await client.chat.completions.create(**kwargs, stream=True)
     text_parts: list[str] = []
     tc_acc: dict[int, dict] = {}
     finish_reason = "stop"

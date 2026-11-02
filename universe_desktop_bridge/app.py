@@ -937,7 +937,7 @@ async def sessions(limit: int = 50, project_id: str | None = None,
     # New sessions
     try:
         sql_s = ("SELECT id, title as text, 'active' as status, created_at, updated_at as completed_at, '' as final_summary, "
-                 "project_id, title, '' as session_id, archived, deleted, pinned, 'task' as kind "
+                 "project_id, title, id as session_id, archived, deleted, pinned, 'task' as kind "
                  "FROM sessions WHERE deleted=0")
         params_s: list[Any] = []
         if not include_archived:
@@ -978,7 +978,11 @@ async def sessions(limit: int = 50, project_id: str | None = None,
     out = []
     for r in rows:
         item = _goal_row(r)
-        out.append({**item, "session_id": r["id"], "turn_id": r["id"], "goal_id": r["id"]})
+        # session_id keeps its SQL-mapped meaning: the session's own id for
+        # session rows, the PARENT task id (parent_goal_id) for legacy goal
+        # rows — the old blanket override with the row's own id destroyed
+        # the thread linkage the UI needs.
+        out.append({**item, "turn_id": r["id"], "goal_id": r["id"]})
     return {"sessions": out, "goals": out}
 
 @app.get("/api/session/{session_id}")
@@ -1988,34 +1992,66 @@ async def delete_goal(turn_id: str, hard: bool = False) -> dict[str, Any]:
 @app.post("/api/turn/{turn_id}/branch")
 @app.post("/api/goal/{goal_id}/branch")
 async def branch_goal(turn_id: str) -> dict[str, Any]:
-    """Fork a session (audit C2 fix): a branch is a NEW SESSION whose
-    transcript is a copy of the parent's — session-store fork semantics,
-    no goals.session_id column anywhere (that column never existed; the
-    old queries here made this endpoint a guaranteed 500)."""
+    """Fork a finished chat (C2 regression fix — this used to be a
+    guaranteed 500 because it queried goals.session_id, a column that
+    never existed).
+
+    Session authority: if the goal row owns a real session, the branch IS
+    a session fork (Codex fork parity) — a new session with a copied
+    transcript and lineage recorded. Otherwise the legacy contract holds:
+    a placeholder task row (kind='task') referencing the parent via
+    parent_goal_id, ready to run or reference."""
+    from core.agent.base_agent import new_id
     from core.session.store import get_session_store
     st = get_storage()
+    row = st.query_one(
+        "SELECT id, text, project_id, title, owner_session_id FROM goals "
+        "WHERE id=?;", (turn_id,))
+    if row is None:
+        raise HTTPException(404, {"code": "turn_not_found",
+                                   "message": "cannot branch an unknown goal"})
     store = get_session_store()
-    src_row = st.query_one(
-        "SELECT id, text, owner_session_id FROM goals WHERE id=?;",
-        (turn_id,))
-    parent_session = str((src_row or {}).get("owner_session_id") or "")
-    if not parent_session:
-        # the id may itself already be a session id (session-era clients)
-        parent_session = turn_id
-    if store.get(parent_session) is None:
-        if src_row is None:
-            raise HTTPException(404, {"code": "turn_not_found",
-                                       "message": "cannot branch an unknown goal"})
-        # a legacy goal without any transcript: synthesize the parent
-        # session row so the fork has a lineage to record
-        store.create(id=parent_session, title="Legacy task")
-    new = store.fork(parent_session)
-    if new is None:
-        raise HTTPException(500, {"code": "fork_failed",
-                                   "message": "session fork failed"})
-    return {"ok": True, "turn_id": new["id"], "session_id": new["id"],
-            "parent_session": parent_session,
-            "text": str((src_row or {}).get("text", ""))}
+    src_sid = str(row["owner_session_id"] or "").strip()
+    if src_sid and store.get(src_sid) is not None:
+        forked = store.fork(src_sid)
+        return {"ok": True, "turn_id": row["id"], "session_id": forked["id"],
+                "parent_session_id": src_sid, "text": row["text"]}
+    # Legacy fallback: no session backing this goal — placeholder task row.
+    new_gid = new_id("goal-")
+    with st.transaction() as conn:
+        conn.execute(
+            "INSERT INTO goals(id,text,status,created_at,project_id,title,"
+            "owner_session_id,parent_goal_id,kind) VALUES(?,?,?,?,?,?,?,?,?);",
+            (new_gid, row["text"], "pending", time.time(),
+             row["project_id"] or "",
+             f"⑂ {(row['title'] or row['text'])[:80]}",
+             str(row["owner_session_id"] or ""), turn_id, "task"),
+        )
+    return {"ok": True, "turn_id": new_gid, "session_id": turn_id,
+            "text": row["text"]}
+
+
+@app.post("/api/turn/{turn_id}/compact")
+async def compact_turn(turn_id: str) -> dict[str, Any]:
+    """Compact the session backing a task/chat (UI /compact action).
+
+    The compaction is a recorded event in the transcript: entries before
+    the marker leave the replay, the marker's summary IS the prior
+    context. Returns the approximate token delta for the toast."""
+    from core.session.store import get_session_store
+    st = get_storage()
+    row = st.query_one(
+        "SELECT owner_session_id FROM goals WHERE id=?;", (turn_id,))
+    sid = str((row or {}).get("owner_session_id") or "").strip() or turn_id
+    store = get_session_store()
+    if store.get(sid) is None or not store.transcript(sid):
+        return {"ok": True, "compacted": False,
+                "note": "empty — nothing to compact"}
+    msgs = store.history_messages(sid)
+    pre = max(1, sum(len(str(m.get("content") or "")) for m in msgs) // 4)
+    store.compact_separator(sid, pre, 0, "[context compacted from the UI]")
+    return {"ok": True, "compacted": True, "session_id": sid,
+            "pre_tokens": pre, "post_tokens": 0}
 
 
 class TruncateRequest(BaseModel):

@@ -583,6 +583,25 @@ export const api = {
       body: JSON.stringify({ turn_id: turnId }),
     }),
 
+  // Session actions (the /fork /compact trio from the slash registry)
+  branchTask: (turnId: string) =>
+    request<{
+      ok: boolean;
+      turn_id: string;
+      session_id: string;
+      parent_session_id?: string;
+      text: string;
+    }>(`/api/turn/${encodeURIComponent(turnId)}/branch`, { method: "POST" }),
+  compactTask: (turnId: string) =>
+    request<{
+      ok: boolean;
+      compacted: boolean;
+      note?: string;
+      session_id?: string;
+      pre_tokens?: number;
+      post_tokens?: number;
+    }>(`/api/turn/${encodeURIComponent(turnId)}/compact`, { method: "POST" }),
+
   memory: () => request<Record<string, unknown>>("/api/memory"),
 
   goals: (limit = 50, projectId?: string, includeArchived = false) =>

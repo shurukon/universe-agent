@@ -44,6 +44,7 @@ def record(turn_id: str, *, agent: str, event: str, detail: str = "") -> None:
             "goal_complete": "turn_completed",
             "turn_failed": "turn_failed",
             "turn_complete": "turn_completed",
+            "turn_failed": "turn_failed",
         }
         emit(_WIRE.get(event, event), turn_id=turn_id, agent=agent, detail=detail)
     except Exception:

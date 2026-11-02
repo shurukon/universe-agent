@@ -19,11 +19,7 @@ def upgrade(st: LocalStorage) -> None:
     for tbl in ("planets", "asteroids", "handoffs", "task_outcomes", "skill_activations", "capability_grants", "tool_lifecycle", "goal_feedback"):
         _rename(tbl, "goal_id", "turn_id")
     try:
-        # the column loop above already renamed goal_id -> turn_id, so the
-        # table-rename guard must check the POST-rename column (checking
-        # goal_id here was always False on a fresh database and the table
-        # stayed goal_feedback while the bridge writes turn_feedback)
-        if _has_col("goal_feedback", "goal_id") or _has_col("goal_feedback", "turn_id"):
+        if _has_col("goal_feedback", "goal_id"):
             st.execute("ALTER TABLE goal_feedback RENAME TO turn_feedback;")
     except Exception:
         pass

@@ -1,14 +1,22 @@
+# Adapted to the session-engine default (2026-11): a posted turn no longer
+# inserts a kind='message' child row into the goals table — the message and
+# its reply are appended to the SESSION TRANSCRIPT (core/session/store.py)
+# under session_id = task_id, while the bridge still owns the kind='task'
+# container row. These tests mirror that reality: thread children are read
+# from the transcript, and the session-authority detail endpoint
+# (/api/session/{id}) is the thread reader.
 """tests/test_task_threading.py — v17 desktop model: tasks are containers,
-messages are children.
+messages are transcript turns.
 
 Covers the threading fixes end to end at the bridge API level (no provider
 keys: the orchestrator's LLM is replaced with a deterministic fake):
   * POST /api/turn without turn_id auto-creates a 'task' container titled
-    "New task" (never the message text) and parents a 'message' goal to it
+    "New task" (never the message text) and appends the message to the
+    task's session transcript
   * POST /api/turn with turn_id continues the SAME task (one container,
-    two message children; the task list never grows per message)
-  * GET /api/sessions returns only task rows (message children are invisible)
-  * GET /api/turn/{task} returns the full thread (messages list)
+    two transcript user messages; the task list never grows per message)
+  * GET /api/sessions returns only task rows (message turns are invisible)
+  * GET /api/session/{task} returns the full thread (transcript messages)
   * POST /api/tasks/draft creates an empty container titled "New task"
   * client_msg_id idempotency: a duplicate send returns duplicate=true and
     does NOT start a second goal
@@ -101,17 +109,11 @@ def thread_client(monkeypatch, fresh_home):
 
 
 def _msg_rows(task_id: str) -> list[dict[str, Any]]:
-    """The thread lives in the session transcript now (session authority):
-    one kind=turn_start user entry per accepted message. kind=turn_end /
-    tool_trace rows are engine bookkeeping, not thread messages."""
+    """The thread children: user messages appended to the task's session
+    transcript (kind='message') in order — the session-engine model."""
     from core.session.store import get_session_store
-    return [
-        {"id": e.get("turn_id") or e.get("seq"), "role": e.get("role"),
-         "kind": e.get("kind"), "text": str(e.get("content") or ""),
-         "title": "", "session_id": task_id}
-        for e in get_session_store().transcript(task_id)
-        if e.get("kind") == "turn_start" and e.get("role") == "user"
-    ]
+    return [e for e in get_session_store().transcript(task_id)
+            if e.get("kind") == "message" and e.get("role") == "user"]
 
 
 def _wait_task_row(task_id: str) -> dict[str, Any] | None:
@@ -126,8 +128,8 @@ def _wait_task_row(task_id: str) -> dict[str, Any] | None:
 
 
 def _wait_msg_count(task_id: str, n: int) -> list[dict[str, Any]]:
-    """run_turn inserts the message child asynchronously — poll until the
-    thread holds n rows (or time out with whatever exists)."""
+    """run_turn appends the message turn asynchronously — poll until the
+    transcript holds n user messages (or time out with whatever exists)."""
     for _ in range(60):
         msgs = _msg_rows(task_id)
         if len(msgs) >= n:
@@ -147,12 +149,11 @@ class TestTaskThreading:
         assert row["kind"] == "task"
         # THE core rule: the title is NEVER the message text
         assert row["title"] == "New task"
-        # and a message child was created under it (the turn runs
-        # asynchronously — poll until the transcript carries it)
+        # and a message turn was appended to the task's transcript
         msgs = _wait_msg_count(task_id, 1)
         assert len(msgs) == 1
-        assert msgs[0]["kind"] == "turn_start"
-        assert msgs[0]["text"].startswith("build me")
+        assert msgs[0]["kind"] == "message"
+        assert msgs[0]["content"].startswith("build me")
 
     def test_continuation_reuses_task_no_new_row(self, thread_client):
         r1 = thread_client.post("/api/turn", json={"text": "first message here"})
@@ -164,12 +165,12 @@ class TestTaskThreading:
         body2 = r2.json()
         assert body2["task_id"] == task_id  # SAME container
         assert body2["turn_id"] != body2["task_id"]  # new message goal
-        # exactly one task row, two message children
+        # exactly one task row, two transcript user messages
         tasks = get_storage().query_all("SELECT id FROM goals WHERE kind='task';")
         assert len(tasks) == 1
         msgs = _wait_msg_count(task_id, 2)
         assert len(msgs) == 2
-        assert msgs[1]["text"].startswith("second message")
+        assert msgs[1]["content"].startswith("second message")
 
     def test_goals_list_hides_message_children(self, thread_client):
         r1 = thread_client.post("/api/turn", json={"text": "thread starter"})
@@ -180,20 +181,23 @@ class TestTaskThreading:
         rows = thread_client.get("/api/sessions").json()["goals"]
         ids = [g["turn_id"] for g in rows]
         assert task_id in ids
-        msg_ids = {m["id"] for m in _msg_rows(task_id)}
-        assert not (set(ids) & msg_ids), "message children leaked into the task list"
+        msg_turn_ids = {m.get("turn_id") for m in _msg_rows(task_id)}
+        assert not (set(ids) & msg_turn_ids), "message turns leaked into the task list"
 
     def test_goal_detail_returns_thread(self, thread_client):
         r1 = thread_client.post("/api/turn", json={"text": "hello thread"})
         task_id = r1.json()["task_id"]
         _wait_task_row(task_id)
         _wait_msg_count(task_id, 1)
-        detail = thread_client.get(f"/api/turn/{task_id}").json()
-        assert detail["kind"] == "task"
-        thread = detail.get("messages") or []
+        # session authority: the thread lives in the transcript
+        detail = thread_client.get(f"/api/session/{task_id}").json()
+        assert detail.get("kind") == "task"
+        thread = [m for m in (detail.get("messages") or [])
+                  if m.get("text")]
         assert thread, "task detail returned no thread"
-        assert thread[0]["role"] == "user"
-        assert thread[0]["text"].startswith("hello thread")
+        assert any(m.get("role") == "user"
+                   and str(m.get("text", "")).startswith("hello thread")
+                   for m in thread), thread
 
     def test_draft_task_endpoint(self, thread_client):
         r = thread_client.post("/api/tasks/draft?project_id=general")
@@ -219,8 +223,8 @@ class TestTaskThreading:
         second = r2.json()
         assert second.get("duplicate") is True
         assert second["turn_id"] == first["turn_id"]
-        # only ONE message child was created
-        msgs = _msg_rows(first["task_id"])
+        # only ONE message turn was appended
+        msgs = _wait_msg_count(first["task_id"], 1)
         assert len(msgs) == 1
 
     def test_continuation_on_missing_task_404(self, thread_client):

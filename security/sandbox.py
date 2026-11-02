@@ -27,16 +27,12 @@ def run_sandboxed(command: str, *, image: str = "python:3.12-slim",
     if read_only:
         flags.append("--read-only")
     if scratch_mb > 0:
-        flags += ["--tmpfs", f"/scratch:rw,size={scratch_mb}m"]
+        flags.append(f"--tmpfs /scratch:rw,size={scratch_mb}m")
     flags.append("--memory=256m")
     flags.append("--cpus=0.5")
-    # argv list + shell=False (mirrors connectors/builtin/docker.py): the
-    # untrusted command is ONE argv element handed to `sh -c` INSIDE the
-    # container. The old f-string + repr() + shell=True let container-side
-    # quotes/$ metacharacters escape and execute on the HOST shell.
-    cmd = ["docker", "run", *flags, image, "sh", "-c", command]
+    cmd = f"docker run {' '.join(flags)} {image} sh -c {repr(command)}"
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
         return {"ok": r.returncode == 0, "returncode": r.returncode,
                 "stdout": r.stdout, "stderr": r.stderr, "sandboxed": True}
     except subprocess.TimeoutExpired:

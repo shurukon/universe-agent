@@ -83,8 +83,5 @@ async def resume_from(turn_id: str, io) -> str:
         io.print(f"  [{event.get('phase')}] {event.get('agent', '')} {event.get('step', '')}")
     summary = await get_orchestrator().resume_turn(
         turn_id, on_step=on_step, capability_gate=gate)
-    _ok = bool(summary.get("success", False))
-    io.print(f"Resumed goal complete: success={_ok}"
-             + (f" gravity={summary['gravity_score']:.2f}"
-                if "gravity_score" in summary else ""))
-    return f"Resumed {turn_id}: success={_ok}."
+    io.print(f"Resumed goal complete: success={summary.get('success')} gravity={summary.get('gravity_score', 0.0):.2f}")
+    return f"Resumed {turn_id}: success={summary.get('success')}."

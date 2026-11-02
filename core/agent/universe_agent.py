@@ -208,6 +208,100 @@ class UniverseAgent:
     StepHandler = Any  # Callable[[dict[str, Any]], Any] — sync or async
     HandoffHandler = Any  # Callable[[dict[str, Any]], Any] — sync or async
 
+    # ---- the session engine (default) --------------------------------------
+    async def _run_session_turn(self, *, text: str, language: str,
+                                turn_id: str, on_step, capability_gate,
+                                owner_session_id: str, project_id,
+                                project_root, session_id,
+                                effort) -> dict[str, Any]:
+        """The session-engine turn (the Claude Code / Codex contract).
+
+        The session transcript is the ONLY durable state: no goals rows,
+        no planets, no gravity — the turn is appended to the transcript,
+        replayed as context, and closed with a turn_end event. The tool
+        loop still runs on the same ZCode turn engine and the Capability
+        Gate still guards every call. GAX_ENGINE=goal restores the legacy
+        goal-state path until it is deleted after the burn-in period."""
+        import os as _os
+        from core.session.store import get_session_store
+        store = get_session_store()
+        sid = str(session_id or "").strip()
+        if sid and store.get(sid) is None:
+            try:
+                store.create(id=sid, title=str(text)[:120])
+            except Exception:
+                pass
+        if not sid or store.get(sid) is None:
+            sid = store.create(title=str(text)[:120])["id"]
+        store.append(sid, {"kind": "turn_start", "turn_id": turn_id,
+                           "status": "executing"})
+        store.append(sid, {"kind": "message", "role": "user",
+                           "content": str(text), "turn_id": turn_id})
+        if on_step:
+            await self._maybe_call(on_step, {"phase": "agent_turn",
+                                             "agent": "universe", "step": 0,
+                                             "instruction": str(text)[:200]})
+        history = store.history_messages(sid)
+        effective_root = str(project_root or "")
+        if not effective_root and project_id:
+            try:
+                from storage.local import get_storage as _gs
+                _pr = _gs().query_one("SELECT root FROM projects WHERE id=?",
+                                      (project_id,))
+                if _pr and _pr.get("root"):
+                    effective_root = str(_pr["root"])
+            except Exception:
+                pass
+        if not effective_root:
+            try:
+                from config import get_config
+                effective_root = str(get_config().get("project_root", "") or "")
+            except Exception:
+                effective_root = ""
+        messages = self._build_turn_messages(
+            goal_text=str(text), language=str(language or "en"),
+            history=history[:-1], l4_skills=[], l3_stars=[],
+            rules=self.memory.active_rules(), project_root=effective_root)
+        from core.agent.steer import take_steer as _take_steer
+        token_budget = EFFORT_MAX_TOKENS.get(
+            str(effort or ""), EFFORT_DEFAULT_MAX_TOKENS)
+        gate = capability_gate or get_gate()
+        from core.agent.turn_engine import run_turn as _engine_turn
+        try:
+            resp, events, turn_out = await _engine_turn(
+                llm_client=self.llm, messages=messages, agent="universe",
+                turn_id=turn_id, capability_gate=gate,
+                max_tokens=token_budget,
+                drain_steer=lambda: [str(m.get("text", ""))
+                                     for m in _take_steer(turn_id)])
+        except Exception as e:                                   # honest failure
+            store.append(sid, {"kind": "turn_end", "turn_id": turn_id,
+                               "status": "failed", "stop_reason": "error",
+                               "error": str(e)[:500]})
+            return {"engine": "session", "session_id": sid,
+                    "turn_id": turn_id, "success": False,
+                    "reply": f"Turn failed: {e}", "steps": [],
+                    "tools_used": []}
+        reply = str(resp.text or "").strip()
+        for _ev in events:          # tool protocol atoms ride in the transcript
+            if _ev.get("tool"):
+                store.append(sid, {"kind": "tool", "role": "tool",
+                                   "tool_call_id": f"{_ev.get('tool')}:{_ev.get('seq', '')}",
+                                   "content": json.dumps(_ev.get("args") or {},
+                                                         ensure_ascii=False)[:4000]})
+        store.append(sid, {"kind": "message", "role": "assistant",
+                           "content": reply, "turn_id": turn_id})
+        store.append(sid, {"kind": "turn_end", "turn_id": turn_id,
+                           "status": "completed"})
+        return {"engine": "session", "session_id": sid, "turn_id": turn_id,
+                "success": True, "reply": reply, "goal_text": str(text),
+                "tools_used": sorted({str(e.get("tool", "")) for e in events
+                                      if e.get("tool")}),
+                "steps": [], "tool_failures": [],
+                "input_tokens": int(getattr(resp, "input_tokens", 0) or 0),
+                "output_tokens": int(getattr(resp, "output_tokens", 0) or 0),
+                "llm_calls": 1}
+
     async def run_turn(self, text: str, *, language: str = "en",
                        turn_id: str | None = None,
                        on_step: StepHandler = None,
@@ -239,20 +333,19 @@ class UniverseAgent:
         if parent_goal_id and not session_id:
             session_id = parent_goal_id
         turn_id = turn_id or new_id("turn-")
-        # ---- engine selection (P0): "session" is the DEFAULT engine —
-        # the session is the unit of work (no goal rows, no planets, no
-        # hot-path memory). The legacy goal path stays reachable via
-        # GAX_ENGINE=goal (or config "engine": "goal") for rollback.
-        from config import get_config as _cfg_engine
-        engine_mode = str(_cfg_engine().get("engine", "session")
-                          or "session").strip().lower()
+        # Engine selection: the session engine is the DEFAULT (the goal
+        # era is over); GAX_ENGINE=goal restores the legacy goal-state
+        # path until it is deleted after the burn-in period.
+        import os as _os_engine
+        engine_mode = (_os_engine.environ.get("GAX_ENGINE", "")
+                       or "session").strip().lower()
         if engine_mode != "goal":
             return await self._run_session_turn(
-                text=text, turn_id=turn_id, session_id=session_id,
-                owner_session_id=owner_session_id, language=language,
-                effort=effort, project_id=project_id,
-                project_root=project_root, capability_gate=capability_gate,
-                on_step=on_step)
+                text=text, language=language, turn_id=turn_id,
+                on_step=on_step, capability_gate=capability_gate,
+                owner_session_id=owner_session_id, project_id=project_id,
+                project_root=project_root, session_id=session_id,
+                effort=effort)
         now = time.time()
         with self._st.transaction() as conn:
             conn.execute(
@@ -637,13 +730,6 @@ class UniverseAgent:
                 # for ended goals (engine-fix round)
                 from hooks import get_hook_manager
                 get_hook_manager().clear_goal_state(turn_id)
-                # per-turn consent grants die with the turn (m7, audit
-                # 2026-10): persisted rows would otherwise be restored on
-                # every restart, making a one-time approval permanent.
-                # (get_gate is the module-level import — a function-level
-                # `from ... import get_gate` here made the name LOCAL to
-                # run_turn and UnboundLocalError'd every goal-path turn)
-                get_gate().clear_turn(turn_id)
             except Exception:
                 pass
             # held-guarded release: `if lock.locked(): release()` released
@@ -661,97 +747,6 @@ class UniverseAgent:
                 self._turn_locks.pop(turn_id, None)
             else:
                 self._goal_lock_refs[turn_id] = refs
-
-    # ---- the session engine (the DEFAULT path) ---------------------------
-    async def _run_session_turn(self, *, text: str, turn_id: str,
-                                session_id: str | None,
-                                owner_session_id: str = "",
-                                language: str = "en",
-                                effort: str | None = None,
-                                project_id: str | None = None,
-                                project_root: str | None = None,
-                                capability_gate=None,
-                                on_step=None) -> dict[str, Any]:
-        """The session-owned path: the session is the unit of work.
-        No goals rows, no planets, no checkpoints, no hot-path memory
-        writes — the append-only transcript is the only durable state.
-        A goals row created upstream (the desktop task container mints
-        its own row before calling run_turn) still gets its terminal
-        status update, best-effort — this path never INSERTs new ones."""
-        from core.engine.session_loop import run_session_turn
-        from security.capability import get_gate
-        gate = capability_gate or get_gate()
-        sid = session_id or owner_session_id or ""
-        if not sid:
-            from core.session.store import new_session_id
-            sid = new_session_id()
-        # project root resolution — same precedence as the goal path
-        effective_root = ""
-        if project_root:
-            effective_root = str(project_root)
-        elif project_id:
-            try:
-                _pr = self._st.query_one(
-                    "SELECT root FROM projects WHERE id=?", (project_id,))
-                if _pr and _pr.get("root"):
-                    effective_root = str(_pr["root"])
-            except Exception:
-                pass
-        if not effective_root:
-            try:
-                from config import get_config as _gc2
-                effective_root = str(_gc2().get("project_root", "") or "")
-            except Exception:
-                effective_root = ""
-        _tok = None
-        try:
-            from core.agent.project_context import project_root_ctx
-            _tok = project_root_ctx.set(effective_root or None)
-        except Exception:
-            pass
-        try:
-            try:
-                rules = list(self.memory.active_rules())
-            except Exception:
-                rules = []
-
-            def _build(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-                return self._build_turn_messages(
-                    goal_text=text, language=language, history=history,
-                    l4_skills=[], l3_stars=[], rules=rules,
-                    project_root=effective_root)
-
-            summary = await run_session_turn(
-                text=text, session_id=sid, llm_client=self.llm,
-                build_messages=_build, gate=gate, turn_id=turn_id,
-                language=language, effort=effort or "", on_step=on_step)
-        finally:
-            if _tok is not None:
-                try:
-                    from core.agent.project_context import project_root_ctx as _pc2
-                    _pc2.reset(_tok)
-                except Exception:
-                    pass
-            try:
-                gate.clear_turn(turn_id)
-            except Exception:
-                pass
-        # upstream task container closure (best-effort, never INSERT)
-        try:
-            _row = self._st.query_one(
-                "SELECT id FROM goals WHERE id=?;", (turn_id,))
-            if _row is not None:
-                _status = ("completed" if (summary.get("reply")
-                            or not summary.get("tools_failed"))
-                           else "failed")
-                with self._st.transaction() as conn:
-                    conn.execute(
-                        "UPDATE goals SET status=?, completed_at=?, "
-                        "final_summary=? WHERE id=?;",
-                        (_status, time.time(), json.dumps(summary), turn_id))
-        except Exception:
-            pass
-        return summary
 
     def _load_turn_history(self, parent_task_id: str | None,
                            exclude_goal_id: str) -> list[dict[str, str]]:
@@ -776,7 +771,7 @@ class UniverseAgent:
         try:
             rows = self._st.query_all(
                 "SELECT text, status, final_summary FROM goals WHERE "
-                "owner_session_id=? AND kind='message' AND id<>? "
+                "session_id=? AND kind='message' AND id<>? "
                 "ORDER BY created_at ASC;",
                 (parent_task_id, exclude_goal_id))
         except Exception:

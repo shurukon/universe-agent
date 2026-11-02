@@ -6,7 +6,6 @@ containing `"` execute arbitrary shell.
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import time
 
@@ -18,38 +17,12 @@ def _repo_arg(repo: str = ".", cwd: str = "", path: str = "") -> str:
     return str(cwd or path or repo or ".")
 
 
-def _git_env() -> dict[str, str]:
-    """Minimal washed environment for every git subprocess.
-
-    git subprocesses inherit the FULL process env today, and commit/push run
-    repo hooks with it — a malicious hook could read UNIVERSE_PASSPHRASE or
-    UNIVERSE_BRIDGE_TOKEN straight out of the environment (m8, audit
-    2026-10). Allowlist instead of denylist: only what git itself needs —
-    plus the Windows runtime vars without which git.exe cannot start."""
-    keep = [
-        "PATH", "HOME", "LANG", "LC_ALL", "TZ",
-        # git essentials on Windows (git for Windows reads these for its
-        # config/credential-helper locations and cannot launch without them)
-        "SystemRoot", "SystemDrive", "windir", "ComSpec",
-        "TEMP", "TMP", "APPDATA", "LOCALAPPDATA",
-        "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
-        "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
-    ]
-    env: dict[str, str] = {}
-    for name in keep:
-        val = os.environ.get(name)
-        if val is not None:
-            env[name] = val
-    return env
-
-
 def _git(args: list[str], cwd: str, timeout: int = 60) -> dict:
-    """Run git with an argv list and a washed env — no shell, no injection
-    surface, and no secrets for repo hooks to read."""
+    """Run git with an argv list — no shell, no injection surface."""
     start = time.time()
     try:
         proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
-                              text=True, timeout=timeout, env=_git_env())
+                              text=True, timeout=timeout)
         return {
             "ok": proc.returncode == 0,
             "returncode": proc.returncode,

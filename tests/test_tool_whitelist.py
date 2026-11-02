@@ -17,23 +17,25 @@ def _chdir_tmp(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_agent_cannot_call_tool_outside_its_whitelist(fresh_home):
-    """Phase 0.1 enforcement, current reality: the specialist roster was
-    collapsed into ONE universe agent (2026-10-31), so 'research' is an
-    UNREGISTERED name now — the m2 fail-closed rule denies it outright
-    (unknown_agent), which strictly subsumes the old whitelist denial."""
+    """Phase 0.1: the gate rejects tools outside the agent's whitelist.
+    Post-S1 the registered agent is 'universe' (the union of the retired
+    specialists' whitelists); TestRunner is a REAL registered tool that is
+    deliberately NOT in that whitelist — the gate must reject it, not just
+    decorate the agent object."""
     from connectors.builtin import get_registry
     reg = get_registry()
-    r = await reg.call("Write", agent="research", turn_id="g1",
-                       args={"path": "test_file.txt", "content": "x"})
+    r = await reg.call("TestRunner", agent="universe", turn_id="g1", args={})
     assert r["ok"] is False
-    assert r["blocked_by"] == "unknown_agent"
-    assert "research" in r["error"]
+    assert r["blocked_by"] == "whitelist"
+    assert "universe" in r["error"]
+    assert "TestRunner" in r["error"]
+    assert "TestRunner" not in r.get("whitelist", [])
 
 
 @pytest.mark.asyncio
 async def test_agent_can_call_tool_inside_its_whitelist(fresh_home):
-    """Phase 0.1 sanity: the universe agent (sole registered doer) CAN call
-    Write — enforcement doesn't accidentally block legitimate calls."""
+    """Phase 0.1 sanity: the registered agent CAN still call file.write —
+    the enforcement doesn't accidentally block legitimate calls."""
     from connectors.builtin import get_registry
     reg = get_registry()
     args = {"path": "test_file.txt", "content": "ok"}
@@ -82,22 +84,18 @@ async def test_unregistered_moon_agent_is_denied_not_exempt(fresh_home):
 
 @pytest.mark.asyncio
 async def test_whitelist_block_is_audited(fresh_home):
-    """Phase 0.1: a fail-closed gate denial must produce an audit entry so
-    the operator can see someone tried to escape their scope. The
-    blocked:whitelist denial needs a whitelisted agent; the retired
-    specialist names now hit the strictly-stronger unknown_agent denial,
-    which is audited exactly the same way."""
+    """Phase 0.1: a blocked-by-whitelist call must produce an audit entry so
+    the operator can see someone tried to escape their whitelist."""
     from connectors.builtin import get_registry
     from security.audit import tail_audit
     reg = get_registry()
-    await reg.call("Bash", agent="research", turn_id="g1",
-                   args={"cmd": "echo should-be-blocked"})
-    # 'research' is no longer a registered agent — the m2 fail-closed rule
-    # denies (and audits) the attempt
+    # S1: TestRunner is registered but NOT in universe's merged whitelist,
+    # so the gate must block and AUDIT the attempt
+    await reg.call("TestRunner", agent="universe", turn_id="g1", args={})
     class IO:
         def __init__(self): self.out = []
         def print(self, *a, **k): self.out.append(a)
     io = IO()
     tail_audit(io, 20)
     lines = " ".join(str(a) for a in io.out)
-    assert "blocked:unknown_agent" in lines
+    assert "blocked:whitelist" in lines

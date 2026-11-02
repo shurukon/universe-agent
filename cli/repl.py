@@ -27,14 +27,6 @@ class ConsoleIO:
         self._outputs: list[str] = []
 
     def print(self, *args, **kwargs) -> None:
-        # rich renderables (Panel, Table, ...) must reach the console AS
-        # objects: str() serializes repr text like
-        # "<rich.panel.Panel object at 0x...>" (audit H1) — only plain
-        # text goes through the string-capture path
-        if len(args) == 1 and hasattr(args[0], "__rich_console__"):
-            self._outputs.append(f"[{type(args[0]).__name__}]")
-            self.console.print(args[0], **kwargs)
-            return
         line = " ".join(str(a) for a in args)
         self._outputs.append(line)
         self.console.print(line, **kwargs)
@@ -72,39 +64,7 @@ async def repl_loop(io: ConsoleIO | None = None) -> None:
     from core.memory.subconscious.loop import get_loop
     from security.capability import get_gate
     subconscious = get_loop()
-    # audit M9: setup writes "subconscious_enabled" and nothing ever read
-    # it — the loop used to run no matter what the user chose
-    if not get_config().get("subconscious_enabled", True):
-        io.print("[dim]Subconscious loop disabled in settings.[/dim]")
-    else:
-        subconscious.start()
-    # audit H4: the Telegram channel was configurable and testable but its
-    # start() was never called anywhere — a configured bot received nothing.
-    # Start polling on the REPL loop when a token is configured.
-    tg_task = None
-    try:
-        from channels.telegram import get_telegram_channel as _get_tg
-        _tg = _get_tg()
-        if getattr(_tg, "token", ""):
-            async def _tg_on_message(text: str, user_id: int) -> str:
-                from cli.session_state import current_session_id
-                orch = get_orchestrator()
-                sid = f"tg-{int(user_id)}"
-                return await orch.chat(str(text), session_id=sid)
-            async def _tg_guard() -> None:
-                try:
-                    await _tg.start(_tg_on_message)
-                except Exception as exc:
-                    io.print(f"[dim]Telegram channel failed to start: {exc}[/dim]")
-            tg_task = asyncio.create_task(_tg_guard())
-            io.print("[dim]Telegram channel: polling started.[/dim]")
-    except Exception:
-        pass  # no channel configured / storage unavailable — stay silent
-
-    def _shutdown() -> None:
-        subconscious.stop()
-        if tg_task is not None:
-            tg_task.cancel()
+    subconscious.start()
 
     async def consent_handler(tool, agent: str, turn_id: str, args: dict) -> bool:
         # full redacted argument vector, not a one-line preview: a truncated
@@ -127,27 +87,24 @@ async def repl_loop(io: ConsoleIO | None = None) -> None:
             line = io.input("\nuniverse> ")
         except (EOFError, KeyboardInterrupt):
             io.print("\nGoodbye. The mind that remembers everything.")
-            _shutdown()
+            subconscious.stop()
             break
         line = line.strip()
         if not line:
             continue
         if line in ("exit", "quit"):
             io.print("Goodbye. The mind that remembers everything.")
-            _shutdown()
+            subconscious.stop()
             break
         if line.startswith("/"):
             await _handle_slash(line, io)
         else:
-            # chat mode — one SESSION for the whole REPL lifetime
-            # (Claude Code model): the first message creates it lazily,
-            # /new /fork /sessions rotate it
+            # chat mode
             try:
                 orch = get_orchestrator()
                 from cli.session_state import current_session_id
-                sid = current_session_id(create=True)
-                reply = await orch.chat(line, session_id=sid)
-                io.print(Panel(reply, title=f"Universe · {sid}", border_style="purple"))
+                reply = await orch.chat(line, session_id=current_session_id())
+                io.console.print(Panel(reply, title="Universe", border_style="purple"))
             except Exception as e:
                 io.print(f"[red]Error:[/red] {e}")
 

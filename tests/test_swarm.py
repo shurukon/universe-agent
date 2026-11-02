@@ -146,30 +146,32 @@ def test_spawn_refuses_retired_or_missing_role(monkeypatch):
 
 # ---- execution semantics ----------------------------------------------------
 
-def test_worker_missions_run_sequentially(monkeypatch):
-    """Current reality (2026-10-31): the specialist roles are purged — only
-    'worker' missions exist, and every mission runs strictly one after the
-    other so two runs never touch the same files at once."""
-    fake_agents = {"universe": _FakeAgent(0.05)}
+def test_workers_run_sequentially(monkeypatch):
+    """Post-S1 spawn only accepts the 'worker' role (the retired specialist
+    roles refuse honestly), and every worker runs STRICTLY one after the
+    other — never overlapping on files. A worker resolves through the
+    UNIVERSE agent machinery (get_agent('universe')), not a phantom
+    'worker' agent."""
+    fake_agents = {r: _FakeAgent(0.05) for r in
+                   ("universe", "research", "review", "security", "code",
+                    "design")}
     _stub_backend(monkeypatch, fake_agents)
 
-    # three workers: strictly one after the other — never overlapping
     EVENTS.clear()
     res = asyncio.run(swarm.spawn(
-        agent="universe", turn_id="g5",
-        missions=[{"role": "worker", "brief": "w1", "deliverable": "d"},
-                  {"brief": "w2"},
-                  {"role": "worker", "brief": "w3"}]))
-    assert res["ok"] is True and res["missions"] == 3
-    assert EVENTS == [("start", "w1"), ("end", "w1"),
-                      ("start", "w2"), ("end", "w2"),
-                      ("start", "w3"), ("end", "w3")], \
+        agent="universe", turn_id="g6",
+        missions=[{"role": "worker", "brief": "c1"},
+                  {"role": "worker", "brief": "c2"}]))
+    assert res["ok"] is True and res["missions"] == 2
+    assert EVENTS == [("start", "c1"), ("end", "c1"),
+                      ("start", "c2"), ("end", "c2")], \
         "worker missions must run sequentially"
-    assert swarm._goal_spawns["g5"]["total"] == 3
+    assert swarm._goal_spawns["g6"]["total"] == 2
 
 
 def test_spawn_emits_stamped_events(monkeypatch):
-    fake_agents = {"universe": _FakeAgent(0.01)}
+    fake_agents = {r: _FakeAgent(0.01) for r in
+                   ("research", "review", "security", "code", "design")}
     _stub_backend(monkeypatch, fake_agents)
     bus = get_event_bus()
     sub = bus.subscribe()
@@ -180,7 +182,7 @@ def test_spawn_emits_stamped_events(monkeypatch):
         kinds = drain_events(sub, "g7")
         assert "subagent_spawned" in kinds, kinds.keys()
         spawned = kinds["subagent_spawned"]
-        assert spawned.get("agent") == "worker"
+        assert spawned.get("agent") == "worker"  # the only surviving role
         assert spawned.get("parent") == "universe"
         assert spawned.get("depth") == 1
         assert "scan the docs" in (spawned.get("brief") or "")

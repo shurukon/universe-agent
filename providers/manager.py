@@ -222,17 +222,6 @@ class ProviderManager:
             key = ProviderKey(id=next_id, alias=alias, status=status,
                               encrypted_secret=encrypted_secret, tier=tier)
             p.keys.append(key)
-            # m3 (audit 2026-10): re-adding a key under an EXISTING alias is
-            # the user CORRECTING a bad credential. The pooled AsyncOpenAI
-            # client cached for (base_url, alias) still authenticates with
-            # the old failing secret and kept failing until restart — evict
-            # it so the next call rebuilds with the new secret (same eviction
-            # remove_key already performs).
-            try:
-                from providers.client import get_llm_client
-                get_llm_client().evict_client(p.base_url, alias)
-            except Exception:
-                pass
         from security.audit import log as _audit
         _audit(actor="user", action="provider_key:add",
                args={"provider": provider, "alias": alias, "id": next_id, "tier": tier})

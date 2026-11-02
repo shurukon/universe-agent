@@ -110,20 +110,20 @@ For deep dives see `docs/SECURITY.md`, `docs/MCP_CLIENT_REWRITE.md`, and
 
 ## The Agents
 
-Universe runs a **single agent `universe`** that plans, executes and verifies on its own, with the full toolset in its hands. The goal-era swarm roles (research/code/review/security/design) were removed with the skills purge — `core/core_agents/agents.py` now registers exactly one agent, and focus work is delegated through the `Task`/`Agent` tool inside the session's turn loop. Every tool call passes through the same Capability Gate.
+Universe runs a **single agent `universe`** that plans, executes and verifies on its own, with the full toolset in its hands. Specialist capabilities live on
+as bounded **swarm subagents** (research/code/review/security/design),
+spawned on demand through the `Agent` tool — depth 2, up to 8 missions per
+goal, 600s per mission. Every tool call, from the general agent or any
+subagent, passes through the same Capability Gate.
 
 | Capability | How it runs                                                     |
 | ---------- | ---------------------------------------------------------------- |
-| universe   | The only agent: message → session transcript → tools → the model declares done. |
-
-## The Engine
-
-`GAX_ENGINE` selects the turn engine: **`session` (default)** — the
-session is the unit of work (no goal rows, no planets on the hot path;
-the append-only transcript is the source of truth, Claude Code / Codex
-style) — or `goal`, the legacy goal-state engine kept for rollback.
-`GAX_TOOL_MAX_ROUNDS` caps the per-turn loop (default 200; `0` restores
-the old unbounded behavior).
+| universe   | The main loop: message → session history → tools → verify.       |
+| Research   | Swarm subagent — web + knowledge-base gathering.                 |
+| Code       | Swarm subagent — writes/edits/runs code.                         |
+| Review     | Swarm subagent — critiques prior output.                          |
+| Security   | Swarm subagent — audits changes and secrets.                     |
+| Design     | Swarm subagent — UI/UX artifacts and visual notes.               |
 
 ## The 5 Memory Tiers
 

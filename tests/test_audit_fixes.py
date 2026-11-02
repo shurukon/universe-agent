@@ -231,6 +231,8 @@ def test_file_urls_never_match_url_resources(gate_env):
 
 
 def test_repo_and_webhook_url_args_are_now_scope_checked(gate_env):
+    import os
+
     from core.agent.base_agent import Tool
     from security.capability import CapabilityGate
 
@@ -245,7 +247,11 @@ def test_repo_and_webhook_url_args_are_now_scope_checked(gate_env):
                 path_args=["repo", "cwd", "path"])
     gate = CapabilityGate()
     assert gate._resource_allowed(tool, {"repo": str(gate_env)}) is True
-    assert gate._resource_allowed(tool, {"repo": "C:/Windows/System32"}) is False
+    # a filesystem location OUTSIDE the project root must be denied. The
+    # literal is platform-native: on POSIX "C:/Windows/System32" is a
+    # RELATIVE path (no drive) and would resolve INSIDE the root.
+    outside = "C:/Windows/System32" if os.name == "nt" else "/etc"
+    assert gate._resource_allowed(tool, {"repo": outside}) is False
 
     # and a tool that does NOT declare repo as a path passes it through —
     # the thirdparty regression that motivated explicit declarations
@@ -306,15 +312,17 @@ def test_tool_result_redacted_and_capped_for_llm_context():
 # ---- 7. cancel-before-planet stays 'cancelled' ---------------------------------
 
 @pytest.mark.asyncio
-async def test_cancel_before_planet_records_cancelled_not_failed(tmp_path,
+async def test_cancel_before_planet_records_cancelled_not_failed(fresh_home,
                                                                  monkeypatch):
     """A cancel landing during classify (planet still None) used to hit
     planet.id inside the CancelledError handler, raise AttributeError FROM
     the except block, and swallow the cancellation — the goal read
-    'failed: NoneType has no attribute id' instead of 'cancelled'."""
-    monkeypatch.setenv("UNIVERSE_HOME", str(tmp_path))
-    from config import get_config
-    get_config().set("project_root", str(tmp_path))
+    'failed: NoneType has no attribute id' instead of 'cancelled'.
+
+    Legacy goal-state path (goals rows + planets + checkpoints): opt in
+    with GAX_ENGINE=goal — the default session engine writes no goals row
+    and owns no planet, so this regression only exists there."""
+    monkeypatch.setenv("GAX_ENGINE", "goal")
     import asyncio
     from core.agent.orchestrator import Orchestrator
 

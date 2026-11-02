@@ -39,8 +39,8 @@ async def test_list_schema_is_refused_not_crashed(_dv_env):
 async def test_columns_mapping_validates(_dv_env):
     r = await _call(args={"path": "inbox.csv",
                           "schema": {"columns": {
-                              # dtype compares against pandas' own names —
-                              # string columns report "object", never "str"
+                              # dtype vocabulary is pandas dtypes ("object",
+                              # "int64" — see the tool's docstring), not "str"
                               "name": {"dtype": "object"},
                               "qty": {"dtype": "int64", "min": 0}}}})
     body = r.get("result", r)

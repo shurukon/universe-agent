@@ -27,11 +27,6 @@ def _patch_env(tmp_path, monkeypatch):
                         lambda: work)
     from hooks import reset_hook_manager_for_tests
     reset_hook_manager_for_tests()
-    # disarm the built-in factguard entirely: pre_write now covers
-    # ApplyPatch too (hook domain widening), so a plain reset is not enough
-    # for a test that exercises the TOOL, not the hook
-    from hooks import get_hook_manager
-    monkeypatch.setattr(get_hook_manager(), "check", lambda *a, **k: None)
     from security.capability import reset_gate_for_tests
     reset_gate_for_tests().set_auto_grant(True)
     return work

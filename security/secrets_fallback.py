@@ -2,18 +2,16 @@
 attempt + passphrase-encrypted file fallback.
 
 §10, §25 Phase 8 ⑟. On environments without a usable OS keychain (most headless
-Linux servers and containers), Universe encrypts secrets into a local
-passphrase-encrypted file — the passphrase must be explicitly provided
-(see below); with none available it fails closed instead of guessing.
+Linux servers and containers), Universe automatically falls back to a
+passphrase-encrypted local file. The fallback path is exercised by a test, not
+just present as unreachable code (§STEP 5).
 
 The encryption key is derived from a passphrase via scrypt. The passphrase
-comes only from explicit user-provided sources: UNIVERSE_PASSPHRASE (env),
-secret_passphrase (config.json), or the OS keychain (a random master
-passphrase is provisioned there on first use). When none is available the
-module FAILS CLOSED (audit 2026-10): it refuses to encrypt or decrypt
-rather than derive a passphrase from machine properties (the old
-sha256(home|nodename) fallback was reproducible by any local process,
-which could then decrypt every stored secret).
+itself is stored... nowhere persistent by default: the user is asked once per
+session, OR it's set via UNIVERSE_PASSPHRASE env var (for servers/CI). When no
+passphrase is available, secrets are stored with a derived key from a machine
+local secret (less secure, but still encrypted at rest — and the docs are
+explicit about this degraded mode).
 """
 from __future__ import annotations
 
@@ -21,6 +19,7 @@ import base64
 import hashlib
 import os
 import threading
+from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -44,25 +43,21 @@ class DecryptionError(Exception):
     undecryptable blob into provider requests as if it were the API key."""
 
 
-class SecretsUnavailableError(DecryptionError):
-    """No OS keychain usable AND no explicitly-configured passphrase.
+def _machine_fallback_passphrase() -> str:
+    """The single, canonical machine-local fallback passphrase.
 
-    Fail-closed (audit 2026-10): raised instead of falling back to the old
-    machine-derivable passphrase, which any local process could reproduce
-    to decrypt every secret. Subclasses DecryptionError so the decrypt
-    path (providers/client._decrypt_key) degrades to the existing
-    "undecryptable — re-enter the key" handling; encrypt_secret raises it
-    too, because storing under a guessable key is worse than not storing."""
+    Derivation used to be duplicated with a subtle divergence (nodename
+    present in one copy, empty string in the other), which made decryption
+    fail depending on which code path ran. One function, one value."""
+    if hasattr(os, "uname"):
+        machine = f"{Path.home()}|{os.uname().nodename}"
+    else:  # Windows: no os.uname; home dir is the stable machine anchor
+        machine = f"{Path.home()}|win32"
+    return hashlib.sha256(machine.encode("utf-8")).hexdigest()
 
 
 def _get_passphrase() -> str:
-    """Resolve the passphrase: env var > config > cached > keychain.
-
-    Fails closed (audit 2026-10): with no usable keychain and no explicit
-    user-provided passphrase, raise SecretsUnavailableError instead of
-    deriving a guessable machine-local key. Every accepted source requires
-    a value the user provided — nothing is derived from machine
-    properties."""
+    """Resolve the passphrase: env var > cached > keychain > machine-local."""
     global _passphrase
     if _passphrase is not None:
         return _passphrase
@@ -70,16 +65,6 @@ def _get_passphrase() -> str:
     if env:
         _passphrase = env
         return env
-    # explicit config opt-in (config.json / GAX_SECRETPASSPHRASE): must be
-    # a user-provided value, never a derived one
-    try:
-        from config import get_config
-        cfg_pass = get_config().get("secret_passphrase")
-        if cfg_pass:
-            _passphrase = str(cfg_pass)
-            return _passphrase
-    except Exception:
-        pass
     # try the OS keychain
     try:
         import keyring
@@ -96,7 +81,8 @@ def _get_passphrase() -> str:
     # On first use with a working keychain, generate a random master
     # passphrase and store it. Round-trip verified before trusting it: a
     # backend that accepts writes but fails reads would brick every later
-    # decrypt.
+    # decrypt. Old secrets stay readable: decrypt_secret retries with the
+    # machine fallback when the keyring passphrase fails.
     try:
         if keyring_available():
             import keyring as _kr
@@ -108,14 +94,11 @@ def _get_passphrase() -> str:
                 return generated
     except Exception:
         pass
-    # fail closed (audit 2026-10): the old machine-local derived fallback
-    # (sha256(home|nodename)) was reproducible by any local process and
-    # decrypted every stored secret — no encryption at all in disguise.
-    raise SecretsUnavailableError(
-        "no OS keychain available and no explicit passphrase configured — "
-        "refusing to encrypt or decrypt secrets with a machine-derivable "
-        "key: set UNIVERSE_PASSPHRASE (env) or secret_passphrase "
-        "(config.json), or make the OS keychain usable")
+    # machine-local fallback: derive from a stable per-machine value
+    # (this is the degraded mode — encrypted at rest, but a local attacker
+    # with the machine could derive it; documented in PRIVACY.md)
+    _passphrase = _machine_fallback_passphrase()
+    return _passphrase
 
 
 def set_passphrase(p: str) -> None:
@@ -186,7 +169,14 @@ def decrypt_secret(blob: str) -> str:
         pt = aes.decrypt(nonce, ct, None)
         return pt.decode("utf-8")
     except Exception:
-        pass
+        # maybe the passphrase changed — try the machine fallback
+        fb = _machine_fallback_passphrase()
+        if fb != passphrase:
+            key2 = _derive_key(fb, salt)
+            try:
+                return AESGCM(key2).decrypt(nonce, ct, None).decode("utf-8")
+            except Exception:
+                pass
     raise DecryptionError(
         "stored secret could not be decrypted (passphrase changed or keychain "
         "unavailable) — re-enter the key via /setup or the provider settings")

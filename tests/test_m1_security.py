@@ -108,16 +108,16 @@ async def test_failing_handler_never_reports_ok(fresh_home):
 @pytest.mark.asyncio
 async def test_git_log_limit_injection_blocked(fresh_home):
     """git.log's `limit` used to be interpolated into a shell string. The
-    connector now COERCES any non-integer to the forgiving default (20) —
-    the hostile value never reaches a shell and the call behaves exactly
-    like a normal git log."""
+    fix has two halves, both pinned here: the value is coerced through
+    int() (a bad limit falls back to the forgiving default 20) and the
+    command runs as an argv list — `1 && calc.exe` can never reach a
+    shell, and the tool neither crashes nor reports a fake failure."""
     r = await _call("GitLog", {"limit": "1 && calc.exe"}, agent="universe")
     inner = r.get("result", r)
-    # no integer-validation refusal anymore (coercion replaced it) and no
-    # trace of the injected fragment in any error: it ran as plain git log
-    assert "integer" not in str(inner.get("error", ""))
-    assert "calc" not in str(inner.get("error", ""))
-    assert inner["ok"] is True
+    assert "calc.exe" not in str(inner.get("stderr", "")), inner
+    cmd = str(inner.get("cmd", ""))
+    assert cmd.endswith("-20"), f"bad limit must fall back to 20, got: {cmd}"
+    assert "&&" not in cmd
 
 
 @pytest.mark.asyncio

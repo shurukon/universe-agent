@@ -16,15 +16,12 @@ HOOK_EVENTS = ("pre_tool", "pre_shell", "pre_write", "post_tool")
 HOOK_ACTIONS = ("require_facts", "block")
 
 # which concrete tools an event covers (the event narrows the domain; the
-# matcher only picks tools within it). THE one shared domain map (audit H3):
-# connectors/builtin used to keep its own wider copy (BashUnsandboxed,
-# Monitor, ApplyPatch, NotebookEdit) while this map stayed narrow — tools
-# present only in the wider copy skipped hook evaluation entirely. Import
-# this map from hooks.manager everywhere; never duplicate it.
+# matcher only picks within it). pre_shell covers ALL shell-adjacent tools:
+# Bash, PowerShell (the v23 parity tool) and CodeExecute — a pre_shell hook
+# or the builtin fact-guard used to fire for Bash only (engine-fix round).
 _EVENT_TOOLS: dict[str, tuple[str, ...]] = {
-    "pre_shell": ("Bash", "BashUnsandboxed", "PowerShell", "CodeExecute",
-                  "Monitor"),
-    "pre_write": ("Write", "Edit", "ApplyPatch", "NotebookEdit"),
+    "pre_shell": ("Bash", "PowerShell", "CodeExecute"),
+    "pre_write": ("Write", "Edit"),
 }
 
 

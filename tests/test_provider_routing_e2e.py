@@ -215,10 +215,13 @@ class TestCompleteChain:
             f"the user's provider must be the reported failure: {msg}"
         assert "Stranger" in msg and "fallbacks also failed" in msg, msg
 
-    def test_classify_halt_reason_is_raw_error(self, fresh_home):
+    def test_classify_halt_reason_is_raw_error(self, fresh_home, monkeypatch):
         """run_turn: an exhausted provider ladder halts with the RAW error —
-        no 'Stopped before starting: could not be reached' re-labeling."""
-        from core.agent.orchestrator import Orchestrator
+        no 'Stopped before starting: could not be reached' re-labeling.
+        (The durable halt row + provider_halt choke point live on the legacy
+        goal-state path — selected with GAX_ENGINE=goal.)"""
+        monkeypatch.setenv("GAX_ENGINE", "goal")
+        from core.agent.universe_agent import UniverseAgent
         raw = ("Error code: 410 - {'status': 410, 'detail': \"The model "
                "'x' has reached its end of life\"}")
 
@@ -226,7 +229,7 @@ class TestCompleteChain:
             async def complete(self, **kw):
                 raise LLMError(raw, kind="model_unavailable")
 
-        orch = Orchestrator(llm_client=BadLLM())
+        orch = UniverseAgent(llm_client=BadLLM())
         summary = asyncio.run(orch.run_turn("hi there", turn_id="goal-rawerr"))
         assert summary["success"] is False and summary["halted"] is True
         assert summary["error"].startswith("Error code: 410"), summary["error"]
@@ -553,34 +556,35 @@ class TestAgentRoutingEndpoints:
 
     def test_roster_is_subagents_only_read_only(self, bridge):
         """2026-09 model-chip redesign: GET /api/agents is the SUBAGENT
-        roster — the general agent is the main loop itself, not a peer row,
-        and (provider, model) is gone from every row (subagents inherit the
-        one model set from the chat composer; the truth lives in the
-        provider manager, not this payload)."""
+        roster — the universe agent is the main loop itself, not a peer row.
+        Post-S1 (single universe agent) the subagent roster is EMPTY: the
+        retired specialists were purged with their rows."""
         self._seed(bridge)
         rows = bridge.get("/api/agents").json()["agents"]
         names = [a["name"] for a in rows]
+        assert "universe" not in names  # the main loop is never a roster row
         assert "general" not in names
-        assert len(names) == 5  # research/code/review/security/design
-        for a in rows:
-            assert {"name", "specialty", "tools", "tier"} <= set(a)
-            assert "provider" not in a and "model" not in a
+        assert names == [], f"no subagents remain in the single-agent model: {names}"
 
     def test_patch_roundtrip_every_agent_including_orchestrator(self, bridge):
-        """The per-agent PATCH endpoint still routes every agent (the
-        orchestrator included), but the round-trip is verified against the
-        provider manager — the roster payload no longer mirrors it."""
+        """The per-agent PATCH endpoint still routes every REGISTERED agent
+        (the orchestrator alias included); the round-trip is verified
+        against the provider manager. Post-S1 the registry is exactly
+        {'universe'} — 'orchestrator' is the accepted legacy label."""
         self._seed(bridge)
         from core.core_agents import ALL_AGENTS
-        names = list(ALL_AGENTS)
-        assert "universe" in names and len(names) == 6
+        names = list(ALL_AGENTS) + ["orchestrator"]
+        assert "universe" in names and len(ALL_AGENTS) == 1
         for name in names:
             r = bridge.patch(f"/api/agents/{name}/model",
                              json={"provider": "Groq", "model": "m1"})
             assert r.status_code == 200, (name, r.text)
         pm = get_provider_manager()
         for name in names:
-            assert pm.get_agent_model(name) == ("Groq", "m1"), name
+            # 'orchestrator' is routed AS universe (the endpoint's legacy
+            # label mapping), so the manager only ever holds 'universe'
+            stored = "universe" if name == "orchestrator" else name
+            assert pm.get_agent_model(stored) == ("Groq", "m1"), name
         # S1+v22: the orchestrator routing label retired — universe IS it
         assert pm.get_agent_model("universe") == ("Groq", "m1")
 
@@ -589,16 +593,20 @@ class TestAgentRoutingEndpoints:
                          json={"provider": "Groq", "model": "m"})
         assert r.status_code == 404
         self._seed(bridge)
+        # retired specialist names are unknown agents now, not peers
         r = bridge.patch("/api/agents/code/model",
+                         json={"provider": "Groq", "model": "m"})
+        assert r.status_code == 404
+        r = bridge.patch("/api/agents/universe/model",
                          json={"provider": "NotInstalled", "model": "m"})
         assert r.status_code == 422
-        r = bridge.patch("/api/agents/code/model",
+        r = bridge.patch("/api/agents/universe/model",
                          json={"provider": "Groq", "model": "   "})
         assert r.status_code == 422
 
-    def test_apply_to_all_re_routes_all_thirteen(self, bridge):
+    def test_apply_to_all_re_routes_every_registered_agent(self, bridge):
         """One model for everything: the composer chip's POST re-routes the
-        general agent AND every subagent in a single call; the roster no
+        whole (now single-agent) registry in one call; the roster no
         longer mirrors (provider, model), so routing is verified against
         the provider manager."""
         self._seed(bridge)
@@ -608,7 +616,7 @@ class TestAgentRoutingEndpoints:
         r = bridge.post("/api/providers/Groq/model", json={"model": "all-m"})
         assert r.status_code == 200
         routed = r.json()["agents_routed"]
-        assert "universe" in routed and len(routed) == 6
+        assert routed == ["universe"]
         pm = get_provider_manager()
         for name in routed:
             assert pm.get_agent_model(name) == ("Groq", "all-m"), name

@@ -29,8 +29,7 @@ win:
     - target: nsis
       arch:
         - x64
-  # no icon override: build/icon.ico is not in the repo — electron-builder
-  # falls back to its default icon (add build/icon.ico to re-enable)
+  icon: build/icon.ico
   # the backend needs Python anyway — don't ship a bundled runtime in v1
   artifactName: UniverseComputer-Setup-${version}-x64.${ext}
 

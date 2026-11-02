@@ -221,30 +221,11 @@ class UniverseConfig:
                            "defaults until it is fixed", exc)
             self._overrides = {}
 
-    @staticmethod
-    def _coerce_env(env_val: str, default: Any) -> Any:
-        """Type-aware env override (audit L5): the raw string "0" used to
-        read as a truthy value for boolean keys and "1" as "1" for int
-        keys — coerce against the default's type instead."""
-        if isinstance(default, bool):
-            return env_val.strip().lower() in ("1", "true", "yes", "on")
-        if isinstance(default, int) and not isinstance(default, bool):
-            try:
-                return int(env_val.strip())
-            except ValueError:
-                return env_val
-        if isinstance(default, float):
-            try:
-                return float(env_val.strip())
-            except ValueError:
-                return env_val
-        return env_val
-
     def get(self, key: str, default: Any = None) -> Any:
         # env wins, then override, then default
         env_val = os.environ.get("GAX_" + key.upper())
         if env_val is not None:
-            return self._coerce_env(env_val, default)
+            return env_val
         return self._overrides.get(key, default)
 
     def set(self, key: str, value: Any) -> None:

@@ -63,7 +63,6 @@ def test_l3_search_cache_hit_skips_refetch_and_touch_invalidates(fresh_home):
                        content="beta body")
     assert mem.l3.search("alpha")  # warm the cache
     # the cache tuple now carries the full 7-field corpus signature
-    # (counts + Σ interactions + Σ edge_count + Σ content length + hash)
     key = mem.l3._corpus_key()
     assert len(key) == 7 and mem.l3._bm25_cache is not None
     assert mem.l3._bm25_cache[:7] == key
@@ -116,12 +115,11 @@ def test_l4_search_cache_hit_and_upsert_invalidation(fresh_home):
     from core.memory import get_memory
     from core.memory.layers.l4_procedural import Skill
     l4 = get_memory().l4
-    # three corpus rows: BM25's IDF is ≤ 0 on a 1–2 document corpus, which
-    # would hide every hit behind the score>0 cut — three docs make the
-    # ranking real
     l4.upsert(Skill(name="alpha-skill", description="alpha things", body="b"))
     l4.upsert(Skill(name="gamma-skill", description="gamma things", body="b"))
-    l4.upsert(Skill(name="delta-skill", description="delta things", body="b"))
+    # a third non-overlapping doc: BM25's idf is exactly 0 for a term in
+    # half of a 2-document corpus, so the score>0 cutoff needs N>=3
+    l4.upsert(Skill(name="delta-skill", description="unrelated delta things", body="b"))
 
     calls = {"n": 0}
     orig = l4.list
@@ -133,7 +131,7 @@ def test_l4_search_cache_hit_and_upsert_invalidation(fresh_home):
     l4.list = counting
     try:
         r1 = l4.search("alpha")
-        assert r1 and r1[0].name == "alpha-skill"  # ours ranks first
+        assert r1[0].name == "alpha-skill"  # bundled skills may also rank — ours first
         n1 = calls["n"]
         r2 = l4.search("alpha")
         assert calls["n"] == n1  # cache hit — no re-list

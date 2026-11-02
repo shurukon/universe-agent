@@ -91,9 +91,11 @@ extend-exclude = ["vendor", "universe-agent-ui"]
 # env-var setup must run before the heavy imports below it
 "tests/test_live_universe_validation.py" = ["E402"]
 
-[tool.hatch.build.targets.wheel]# config.py = the top-level module every package imports. Without
-# it, an installed wheel crashes on `import config`.
-packages = ["core", "providers", "connectors", "channels", "security", "concurrency", "failure", "context", "resources", "observability", "schema", "skill", "skills", "eval", "data", "storage", "cli", "universe_desktop_bridge", "scheduling", "hooks"]
+[tool.hatch.build.targets.wheel]# skills_data = the packaged pre-loaded skills taxonomy (skills/loader.py
+# reads it at runtime); config.py = the top-level module every package
+# imports. Without both, an installed wheel boots without memory priming
+# and crashes on `import config`.
+packages = ["core", "providers", "connectors", "channels", "security", "concurrency", "failure", "context", "resources", "observability", "schema", "skill", "skills", "skills_data", "eval", "data", "storage", "cli", "universe_desktop_bridge", "scheduling", "hooks"]
 # single-module packages need explicit inclusion alongside the dirs
 include = ["config.py", "universe_cua_helper.py"]
 

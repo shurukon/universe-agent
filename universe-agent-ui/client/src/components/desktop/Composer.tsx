@@ -344,6 +344,45 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
           toast("Export failed — no task transcript?");
         }
       })();
+    } else if (action === "fork") {
+      // /fork — branch the current chat's session (transcript copy)
+      const tid = useChat.getState().activeTaskId;
+      if (!tid) {
+        toast("Nothing to fork yet — start a chat first");
+      } else {
+        void (async () => {
+          try {
+            const t = await api.branchTask(tid);
+            toast(`Forked — the copy is in the sidebar (${t.session_id})`);
+            void useChat.getState().refreshTasks();
+          } catch {
+            toast("Fork failed — is the bridge running?");
+          }
+        })();
+      }
+    } else if (action === "compact") {
+      // /compact — record a compaction marker for the current session
+      const tid = useChat.getState().activeTaskId;
+      if (!tid) {
+        toast("Nothing to compact yet — start a chat first");
+      } else {
+        void (async () => {
+          try {
+            const t = await api.compactTask(tid);
+            toast(
+              t.compacted
+                ? `Compacted: ~${t.pre_tokens} → ~${t.post_tokens} tokens of replay`
+                : t.note ?? "Nothing to compact"
+            );
+          } catch {
+            toast("Compact failed — is the bridge running?");
+          }
+        })();
+      }
+    } else if (action === "resume") {
+      // /resume — pick a previous conversation from the sidebar
+      void useChat.getState().refreshTasks();
+      toast("Pick a previous chat in the sidebar to resume it");
     } else if (action === "model" || action === "effort") {
       taRef.current?.focus();
     }

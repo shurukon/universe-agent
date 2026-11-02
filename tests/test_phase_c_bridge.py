@@ -78,8 +78,11 @@ def test_automations_reject_invalid_schedule(client):
 # ---- skills inventory + the v20 toggle ---------------------------------------
 
 def test_skills_inventory_lists_the_real_corpus(client, fresh_home_with_skills):
+    """The inventory serves whatever the index really holds — post-purge
+    that is the SEEDED corpus (the bundled library was removed 2026-10-31;
+    the conftest fixture ingests 6 skills through the product pipeline)."""
     data = client.get("/api/skills").json()
-    assert len(data["skills"]) > 100
+    assert len(data["skills"]) >= 6
     row = data["skills"][0]
     for key in ("id", "name", "source", "description", "category",
                 "status", "use_count", "enabled"):

@@ -734,124 +734,82 @@ async def help_cmd(args: list[str], io) -> str:
     return "Help shown."
 
 
-# ---- sessions (audit M5: the README-promised /new /fork /compact) ---------
-def _session_target(args: list[str]) -> str:
-    """Session id from args, else the current REPL session."""
-    if args:
-        return args[0].strip()
-    from cli.session_state import current_session_id
-    return current_session_id(create=False) or ""
-
-
-async def new_session_cmd(args: list[str], io) -> str:
-    from core.session.store import get_session_store
-    from cli.session_state import set_current_session
-    meta = get_session_store().create()
-    set_current_session(meta["id"])
-    io.print(f"New session: {meta['id']} — context is fresh.")
-    return meta["id"]
-
-
-async def sessions_cmd(args: list[str], io) -> str:
-    from core.session.store import get_session_store
-    from cli.session_state import set_current_session, current_session_id
-    store = get_session_store()
-    if args and args[0] == "use" and len(args) > 1:
-        sid = args[1].strip()
-        if store.get(sid) is None:
-            return f"Unknown session: {sid}"
-        set_current_session(sid)
-        io.print(f"Switched to session {sid}")
-        return sid
-    if args and args[0] == "rename" and len(args) > 2:
-        sid, title = args[1].strip(), " ".join(args[2:])
-        store.set_title(sid, title)
-        io.print(f"Renamed {sid} → {title!r}")
-        return title
-    rows = store.list_sessions(limit=15)
-    cur = current_session_id(create=False)
-    if not rows:
-        io.print("No sessions yet — just start typing, or /new for a fresh one.")
-        return "no sessions"
-    import datetime as _dt
-    for r in rows:
-        mark = "*" if r.get("id") == cur else " "
-        try:
-            ts = _dt.datetime.fromtimestamp(r.get("updated_at") or 0).strftime("%m-%d %H:%M")
-        except Exception:
-            ts = "?"
-        io.print(f"{mark} {r.get('id', '')}  {ts}  {str(r.get('title', ''))[:48]}")
-    io.print("[dim](*) current — /sessions use <id> to switch, /sessions rename <id> <title>[/dim]")
-    return f"{len(rows)} session(s)"
-
-
-async def fork_session_cmd(args: list[str], io) -> str:
-    from core.session.store import get_session_store
-    from cli.session_state import set_current_session
-    src = _session_target(args)
-    if not src:
-        return "No session to fork — pass an id, or start one first (/new)."
-    meta = get_session_store().fork(src)
-    if meta is None:
-        return f"Unknown session: {src}"
-    set_current_session(meta["id"])
-    io.print(f"Forked {src} → {meta['id']} (parent transcript carried over)")
-    return meta["id"]
-
-
-async def compact_session_cmd(args: list[str], io) -> str:
-    from core.session.store import get_session_store
-    from cli.session_state import current_session_id
-    sid = _session_target(args) or current_session_id(create=False)
-    if not sid:
-        return "No session to compact — pass an id or start one first."
-    store = get_session_store()
-    entries = store.transcript(sid)
-    if not entries:
-        return f"Session {sid} is empty — nothing to compact."
-    approx_chars = sum(len(str(e.get("content", ""))) for e in entries)
-    approx_tokens = max(1, approx_chars // 4)
-    summary_text = ""
-    try:
-        from core.agent.orchestrator import get_orchestrator
-        orch = get_orchestrator()
-        flat = "\n".join(
-            f"{str(e.get('role', 'user'))}: {str(e.get('content', ''))[:1200]}"
-            for e in entries if e.get("content"))
-        resp = await orch.llm.complete(
-            agent="universe",
-            messages=[
-                {"role": "system",
-                 "content": ("Summarize this session into a compact handoff: "
-                             "decisions made, facts learned, artifacts created, "
-                             "open threads. Maximum 300 words.")},
-                {"role": "user", "content": flat[:30000]}],
-            max_tokens=700)
-        summary_text = str(resp.text or "").strip()
-    except Exception as exc:
-        io.print(f"[dim]model summary unavailable ({exc}); recording a mechanical marker[/dim]")
-    post_tokens = max(1, len(summary_text) // 4) if summary_text else approx_tokens
-    store.compact_separator(sid, approx_tokens, post_tokens, summary_text)
-    io.print(f"Compacted {sid}: ~{approx_tokens} → ~{post_tokens} tokens "
-             f"(summary {'recorded' if summary_text else 'marker'} in the transcript)")
-    return f"compacted {sid}"
-
-
 # ---- helpers --------------------------------------------------------------
 def _print_summary(io, summary: dict) -> None:
+    # Defensive: provider-halt / failure envelopes carry a reduced key set
+    # (no gravity_score / classification / steps) — direct indexing here
+    # used to crash /goal with KeyError: gravity_score (audit M1).
     io.print("\n" + "=" * 60)
     io.print(f"Universe Mission Complete — {summary.get('elapsed_ms', 0)/1000:.1f}s elapsed")
-    io.print(f"  success: {summary.get('success', False)}")
-    io.print(f"  classification: {summary.get('classification', '-')}")
-    # gravity keys exist only on the goal-engine path (audit M1: the failure
-    # envelope never carried them and direct indexing crashed on KeyError)
+    io.print(f"  success: {summary.get('success')}")
+    if "classification" in summary:
+        io.print(f"  classification: {summary['classification']}")
     if "gravity_score" in summary:
-        io.print(f"  gravity: {summary.get('gravity_score')} ({summary.get('gravity_bucket', '-')})")
+        io.print(f"  gravity: {summary['gravity_score']} ({summary.get('gravity_bucket', '-')})")
         io.print(f"  promoted to L3: {summary.get('promoted_to_l3', False)}")
-    io.print("  steps:")
     for s in summary.get("steps", []):
         mark = "+" if s.get("success") else "x"
         io.print(f"    [{mark}] {s.get('agent', '')}: {s.get('what', '')}")
     io.print(f"  tokens: {summary.get('input_tokens', 0)} in / {summary.get('output_tokens', 0)} out")
     io.print(f"  llm_calls: {summary.get('llm_calls', 0)}")
     io.print("=" * 60)
+
+
+# ---- session commands (/new /fork /compact /sessions) ----------------------
+def new_session_cmd(args, io) -> str:
+    """Start a fresh session and make it current (the /new contract)."""
+    from cli.session_state import set_current_session
+    from core.session.store import get_session_store
+    sid = get_session_store().create()["id"]
+    set_current_session(sid)
+    return f"New session: {sid}"
+
+
+def fork_session_cmd(args, io) -> str:
+    """Fork = a copy of the current transcript under a new id (Codex parity)."""
+    from cli.session_state import current_session_id, set_current_session
+    from core.session.store import get_session_store
+    src = current_session_id(create=False)
+    if not src:
+        return "No active session — start one with /new."
+    forked = get_session_store().fork(src)
+    if forked is None:
+        return f"Cannot fork: session {src} not found."
+    set_current_session(forked["id"])
+    return f"Forked {src} -> {forked['id']} (history copied)"
+
+
+def compact_session_cmd(args, io) -> str:
+    """Compaction is a recorded event: pre-marker entries leave the replay."""
+    from cli.session_state import current_session_id
+    from core.session.store import get_session_store
+    sid = current_session_id(create=False)
+    if not sid:
+        return "No active session — start one with /new."
+    store = get_session_store()
+    if not store.transcript(sid):
+        return f"Session {sid} is empty — nothing to compact."
+    msgs = store.history_messages(sid)
+    pre = max(1, sum(len(str(m.get("content") or "")) for m in msgs) // 4)
+    seq = store.compact_separator(sid, pre, 0, "[context compacted by /compact]")
+    return f"Compacted session {sid} (marker seq {seq}): ~{pre} -> 0 tokens"
+
+
+def sessions_cmd(args, io) -> str:
+    """List sessions; '/sessions <id>' switches the current one."""
+    from cli.session_state import set_current_session
+    from core.session.store import get_session_store
+    store = get_session_store()
+    if args:
+        sid = str(args[0]).strip()
+        if store.get(sid) is None:
+            return f"No such session: {sid}"
+        set_current_session(sid)
+        return f"Switched to session {sid}."
+    rows = store.list_sessions(20)
+    if not rows:
+        return "0 session(s) — start one with /new."
+    lines = [f"{len(rows)} session(s) (most recent first):"]
+    for s in rows:
+        lines.append(f"  {s['id']}  {str(s.get('title') or '')[:60]}")
+    return "\n".join(lines)

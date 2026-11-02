@@ -322,11 +322,12 @@ async def test_mcp_remove_server_requires_explicit_and_actually_stops_it(mcp_hom
 
 
 @pytest.mark.asyncio
-async def test_mcp_tools_not_callable_by_non_api_agent(mcp_home):
-    """Phase 0.1 fail-closed enforcement still applies to the new MCP
-    tools: a name that is not the registered universe agent (the old
-    specialist roster is retired) is denied outright — unknown_agent
-    strictly subsumes the old whitelist denial."""
+async def test_mcp_tools_not_callable_by_unregistered_agent(mcp_home):
+    """Phase 0.1 enforcement must still apply to the new MCP tools exactly
+    like every other tool. Post-S1 the registered agent is 'universe' (the
+    MCP tools ARE in its merged whitelist), so the enforced boundary is the
+    fail-closed unknown-agent denial — an unregistered name gets NO
+    whitelist exemption, for MCP tools like any other."""
     from connectors.builtin import get_registry
     r = await get_registry().call("McpAddServer", agent="code", turn_id="g1",
                                   args={"name": "x", "server_key": "memory"})

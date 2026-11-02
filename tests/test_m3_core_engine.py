@@ -280,11 +280,13 @@ def test_repeat_recall_short_circuits_same_goal(fresh_home):
     assert find_repeat_asteroid(h_other, recency_seconds=300) is None
 
 
-def test_chat_closes_planet_with_measured_values(fresh_home, monkeypatch):
-    """A conversational turn completes its planet and records MEASURED
-    values (elapsed_ms real, llm_calls = the honest call_log count). The
-    agent-turn model completes the turn with one completion round — no
-    classify/chat router involved."""
+def test_chat_turn_completes_with_measured_values(fresh_home, monkeypatch):
+    """A conversational turn runs on the SESSION engine (the default) and
+    records MEASURED values (input/output tokens = the honest completion
+    counts). The agent-turn model completes the turn with one completion
+    round — no classify/chat router involved — and the transcript carries
+    the full event spine: turn_start → user message → assistant reply →
+    turn_end(completed). No goals row is written (session authority)."""
     import asyncio
     from core.agent.orchestrator import get_orchestrator
     from providers.client import LLMClient, LLMResponse
@@ -303,28 +305,51 @@ def test_chat_closes_planet_with_measured_values(fresh_home, monkeypatch):
     monkeypatch.setattr(LLMClient, "complete", fake_complete)
 
     summary = asyncio.run(orch.run_turn("مرحبا", language="ar"))
-    assert summary.get("success") is True and summary.get("conversation") is True
-    assert summary.get("elapsed_ms", 0) > 0, "elapsed must be measured, not 0"
+    assert summary.get("success") is True
+    assert summary.get("engine") == "session", summary
+    assert summary.get("session_id"), "the session engine must own a session"
+    assert summary.get("input_tokens") == 24, "tokens must be measured, not faked"
     assert summary.get("reply"), "the turn must carry its reply text"
     st = get_storage()
-    row = st.query_one("SELECT status FROM planets WHERE turn_id=?;",
-                       (summary["turn_id"],))
-    assert row and row["status"] == "completed", "chat planet must close"
+    assert st.query_one("SELECT id FROM goals WHERE id=?;",
+                        (summary["turn_id"],)) is None, \
+        "the session engine writes ZERO goals rows"
+    from core.session.store import get_session_store
+    entries = get_session_store().transcript(summary["session_id"])
+    kinds = [(e.get("kind"), e.get("role"), e.get("status")) for e in entries]
+    assert ("turn_start", None, "executing") in kinds, kinds
+    assert any(k == "message" and r == "assistant" for k, r, _ in kinds), kinds
+    assert ("turn_end", None, "completed") in kinds, kinds
 
 
 def test_probe_media_timeout_is_honest(fresh_home, tmp_path, monkeypatch):
     from core.acceptance import _probe_media
     fake = tmp_path / "x.mp4"
     fake.write_bytes(b"\x00" * 64)
+    import os as _os
     import core.acceptance as acc
     if shutil.which("python") is None and shutil.which("py") is None:
         pytest.skip("no python launcher on PATH to fake a hanging ffprobe")
     launcher = shutil.which("python") or shutil.which("py")
+    if _os.name == "nt":
+        # a .bat runs on Windows without WinError 193; it blocks forever
+        blocker = tmp_path / "ffprobe_hang.bat"
+        blocker.write_text(
+            "@echo off\r\n\"{}\" -c \"import time; time.sleep(600)\"\r\n".format(launcher),
+            encoding="utf-8")
+    else:
+        # POSIX: an executable shim with a shebang — the kernel runs the
+        # python directly (a bare .bat is not executable here). The shim
+        # must NOT call os.setpgrp(): _probe_media now spawns the probe
+        # with start_new_session=True, so the child already owns its own
+        # group and the timeout handler's killpg can never reach the
+        # pytest runner.
+        blocker = tmp_path / "ffprobe_hang.sh"
+        blocker.write_text(
+            "#!/bin/sh\nexec \"{}\" -c 'import time; time.sleep(600)'\n".format(launcher),
+            encoding="utf-8")
+        blocker.chmod(0o755)
     monkeypatch.setattr(acc.shutil, "which",
-                        lambda name: str(tmp_path / "ffprobe_hang.bat"))
-    blocker = tmp_path / "ffprobe_hang.bat"
-    # a .bat runs on Windows without WinError 193; it blocks forever
-    blocker.write_text("@echo off\r\n\"{}\" -c \"import time; time.sleep(600)\"\r\n".format(launcher),
-                       encoding="utf-8")
+                        lambda name: str(blocker))
     res = _probe_media(fake)
     assert res["ok"] is False and res.get("error") == "ffprobe_timeout"

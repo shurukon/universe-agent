@@ -20,33 +20,12 @@ the console tool first — exactly the contract a real user gets.
 """
 import os
 import threading
-from functools import lru_cache
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 # Force headless BEFORE the registry is constructed (env var read on first call).
 os.environ["UNIVERSE_BROWSER_HEADLESS"] = "1"
-
-
-@lru_cache(maxsize=1)
-def _chromium_available() -> bool:
-    """Honest environment probe: is a real Chromium actually installed for
-    the Playwright driver? (CI sandboxes ship without the browser download;
-    the tests below need the REAL thing and skip without it.)"""
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            exe = p.chromium.executable_path
-            return bool(exe) and os.path.exists(exe)
-    except Exception:
-        return False
-
-
-def _skip_without_chromium() -> None:
-    if not _chromium_available():
-        pytest.skip("playwright Chromium is not installed in this environment "
-                    "(`playwright install chromium` would enable these)")
 
 _FIXTURE_HTML = """<!doctype html>
 <html><head><title>Universe Test Page</title></head>
@@ -146,7 +125,6 @@ def _project_root() -> str:
 @pytest.mark.asyncio
 async def test_browser_navigate_loads_real_page(fresh_home, local_html_url):
     """Real navigation: title and URL come back from a real Chromium."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     reg = get_registry()
     r = await reg.call("BrowserNavigate", agent="universe", turn_id="g1",
@@ -176,7 +154,6 @@ async def test_browser_file_navigation_is_blocked(fresh_home, tmp_path):
 async def test_browser_click_mutates_real_dom(fresh_home, local_html_url):
     """Real click: the click handler fires and #out's text changes from
     'not clicked' to 'CLICKED'. This is the real resulting state, not a mock."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     reg = get_registry()
     from security.capability import get_gate
@@ -196,7 +173,6 @@ async def test_browser_click_mutates_real_dom(fresh_home, local_html_url):
 @pytest.mark.asyncio
 async def test_browser_fill_writes_real_input_values(fresh_home, local_html_url):
     """Real fill: the form fields now contain the values we typed."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     reg = get_registry()
     from security.capability import get_gate
@@ -219,7 +195,6 @@ async def test_browser_fill_writes_real_input_values(fresh_home, local_html_url)
 async def test_browser_extract_pulls_real_table_and_list(fresh_home, local_html_url):
     """Real extract: the table comes back as a 2D array, the list as a list of
     strings — both match the fixture exactly."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     import json as _json
     reg = get_registry()
@@ -241,7 +216,6 @@ async def test_browser_screenshot_writes_real_png_file(fresh_home, local_html_ur
     """Real screenshot: a non-empty PNG lands INSIDE the project root (the
     gate path-scopes screenshots since the audit — any absolute path used
     to be writable at consent=auto)."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     reg = get_registry()
     await reg.call("BrowserNavigate", agent="universe", turn_id="g1",
@@ -276,7 +250,6 @@ async def test_browser_screenshot_outside_root_is_denied(fresh_home, local_html_
 async def test_browser_tabs_open_switch_close(fresh_home, local_html_url):
     """Real tab lifecycle: open a second tab, switch to it, then close it.
     The 'list' action reflects real state at every step."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     reg = get_registry()
     # default tab exists after navigation
@@ -305,7 +278,6 @@ async def test_browser_tabs_open_switch_close(fresh_home, local_html_url):
 async def test_browser_snapshot_returns_untrusted_tag(fresh_home, local_html_url):
     """Real snapshot: the accessibility tree is tagged [UNTRUSTED:web] so an
     agent can never treat it as an instruction."""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     reg = get_registry()
     await reg.call("BrowserNavigate", agent="universe", turn_id="g1",
@@ -318,11 +290,10 @@ async def test_browser_snapshot_returns_untrusted_tag(fresh_home, local_html_url
 
 
 @pytest.mark.asyncio
-async def test_browser_navigate_blocked_for_non_browser_agent(fresh_home, local_html_url):
-    """Phase 0.1 fail-closed enforcement, current reality: the specialist
-    roster collapsed into ONE universe agent, so the retired 'code' name is
-    an UNREGISTERED agent — denied outright (unknown_agent strictly
-    subsumes the old whitelist denial), browser or not."""
+async def test_browser_navigate_blocked_for_unregistered_agent(fresh_home, local_html_url):
+    """Phase 0.1 + S1: browser tools live in the registered agent's merged
+    whitelist; an UNREGISTERED agent name is denied fail-closed (the
+    unknown-agent denial that replaced the per-role whitelists)."""
     from connectors.builtin import get_registry
     reg = get_registry()
     r = await reg.call("BrowserNavigate", agent="code", turn_id="g1",
@@ -337,7 +308,6 @@ async def test_browser_upload_sets_file_input(fresh_home, upload_html_url):
     <input type=file> and the change handler fires — the result div shows
     the filename. (Out-of-root uploads are denied by the gate since the
     audit — the old test passed through the vacuous url-resource branch.)"""
-    _skip_without_chromium()
     from connectors.builtin import get_registry
     from pathlib import Path
     reg = get_registry()

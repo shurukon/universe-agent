@@ -116,13 +116,15 @@ class ToolRegistry:
             return gate_deny
         # hook layer (GateGuard twin): pre-checks run before the gate's
         # consent/handler phase; a blocked call never runs the handler.
-        # Shell-adjacent tools all fire pre_shell (audit 2026-10). The
-        # domain lists live in ONE place — hooks.manager._EVENT_TOOLS
-        # (audit H3: a second, narrower copy here let BashUnsandboxed,
-        # Monitor, ApplyPatch and NotebookEdit skip hook evaluation).
-        from hooks.manager import _EVENT_TOOLS as _HOOK_DOMAINS
-        hook_event = ("pre_shell" if name in _HOOK_DOMAINS["pre_shell"]
-                      else "pre_write" if name in _HOOK_DOMAINS["pre_write"]
+        # Shell-adjacent tools all fire pre_shell (audit 2026-10: only the
+        # tool literally named "Bash" used to fire it, so PowerShell,
+        # CodeExecute, Monitor and the unsandboxed shell bypassed user
+        # pre_shell hooks and the builtin fact-guard entirely).
+        _SHELL_TOOLS = {"Bash", "BashUnsandboxed", "PowerShell",
+                        "CodeExecute", "Monitor"}
+        _WRITE_TOOLS = {"Write", "Edit", "ApplyPatch", "NotebookEdit"}
+        hook_event = ("pre_shell" if name in _SHELL_TOOLS
+                      else "pre_write" if name in _WRITE_TOOLS
                       else "pre_tool")
         from hooks import get_hook_manager
         hook_block = get_hook_manager().check(

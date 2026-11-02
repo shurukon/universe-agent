@@ -113,7 +113,6 @@ async def test_duplicate_cap_blocks_and_polling_tools_exempt(fresh_home):
               _resp(tool_calls=[_call("CountOnce", '{"x": 1}')]),
               _resp(tool_calls=[_call("CountOnce", '{"x": 1}')]),
               _resp(tool_calls=[_call("CountOnce", '{"x": 1}')]),
-              _resp(tool_calls=[_call("CountOnce", '{"x": 1}')]),
               _resp(tool_calls=[_call("Monitor", '{"id": "t"}')]),
               _resp(tool_calls=[_call("Monitor", '{"id": "t"}')]),
               _resp(tool_calls=[_call("Monitor", '{"id": "t"}')]),
@@ -128,9 +127,8 @@ async def test_duplicate_cap_blocks_and_polling_tools_exempt(fresh_home):
         allowed_tools=None)
     dup_results = [e["result"] for e in events if e["tool"] == "CountOnce"]
     poll_results = [e["result"] for e in events if e["tool"] == "Monitor"]
-    # identical CountOnce calls: the cap fires AFTER four identical calls
-    # (the ZCode-breaker contract — a model fixing its args gets real
-    # retries; a stuck model gets stopped on the fifth)
+    # identical CountOnce calls: the FIFTH identical signature is blocked
+    # (the cap allows four identical calls before refusing)
     assert counts["dup"] == 4  # four executed
     assert any("duplicate tool call blocked" in str(r.get("error", ""))
                for r in dup_results)
@@ -225,8 +223,8 @@ async def test_spawn_reports_budget_skipped_missions_honestly(fresh_home, monkey
     monkeypatch.setenv("GAX_SWARM_MAX_TOTAL_PER_GOAL", "1")
     from core.agent import swarm
     res = await swarm.spawn(agent="universe", turn_id="g-budget", missions=[
-        {"role": "worker", "brief": "work on topic one"},
-        {"role": "worker", "brief": "work on topic two"},
+        {"role": "worker", "brief": "research topic one"},
+        {"role": "worker", "brief": "research topic two"},
     ])
     assert res["ok"] is True
     assert res["skipped_budget"] == 1

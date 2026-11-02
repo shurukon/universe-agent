@@ -8,7 +8,6 @@ verify_chain(). Never includes prompts/completions — only metadata.
 """
 from __future__ import annotations
 
-import calendar
 import hashlib
 import json
 import os
@@ -174,10 +173,7 @@ def prune_old() -> int:
         for line in src:
             try:
                 e = json.loads(line)
-                # ts is written as UTC (time.gmtime above); calendar.timegm
-                # parses it as UTC. time.mktime interpreted it as LOCAL time,
-                # shifting the 90-day cutoff by the machine's tz offset.
-                ts = calendar.timegm(time.strptime(e["ts"], "%Y-%m-%dT%H:%M:%SZ"))
+                ts = time.mktime(time.strptime(e["ts"], "%Y-%m-%dT%H:%M:%SZ"))
                 if ts >= cutoff:
                     dst.write(line)
                     kept += 1

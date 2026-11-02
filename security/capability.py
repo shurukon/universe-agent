@@ -393,12 +393,10 @@ class CapabilityGate:
 
     def _load_persisted_grants(self) -> None:
         """Restore consent grants saved by a previous process (m2 wiring of
-        the capability_grants table). Only turn-independent ("once") grants
-        are restored: per-turn grants are keyed by (turn_id, tool_name) and
-        every turn ended with the previous process — restoring them revived
-        approvals forever on every restart (m7, audit 2026-10), so stale
-        turn rows are purged here instead. Grants with a future expires_at
-        survive only until that timestamp; NULL expires_at means no expiry."""
+        the capability_grants table). Per-goal grants are keyed by
+        (turn_id, tool_name); "once" grants are keyed by tool_name alone
+        (turn_id = ''). Grants with a future expires_at survive only until
+        that timestamp; NULL expires_at means no expiry."""
         now = time.time()
         try:
             rows = self._st.query_all(
@@ -406,21 +404,14 @@ class CapabilityGate:
                 "WHERE (expires_at IS NULL OR expires_at > ?);", (now,))
         except Exception:
             return  # pre-v15 schema or unreadable table — start clean
-        stale_turns: list[str] = []
         for row in rows:
             tool_name = str(row.get("tool") or "")
             if not tool_name:
                 continue
             if row.get("turn_id"):
-                # a per-turn grant from a PREVIOUS process is dead — its
-                # turn cannot outlive the process. Never restore it.
-                tid = str(row["turn_id"])
-                if tid not in stale_turns:
-                    stale_turns.append(tid)
-                continue
-            self._once_granted.add(tool_name)
-        for tid in stale_turns:
-            self.clear_turn(tid)
+                self._granted.add((str(row["turn_id"]), tool_name))
+            else:
+                self._once_granted.add(tool_name)
 
     def _persist_grant(self, turn_id: str, tool_name: str,
                         consent: str) -> None:
@@ -821,22 +812,6 @@ class CapabilityGate:
     def grant(self, turn_id: str, tool_name: str) -> None:
         self._granted.add((turn_id, tool_name))
         self._persist_grant(turn_id, tool_name, "per_turn")
-
-    def clear_turn(self, turn_id: str) -> None:
-        """Purge every grant tied to a turn — call when the turn closes.
-
-        Per-turn approvals used to be persisted with no expiry and never
-        cleared at turn end, so a restart restored them forever (m7,
-        audit 2026-10): a one-time "yes" silently became permanent."""
-        if not turn_id:
-            return
-        for key in [k for k in self._granted if k[0] == turn_id]:
-            self._granted.discard(key)
-        try:
-            self._st.execute(
-                "DELETE FROM capability_grants WHERE turn_id=?;", (turn_id,))
-        except Exception:
-            pass  # persistence cleanup is best-effort; memory state is truth
 
 
 _gate: CapabilityGate | None = None

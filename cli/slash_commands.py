@@ -60,12 +60,11 @@ def register_all() -> None:
     command("stop", "Tasks", "Select task to stop", wizard=True)(w.stop_wizard)
     command("history", "Tasks", "Browse history, re-run tasks", wizard=True)(w.history_wizard)
     command("resume", "Tasks", "Resume an interrupted task from its last checkpoint", wizard=True)(w.resume_wizard)
-    # Sessions — the README-promised trio, now real (audit M5): the
-    # session is the unit of work; these manage its lifecycle
-    command("new", "Sessions", "Start a new session (fresh context)", wizard=True)(w.new_session_cmd)
-    command("sessions", "Sessions", "List sessions / use or rename one", wizard=True)(w.sessions_cmd)
-    command("fork", "Sessions", "Fork the current or given session (copy of the transcript)", wizard=True)(w.fork_session_cmd)
-    command("compact", "Sessions", "Compact the current session context into a summary", wizard=True)(w.compact_session_cmd)
+    # Sessions (the README-promised trio + the switcher)
+    command("new", "Sessions", "Start a new empty session", wizard=False)(w.new_session_cmd)
+    command("fork", "Sessions", "Fork the current session into an independent copy", wizard=False)(w.fork_session_cmd)
+    command("compact", "Sessions", "Compact the current session's context", wizard=False)(w.compact_session_cmd)
+    command("sessions", "Sessions", "List sessions (pass an id to switch)", wizard=False)(w.sessions_cmd)
     # Memory
     command("memory", "Memory", "Overview of entire Universe state", wizard=False)(w.memory_overview)
     command("vault", "Memory", "Open the Markdown vault in an editor", wizard=False)(w.open_vault)
