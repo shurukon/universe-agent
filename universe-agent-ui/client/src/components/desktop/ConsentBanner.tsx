@@ -5,7 +5,7 @@
  * conversation stays readable behind it. Approve / Deny · honest 60s
  * auto-deny countdown (the bridge enforces it; this visualizes it).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useChat } from "@/stores/chat";
 
@@ -47,20 +47,31 @@ export default function ConsentBanner() {
   // only paths out are the two explicit buttons, timeout, or this decline).
   // capture + stopPropagation: the composer's Esc-to-interrupt must not
   // fire while a consent owns the keyboard.
+  const decideRef = useRef(decide);
+  decideRef.current = decide;
+  const promptId = prompt?.pending_id;
   useEffect(() => {
-    if (!prompt) return;
+    if (!promptId) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        void decide(prompt.pending_id, false);
+        void decideRef.current(promptId, false);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // pending_id identity is the subscription — the prompt object itself
     // changes on every store snapshot and would re-bind the listener
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompt?.pending_id, decide]);
+  }, [promptId]);
+
+  // the bridge auto-denies at 0s — the banner must follow suit (decide
+  // clears it locally first; a 404 from an already-resolved prompt is the
+  // happy path, not an error)
+  useEffect(() => {
+    if (!promptId || left > 0) return;
+    const t = setTimeout(() => void decideRef.current(promptId, false), 1200);
+    return () => clearTimeout(t);
+  }, [promptId, left]);
 
   if (!prompt) return null;
 

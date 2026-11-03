@@ -1,21 +1,25 @@
 /**
  * pages/Studio.tsx — Universe Studio: the SAME workspace as Universe
  * (stable sidebar with tasks + projects, the same chat column, the same
- * composer) with exactly two differences: no Automations row and no
- * permission modes. The three tool cards live here and ONLY here:
+ * composer). The three tool cards live IN the flow, directly ABOVE the
+ * composer — they never cover the chat:
  *
- *   Studio — the video editor powered by Universe (AVE embedded full)
- *   Design — websites, pages and presentations (open-design embedded)
- *   3D     — Blender; "Connect Blender" while the addon is unreachable
+ *   Studio — the video editor powered by Universe (built-in StudioAVE)
+ *   Design — websites, pages and presentations (built-in StudioDesign)
+ *   3D     — Blender (built-in StudioBlender); "Connect Blender" while
+ *            the addon is unreachable
  *
- * Picking a tool is MANDATORY before the composer unlocks. The send goes
- * to the same agent engine (studio_tool rides the goal); the workspace
- * dock then opens over the chat:
- *   · design/video → the tool's real interface embedded (left sidebar never
- *     hides; the Universe timeline keeps streaming in the chat + Activity)
- *   · 3D → after send, when Blender is connected, a chooser: Background
- *     (headless work; tools + timeline here, result images at the end) or
- *     Live (the real Blender viewport pulled through the addon + timeline).
+ * Clicking a card ONLY selects it (highlights it and unlocks the
+ * composer) — no window, no dock, nothing opens on click. After the user
+ * SENDS the task, the preview opens as a large right sidebar showing what
+ * the agent is doing, while the normal Universe timeline (tool calls in
+ * the chat flow) keeps streaming on the left. The same flow for all
+ * three tools:
+ *   · video → AVE's real editor UI embedded
+ *   · design → the open-design workspace on Universe tokens
+ *   · 3D → after send, a chooser: Background (headless work; tools +
+ *     timeline here, renders at the end) or Live (the real Blender
+ *     viewport pulled through the addon), both beside the timeline
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -54,19 +58,18 @@ import "../components/desktop/studio.css";
 import {
   listServices,
   startService,
+  stopService,
   type StudioService,
   type StudioServiceId,
 } from "@/lib/studioApi";
 
-/* ---- the three tool cards (Studio-only, Manus-language on Universe
-        tokens) -------------------------------------------------------------- */
+/* ---- the three tool cards (built-in Studio tools) ------------------------ */
 
 interface ToolCard {
   id: StudioTool;
   serviceId: StudioServiceId;
   name: string;
   sub: string;
-  powered: string;
   icon: typeof Film;
 }
 
@@ -76,7 +79,6 @@ const CARDS: readonly ToolCard[] = [
     serviceId: "ave",
     name: "Studio",
     sub: "Video editor powered by Universe",
-    powered: "AVE · MCP",
     icon: Film,
   },
   {
@@ -84,7 +86,6 @@ const CARDS: readonly ToolCard[] = [
     serviceId: "opendesign",
     name: "Design",
     sub: "Websites, pages and presentations",
-    powered: "open-design",
     icon: Presentation,
   },
   {
@@ -92,7 +93,6 @@ const CARDS: readonly ToolCard[] = [
     serviceId: "blender",
     name: "3D",
     sub: "Model and render with Blender",
-    powered: "blender-mcp",
     icon: MonitorDot,
   },
 ];
@@ -111,20 +111,18 @@ function StatusChip({ status }: { status: StudioService["status"] }) {
   return <span className={`studio-chip ${meta.cls}`}>{meta.label}</span>;
 }
 
-/* ---- the workspace dock ----------------------------------------------------- */
+/* ---- the preview panel body -------------------------------------------------- */
 
-function WorkspaceDock({
+function PreviewBody({
   tool,
   services,
   busyId,
   onStart,
-  onSwitch,
 }: {
   tool: StudioTool;
   services: StudioService[] | null;
   busyId: StudioServiceId | null;
   onStart: (svc: StudioService) => void;
-  onSwitch: () => void;
 }) {
   const card = CARDS.find(c => c.id === tool)!;
   const service =
@@ -162,132 +160,153 @@ function WorkspaceDock({
     return () => window.clearInterval(id);
   }, [tool, mode3d, refreshViewport]);
 
-  const embed = (() => {
-    if (!service) {
+  if (!service) {
+    return (
+      <div className="studio-dock-pending">
+        <Loader2 className="size-4 animate-spin" /> Reaching the bridge…
+      </div>
+    );
+  }
+
+  if (tool === "3d") {
+    if (mode3d === "choose") {
       return (
-        <div className="studio-dock-pending">
-          <Loader2 className="size-4 animate-spin" /> Reaching the bridge…
-        </div>
-      );
-    }
-    if (tool === "3d") {
-      if (mode3d === "choose") {
-        return (
-          <div className="studio-dock-pending studio-3d-choose">
-            <p className="studio-3d-q">
-              How should Universe run this 3D task?
-            </p>
-            <div className="studio-3d-opts">
-              <button
-                type="button"
-                className="studio-3d-opt"
-                onClick={() => setMode3d("background")}
-              >
-                <b>Background</b>
-                <span>
-                  Headless — tools + timeline stream here; the finished
-                  renders appear when the task ends.
-                </span>
-              </button>
-              <button
-                type="button"
-                className="studio-3d-opt"
-                onClick={() => setMode3d("live")}
-              >
-                <b>Live</b>
-                <span>
-                  Watch the real Blender viewport while Universe drives it —
-                  tool calls and the timeline side by side.
-                </span>
-              </button>
-            </div>
-          </div>
-        );
-      }
-      if (mode3d === "live") {
-        return (
-          <div className="studio-viewport">
-            {viewport ? (
-              <img src={viewport} alt="Blender viewport (live)" />
-            ) : viewportBusy ? (
-              <div className="studio-dock-pending">
-                <Loader2 className="size-4 animate-spin" /> Reading the
-                Blender viewport…
-              </div>
-            ) : (
-              <div className="studio-dock-pending studio-viewport-err">
-                {viewportErr || "Blender viewport is unreachable"}
-                <button
-                  type="button"
-                  className="studio-dock-open"
-                  onClick={() => void refreshViewport()}
-                >
-                  <RefreshCw className="size-3.5" /> Retry
-                </button>
-              </div>
-            )}
+        <div className="studio-dock-pending studio-3d-choose">
+          <p className="studio-3d-q">
+            How should Universe run this 3D task?
+          </p>
+          <div className="studio-3d-opts">
             <button
               type="button"
-              className="studio-dock-open"
-              onClick={() => void refreshViewport()}
-              disabled={viewportBusy}
+              className="studio-3d-opt"
+              onClick={() => setMode3d("background")}
             >
-              <RefreshCw className={viewportBusy ? "size-3.5 spin" : "size-3.5"} />
-              Refresh viewport
+              <b>Background</b>
+              <span>
+                Headless — tool calls + the timeline stream in the chat;
+                the finished renders appear here when the task ends.
+              </span>
+            </button>
+            <button
+              type="button"
+              className="studio-3d-opt"
+              onClick={() => setMode3d("live")}
+            >
+              <b>Live</b>
+              <span>
+                Watch the real Blender viewport here while Universe drives
+                it — tool calls and the timeline stream beside it.
+              </span>
             </button>
           </div>
-        );
-      }
-      return (
-        <div className="studio-dock-pending">
-          <Loader2 className="size-4 animate-spin" /> Working in the
-          background — tool calls and the timeline stream in the chat; the
-          finished renders appear here.
         </div>
       );
     }
-    if (service.status === "running") {
-      // Design gets its REAL workspace (Universe design system over the
-      // daemon's live data); AVE embeds its own editor UI.
-      if (tool === "design") return <DesignWorkspace />;
+    if (mode3d === "live") {
       return (
-        <iframe
-          key={service.url}
-          src={`${service.url}${service.url.includes("?") ? "&" : "?"}embed=1`}
-          title={card.name}
-          className="studio-embed"
-        />
-      );
-    }
-    if (service.status === "starting") {
-      return (
-        <div className="studio-dock-pending">
-          <Loader2 className="size-4 animate-spin" /> Starting {service.name}…
+        <div className="studio-viewport">
+          {viewport ? (
+            <img src={viewport} alt="Blender viewport (live)" />
+          ) : viewportBusy ? (
+            <div className="studio-dock-pending">
+              <Loader2 className="size-4 animate-spin" /> Reading the
+              Blender viewport…
+            </div>
+          ) : (
+            <div className="studio-dock-pending studio-viewport-err">
+              {viewportErr || "Blender viewport is unreachable"}
+              <button
+                type="button"
+                className="studio-dock-open"
+                onClick={() => void refreshViewport()}
+              >
+                <RefreshCw className="size-3.5" /> Retry
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="studio-dock-open"
+            onClick={() => void refreshViewport()}
+            disabled={viewportBusy}
+          >
+            <RefreshCw className={viewportBusy ? "size-3.5 spin" : "size-3.5"} />
+            Refresh viewport
+          </button>
         </div>
       );
     }
     return (
       <div className="studio-dock-pending">
-        {service.name} is not running.
-        <button
-          type="button"
-          className="studio-dock-open"
-          disabled={busyId === service.id}
-          onClick={() => onStart(service)}
-        >
-          <Play className="size-3.5" /> Start {service.name}
-        </button>
+        <Loader2 className="size-4 animate-spin" /> Working in the
+        background — tool calls and the timeline stream in the chat; the
+        finished renders appear here.
       </div>
     );
-  })();
+  }
 
+  if (service.status === "running") {
+    // Design gets its REAL workspace (Universe design system over the
+    // daemon's live data); AVE embeds its own editor UI.
+    if (tool === "design") return <DesignWorkspace />;
+    return (
+      <iframe
+        key={service.url}
+        src={`${service.url}${service.url.includes("?") ? "&" : "?"}embed=1`}
+        title={card.name}
+        className="studio-embed"
+      />
+    );
+  }
+  if (service.status === "starting") {
+    return (
+      <div className="studio-dock-pending">
+        <Loader2 className="size-4 animate-spin" /> Starting {service.name}…
+      </div>
+    );
+  }
   return (
-    <section className="studio-dock">
-      <header className="studio-dock-head">
+    <div className="studio-dock-pending">
+      {service.name} is not running.
+      <button
+        type="button"
+        className="studio-dock-open"
+        disabled={busyId === service.id}
+        onClick={() => onStart(service)}
+      >
+        <Play className="size-3.5" /> Start {service.name}
+      </button>
+    </div>
+  );
+}
+
+/* ---- the preview right sidebar (opens AFTER the task is sent) --------------- */
+
+function StudioPreview({
+  tool,
+  services,
+  busyId,
+  onStart,
+  onStop,
+  onClose,
+}: {
+  tool: StudioTool;
+  services: StudioService[] | null;
+  busyId: StudioServiceId | null;
+  onStart: (svc: StudioService) => void;
+  onStop: (svc: StudioService) => void;
+  onClose: () => void;
+}) {
+  const card = CARDS.find(c => c.id === tool)!;
+  const service =
+    services?.find(s => s.id === card.serviceId) ?? null;
+  return (
+    <aside className="studio-preview" aria-label={`${card.name} preview`}>
+      <header className="studio-preview-head">
         <card.icon className="size-4" />
         <h2>{card.name}</h2>
         {service && <StatusChip status={service.status} />}
-        <span className="studio-dock-sp" />
+        <span className="studio-preview-sp" />
         {service?.status === "running" && tool !== "3d" && (
           <button
             type="button"
@@ -298,27 +317,12 @@ function WorkspaceDock({
             <ExternalLink className="size-3.5" /> Open
           </button>
         )}
-        {tool === "3d" && mode3d !== "choose" && (
-          <button
-            type="button"
-            className="studio-dock-open"
-            onClick={() => setMode3d("choose")}
-          >
-            Switch run mode
-          </button>
-        )}
         {service && tool !== "3d" && service.status === "running" && (
           <button
             type="button"
             className="studio-dock-open"
             disabled={busyId === service.id}
-            onClick={() => {
-              void import("@/lib/studioApi").then(m =>
-                m.stopService(service.id).then(() =>
-                  toast.success(`${service.name} stopped`)
-                )
-              );
-            }}
+            onClick={() => onStop(service)}
           >
             <Square className="size-3" /> Stop
           </button>
@@ -326,14 +330,21 @@ function WorkspaceDock({
         <button
           type="button"
           className="studio-dock-open"
-          onClick={onSwitch}
-          title="Back to the tool cards"
+          onClick={onClose}
+          title="Close the preview"
         >
-          <X className="size-3.5" /> Switch tool
+          <X className="size-3.5" />
         </button>
       </header>
-      <div className="studio-dock-body">{embed}</div>
-    </section>
+      <div className="studio-preview-body">
+        <PreviewBody
+          tool={tool}
+          services={services}
+          busyId={busyId}
+          onStart={onStart}
+        />
+      </div>
+    </aside>
   );
 }
 
@@ -344,10 +355,14 @@ export default function Studio() {
   const railOpen = useRail(s => s.open);
   const openRail = useRail(s => s.openRail);
   const closeRail = useRail(s => s.closeRail);
-  // the picked tool card — MANDATORY before the composer unlocks
+  // the picked tool card — MANDATORY before the composer unlocks. Clicking
+  // a card ONLY selects it; nothing opens until the task is sent.
   const [tool, setTool] = useState<StudioTool | null>(null);
   const [services, setServices] = useState<StudioService[] | null>(null);
   const [busyId, setBusyId] = useState<StudioServiceId | null>(null);
+  // the preview sidebar opens when a sent task starts running and stays
+  // pinned until the user closes it or switches the tool
+  const [previewPinned, setPreviewPinned] = useState(false);
   const tasks = useChat(s => s.tasks);
   const isEmpty = useChat(s => s.messages.length === 0);
   const isExpanded = useChat(s => s.messages.length > 0);
@@ -356,7 +371,16 @@ export default function Studio() {
   const running = tasks.find(t => t.status === "running") ?? null;
   const runningGoalId = running?.turn_id ?? null;
 
-  // activity auto-open (the Universe timeline in the rail)
+  // a new send re-pins the preview (a manual close only hides it until
+  // the next task starts)
+  useEffect(() => {
+    if (runningGoalId && tool !== null) setPreviewPinned(true);
+  }, [runningGoalId, tool]);
+  const previewOpen = previewPinned && tool !== null;
+
+  // activity auto-open (the Universe timeline in the rail) — only when the
+  // preview sidebar is not occupying the right edge; the chat flow itself
+  // always streams the tool calls
   const hasRealWork = useChat(s => {
     if (!runningGoalId) return false;
     const evs = s.eventsByGoal[runningGoalId];
@@ -369,8 +393,8 @@ export default function Studio() {
     );
   });
   useEffect(() => {
-    if (hasRealWork && runningGoalId) openRail("activity");
-  }, [hasRealWork, runningGoalId, openRail]);
+    if (hasRealWork && runningGoalId && !previewOpen) openRail("activity");
+  }, [hasRealWork, runningGoalId, previewOpen, openRail]);
 
   const refresh = useCallback(async () => {
     if (fetchingRef.current) return;
@@ -425,6 +449,31 @@ export default function Studio() {
     [busyId]
   );
 
+  const stopSvc = useCallback(async (svc: StudioService) => {
+    setBusyId(svc.id);
+    try {
+      await stopService(svc.id);
+      setServices(prev =>
+        prev
+          ? prev.map(s =>
+              s.id === svc.id ? { ...s, status: "stopped" as const } : s
+            )
+          : prev
+      );
+      toast.success(`${svc.name} stopped`);
+    } catch (e) {
+      toast.error(
+        `Could not stop ${svc.name}`,
+        {
+          description:
+            e instanceof Error && e.message ? e.message : "bridge unreachable",
+        }
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
   return (
     <div className="app-root">
       <OfflineBanner />
@@ -437,17 +486,58 @@ export default function Studio() {
         >
           <PlanPill />
           <ChatMessages />
+          {/* the tool picker lives IN the flow, directly above the
+              composer — it never covers the chat */}
+          {tool === null && (
+            <div className="studio-picker" role="group" aria-label="Pick a tool">
+              <div className="studio-picker-cards">
+                <div className="studio-cards-col">
+                  {CARDS.filter(c => c.id !== "3d").map(card => {
+                    const Icon = card.icon;
+                    return (
+                      <button
+                        key={card.id}
+                        type="button"
+                        className="studio-card"
+                        onClick={() => setTool(card.id)}
+                        aria-pressed={false}
+                      >
+                        <span className="studio-card-icon">
+                          <Icon size={16} strokeWidth={1.9} />
+                        </span>
+                        <span className="studio-card-body">
+                          <span className="studio-card-title">{card.name}</span>
+                          <span className="studio-card-sub">{card.sub}</span>
+                          <span className="studio-card-powered">
+                            built into studio
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <BlenderCard
+                  service={services?.find(s => s.id === "blender") ?? null}
+                  active={false}
+                  busy={busyId === "blender"}
+                  onPick={() => {
+                    setTool("3d");
+                    const svc = services?.find(s => s.id === "blender");
+                    if (svc && svc.status !== "running") {
+                      toast.info("Connect Blender", {
+                        description:
+                          "Open Blender and enable the Universe 3D addon " +
+                          "(Edit → Preferences → Add-ons) — Universe " +
+                          "connects to it on port 9876.",
+                      });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
           <ConsentBanner />
           <QuestionBanner />
-          {tool !== null && (
-            <WorkspaceDock
-              tool={tool}
-              services={services}
-              busyId={busyId}
-              onStart={svc => void startSvc(svc)}
-              onSwitch={() => setTool(null)}
-            />
-          )}
           <Composer
             centered={isEmpty}
             variant="studio"
@@ -455,8 +545,20 @@ export default function Studio() {
             onStudioTool={setTool}
           />
         </main>
+        {/* the preview sidebar — opens AFTER the task is sent, never on
+            click; the timeline keeps streaming in the chat beside it */}
+        {previewOpen && (
+          <StudioPreview
+            tool={tool as StudioTool}
+            services={services}
+            busyId={busyId}
+            onStart={svc => void startSvc(svc)}
+            onStop={svc => void stopSvc(svc)}
+            onClose={() => setPreviewPinned(false)}
+          />
+        )}
         {/* the right rail MAY hide — it auto-opens with the timeline while
-            a task runs and closes like in Universe */}
+            a task runs and the preview is closed */}
         {railOpen && (
           <Rail
             browserActive={false}
@@ -464,66 +566,6 @@ export default function Studio() {
           />
         )}
       </div>
-
-      {/* the empty-state tool cards — the mandatory picker */}
-      {isEmpty && (
-        <div
-          className="studio-cards-holder"
-          style={{ left: sidebarOpen ? 264 : 0 }}
-          aria-hidden={tool !== null}
-        >
-          <div className="studio-cards" role="group" aria-label="Pick a tool">
-            <div className="studio-cards-col">
-              {CARDS.filter(c => c.id !== "3d").map(card => {
-                const Icon = card.icon;
-                const active = tool === card.id;
-                return (
-                  <button
-                    key={card.id}
-                    type="button"
-                    className={`studio-card${active ? " picked" : ""}`}
-                    onClick={() => setTool(card.id)}
-                    aria-pressed={active}
-                  >
-                    <span className="studio-card-icon">
-                      <Icon size={16} strokeWidth={1.9} />
-                    </span>
-                    <span className="studio-card-body">
-                      <span className="studio-card-title">
-                        {card.name}
-                        {active && (
-                          <Check size={13} strokeWidth={2.4} aria-hidden="true" />
-                        )}
-                      </span>
-                      <span className="studio-card-sub">{card.sub}</span>
-                      <span className="studio-card-powered">
-                        powered by {card.powered}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <BlenderCard
-              service={services?.find(s => s.id === "blender") ?? null}
-              active={tool === "3d"}
-              busy={busyId === "blender"}
-              onPick={() => {
-                setTool("3d");
-                const svc = services?.find(s => s.id === "blender");
-                if (svc && svc.status !== "running") {
-                  toast.info("Connect Blender", {
-                    description:
-                      "Open Blender and enable the blender-mcp addon " +
-                      "(Edit → Preferences → Add-ons) — Universe connects " +
-                      "to it on port 9876.",
-                  });
-                }
-              }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -567,7 +609,7 @@ function BlenderCard({
       <span className="studio-card-sub-c">
         {connected
           ? "Addon reachable on port 9876 — model and render"
-          : "Open Blender with the blender-mcp addon to connect"}
+          : "Open Blender with the Universe 3D addon to connect"}
       </span>
       {service?.status === "starting" && (
         <span className="studio-card-note">

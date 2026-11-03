@@ -1,339 +1,506 @@
 /**
- * pages/Bots.tsx — the Bots workspace: a Grok-Bot-style IM surface pinned
- * under the topbar (h-[calc(100vh-56px)]), styled on the SAME neutral
- * design system as the Universe shell (design-system.css tokens — the
- * blue-tinted palette was retired 2026-11).
+ * pages/Bots.tsx — the Bots surface, rebuilt 2026-11 on Grok Bot's
+ * persistent-agent design, rendered in the SAME Universe design system
+ * (design-system.css tokens — the shell's exact surfaces, hairlines and
+ * green accent).
  *
- *   SIDEBAR  w-[264px] — the shell's left column in Bots mode: the
- *            workspace switcher on top, then the IM-style bot list
- *            (avatar, name, last message, status dot) + New Bot.
- *   CENTER   flex-1   — floating bot pill header (avatar, name, status),
- *                       approvals banner, transcript bubbles (user right
- *                       surface, bot left panel), task composer card.
- *   RIGHT PANEL 40%  — collapsible tabs: Screen (live iframe of the bot's
- *                       machine, token via query param), Details (identity,
- *                       TASK→SKILL→ROUTINE stepper, save-as-skill, schedule
- *                       editor, danger zone), Library (skills/Orbits).
+ *   SIDEBAR  the shell's left column in Bots mode (the ONLY surface that
+ *            swaps the column body): the workspace switcher on top, then
+ *            the roster — avatar-with-presence, name, last message, time —
+ *            New bot (+ Create via chat) and the honest Connect to Muse
+ *            Code state when the runtime is absent.
+ *   CENTER   the selected bot's thread: presence header, approvals banner,
+ *            a heterogeneous transcript (user bubbles right, bot panels
+ *            left, system milestones centered, approval cards inline with
+ *            Allow once / Always allow / Deny), and the composer card with
+ *            a Meta one-shot mic (muse-voice-transcribe — model selected
+ *            automatically, there is exactly one).
+ *   RIGHT    the bot's computer, three levels of access (Grok Bot parity):
+ *            Screen (live machine view), Timeline (LITERALLY the Universe
+ *            timeline — the same ActivityPane/fold the chat renders, fed
+ *            by the bot's real turn events on the same event bus), Details
+ *            (identity, the SAME Universe tool inventory from the real
+ *            registry, Routines with schedule presets, the TASK→SKILL→
+ *            ROUTINE stepper), Library (the bots' shared computer).
  *
- * Data: lib/botsApi.ts against /api/bots* — the selected bot is polled
- * every 4s; the rail sweep refreshes quietly every 15s. User sends are
- * appended optimistically and reconciled (deduped by text) on the next
- * transcript fetch.
+ * Data: lib/botsApi.ts against /api/bots*. The selected bot polls every 4s;
+ * the roster every 10s. Bot tasks run as REAL turns through the same
+ * orchestrator as chat (no Meta key → the Universe engine; Meta key →
+ * Muse Code), so bots have literally the same tools and the same timeline.
  */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import {
+  ArrowUp,
+  Bot as BotIcon,
+  Check,
+  ChevronDown,
   Clock,
+  Cable,
+  FileText,
+  Library,
   Loader2,
   Maximize2,
-  PanelRight,
+  Mic,
+  MicOff,
+  Monitor,
   PlayCircle,
   Plus,
   Save,
-  SendHorizonal,
   ShieldAlert,
   Sparkles,
   Square,
   Trash2,
-  Zap,
+  Workflow,
+  X,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { BridgeError, api } from "@/lib/api";
+import { useUi } from "@/stores/ui";
+import Sidebar from "@/components/desktop/Sidebar";
+import ActivityPane from "@/components/desktop/ActivityPane";
+import ConsentBanner from "@/components/desktop/ConsentBanner";
+import { api } from "@/lib/api";
+import { useChat } from "@/stores/chat";
+import "../components/desktop/design-system.css";
+import "../components/desktop/desktop.css";
+import "../components/desktop/redesign.css";
+import "../components/desktop/flow.css";
+import "../components/desktop/bots.css";
 import {
   botScreenUrl,
   clearBotSchedule,
   createBot,
   decideApproval,
   deleteBot,
+  draftBot,
   getBot,
   listApprovals,
   listBots,
+  listTools,
   runBot,
   setBotSchedule,
   setBotSkill,
+  sharedFiles,
   stopBot,
+  transcribeAudio,
+  type Bot,
+  type BotApproval,
+  type BotDetail,
+  type BotEvent,
+  type BotSchedule,
+  type SharedFile,
+  type ToolInfo,
 } from "@/lib/botsApi";
-import type {
-  ApprovalDecision,
-  Bot,
-  BotApproval,
-  BotDetail,
-  BotEvent,
-  BotSchedule,
-  ScheduleKind,
-} from "@/lib/botsApi";
-import { cn } from "@/lib/utils";
-import WorkspaceSwitcher from "@/components/desktop/WorkspaceSwitcher";
 
-/* ---- design tokens — design-system.css (Universe-measured neutrals) -------- */
+/* ---- presence ----------------------------------------------------------- */
 
-/* Universe primary: the light square button (send-btn.ready language) */
-const ACCENT_BTN = "bg-[#d4d4d4] text-[#161616] hover:bg-white";
-const FIELD =
-  "h-8 w-full border-[var(--ds-line)] bg-white/[0.03] text-xs";
-const SECTION_TITLE =
-  "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
-
-const STATUS_META: Record<
-  Bot["status"],
-  { label: string; dot: string; badge: string; pulse?: boolean }
-> = {
-  idle: {
-    label: "Idle",
-    dot: "#5e5e5e",
-    badge: "border-[var(--ds-line)] bg-white/[0.04] text-[var(--ds-ink-3)]",
-  },
-  running: {
-    label: "Running",
-    dot: "#46bf72",
-    badge:
-      "border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]",
-    pulse: true,
-  },
-  waiting_approval: {
-    label: "Waiting approval",
-    dot: "#ff8a30",
-    badge:
-      "border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.1)] text-[#ffb37a]",
-  },
-  error: {
-    label: "Error",
-    dot: "#e5484d",
-    badge:
-      "border-[rgba(229,72,77,0.3)] bg-[rgba(229,72,77,0.1)] text-[#ff8589]",
-  },
-  paused: {
-    label: "Paused",
-    dot: "#414141",
-    badge: "border-[var(--ds-line)] bg-white/[0.03] text-[var(--ds-ink-4)]",
-  },
+const STATUS_LINE: Record<Bot["status"], string> = {
+  idle: "idle — ready for work",
+  running: "working",
+  waiting_approval: "waiting for your approval",
+  error: "hit an error",
+  paused: "paused",
 };
 
-/* ---- small helpers -------------------------------------------------------- */
-
-function errText(e: unknown): string {
-  if (e instanceof BridgeError) return e.message;
-  if (e instanceof Error && e.message) return e.message;
-  return "Universe bridge is not responding";
+function statusHue(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return h % 360;
 }
 
-function fmtClock(ts: string): string {
-  const d = new Date(ts);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function fmtStamp(ts: string): string {
-  const d = new Date(ts);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleString([], {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-}
-
-/** Chip text for a bot schedule — honest, one line. */
-function describeSchedule(s: BotSchedule): string {
-  switch (s.kind) {
-    case "daily": {
-      const tz = s.tz ? ` ${s.tz}` : "";
-      return s.time ? `Every day ${s.time}${tz}` : "Every day";
-    }
-    case "interval":
-      return s.expr ? `interval ${s.expr}` : "interval";
-    case "cron":
-      return s.expr || "cron";
-    default:
-      return "No schedule";
-  }
-}
-
-/** "30m" | "30" → "30"; anything else → "" (forces a retype). */
-function parseIntervalMinutes(expr: string | undefined): string {
-  if (!expr) return "";
-  const m = /^(\d+)\s*m?$/i.exec(expr.trim());
-  return m ? m[1] : "";
-}
-
-/** BotDetail → the Bot row the rail keeps (drops the transcript). */
-function botSummary(d: BotDetail): Bot {
-  return {
-    id: d.id,
-    name: d.name,
-    description: d.description,
-    status: d.status,
-    schedule: d.schedule,
-    skill: d.skill,
-    skills: d.skills,
-    created_at: d.created_at,
-    last_run_at: d.last_run_at,
-    last_result: d.last_result,
-    approvals_pending: d.approvals_pending,
-    workspace: d.workspace,
-  };
-}
-
-/* ---- atoms ------------------------------------------------------------------ */
-
-function StatusDot({
+function BotAvatar({
+  name,
   status,
-  className,
+  size = 30,
 }: {
-  status: Bot["status"];
-  className?: string;
+  name: string;
+  status?: Bot["status"];
+  size?: number;
 }) {
-  const meta = STATUS_META[status];
+  const hue = statusHue(name);
   return (
     <span
-      className={cn("relative inline-flex size-2 shrink-0", className)}
-      title={meta.label}
+      className="bots-avatar"
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.max(11, size * 0.4),
+        background: `linear-gradient(135deg, hsl(${hue} 42% 66%), hsl(${(hue + 40) % 360} 48% 52%))`,
+      }}
+      title={name}
     >
-      <span
-        className="absolute inset-0 rounded-full"
-        style={{ backgroundColor: meta.dot }}
-      />
-      {meta.pulse && (
-        <span
-          className="absolute inset-0 animate-ping rounded-full opacity-70"
-          style={{ backgroundColor: meta.dot }}
-        />
+      {name.slice(0, 1).toUpperCase()}
+      {status && (
+        <span className={`bots-presence ${status}`} aria-hidden="true" />
       )}
     </span>
   );
 }
 
-function BotAvatar({ name, size = "size-9" }: { name: string; size?: string }) {
-  const letter = (name.trim()[0] ?? "?").toUpperCase();
-  return (
-    <div
-      className={cn(
-        "flex shrink-0 select-none items-center justify-center rounded-full bg-[var(--ds-surface-3)] font-semibold text-[var(--ds-ink)]",
-        size
-      )}
-      aria-hidden="true"
-    >
-      {letter}
-    </div>
-  );
+function fmtClock(ts: string | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function Chip({
-  icon: Icon,
-  text,
-  accent,
-}: {
-  icon: LucideIcon;
-  text: string;
-  accent?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-56 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs",
-        accent
-          ? "border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]"
-          : "border-[var(--ds-line)] bg-white/[0.03] text-muted-foreground"
-      )}
-    >
-      <Icon className="size-3 shrink-0" />
-      <span className="truncate">{text}</span>
-    </span>
-  );
+function fmtDay(ts: string | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  if (d.toDateString() === now.toDateString())
+    return fmtClock(ts) || "today";
+  const y = new Date(now.getTime() - 86400000);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
+
+/* ---- transcript bubbles ---------------------------------------------------- */
 
 function EventBubble({ ev }: { ev: BotEvent }) {
   const time = fmtClock(ev.ts);
   if (ev.role === "user") {
     return (
-      <div className="flex items-end justify-end gap-1.5">
-        {time && (
-          <span className="mb-1 shrink-0 text-[10px] text-muted-foreground/60">
-            {time}
-          </span>
-        )}
-        <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[var(--ds-surface-3)] px-3.5 py-2 text-sm text-[var(--ds-ink)]">
-          {ev.text}
-        </div>
+      <div className="bots-ev user">
+        {time && <span className="bots-ev-time">{time}</span>}
+        <div className="bots-ev-user">{ev.text}</div>
       </div>
     );
   }
   if (ev.role === "bot") {
     return (
-      <div className="flex items-end justify-start gap-1.5">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-md border border-[var(--ds-line)] bg-[var(--ds-surface-1)] px-3.5 py-2 text-sm text-[var(--ds-ink)]">
-          {ev.text}
-        </div>
-        {time && (
-          <span className="mb-1 shrink-0 text-[10px] text-muted-foreground/60">
-            {time}
-          </span>
-        )}
+      <div className="bots-ev">
+        <div className="bots-ev-bot">{ev.text}</div>
+        {time && <span className="bots-ev-time">{time}</span>}
       </div>
     );
   }
-  // system / approval — centered, muted, small
+  if (ev.role === "approval") {
+    return (
+      <div className="bots-ev">
+        <div className="bots-ev-system" style={{ maxWidth: "100%" }}>
+          {ev.text}
+        </div>
+      </div>
+    );
+  }
+  const isErr = /^run failed:/i.test(ev.text);
   return (
-    <div className="flex justify-center">
-      <div className="max-w-[85%] rounded-full border border-[var(--ds-line)] bg-white/[0.02] px-3 py-1 text-center text-xs leading-relaxed text-muted-foreground">
-        {ev.role === "approval" ? "Approval · " : ""}
-        {ev.text}
+    <div className="bots-ev">
+      <div className={`bots-ev-system${isErr ? " err" : ""}`}>{ev.text}</div>
+    </div>
+  );
+}
+
+/* ---- create dialog (form + create-via-chat) ---------------------------------- */
+
+function CreateBotDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (bot: Bot) => void;
+}) {
+  const [mode, setMode] = useState<"chat" | "form">("chat");
+  const [describe, setDescribe] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [engine, setEngine] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const draft = async () => {
+    const text = describe.trim();
+    if (!text) return;
+    setDrafting(true);
+    try {
+      const d = await draftBot(text);
+      setMode("form");
+      setName(d.name);
+      setDesc(d.description);
+      setEngine(d.engine);
+    } catch (e) {
+      // honest degrade: the raw text becomes the draft
+      setMode("form");
+      setName(text.split(/\s+/).slice(0, 3).join(" ") || "New bot");
+      setDesc(text);
+      setEngine(false);
+      toast.info("Drafted from your text", {
+        description:
+          e instanceof Error ? e.message : "the engine was unreachable",
+      });
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    try {
+      const bot = await createBot(name.trim(), desc.trim());
+      toast.success(`${bot.name} joined your roster`);
+      onCreated(bot);
+    } catch (e) {
+      toast.error("Could not create the bot", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div
+      className="bots-overlay"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bots-dialog">
+        {mode === "chat" ? (
+          <>
+            <h3>Create a bot via chat</h3>
+            <p className="dlg-sub">
+              Describe the teammate you need in one message — Universe drafts
+              the name and the job definition, you confirm them.
+            </p>
+            <label htmlFor="bots-describe">What should this bot do?</label>
+            <textarea
+              id="bots-describe"
+              autoFocus
+              value={describe}
+              onChange={e => setDescribe(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void draft();
+                }
+              }}
+              placeholder="e.g. Scan my sources every morning and report the three things that matter back here…"
+            />
+            <div className="bots-dlg-actions">
+              <button type="button" className="bots-btn" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="bots-btn primary"
+                disabled={!describe.trim() || drafting}
+                onClick={() => void draft()}
+              >
+                {drafting ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                Draft the bot
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3>Create a bot</h3>
+            <p className="dlg-sub">
+              Bots are persistent teammates: identity, memory, their own
+              workspace and the SAME Universe tools.
+            </p>
+            {engine && (
+              <div className="bots-draft">
+                <div className="bots-draft-row">
+                  <Sparkles className="size-3.5 text-[var(--ds-accent,#46bf72)]" />
+                  <b>Drafted by the engine</b>
+                  <span className="bots-chip on rec">editable</span>
+                </div>
+              </div>
+            )}
+            <label htmlFor="bots-name">Name</label>
+            <input
+              id="bots-name"
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Research Scout"
+            />
+            <label htmlFor="bots-desc">Job definition</label>
+            <textarea
+              id="bots-desc"
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              placeholder="What this bot owns, its sources and its boundaries…"
+            />
+            <div className="bots-dlg-actions">
+              <button
+                type="button"
+                className="bots-btn"
+                onClick={() => setMode("chat")}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="bots-btn primary"
+                disabled={!name.trim() || creating}
+                onClick={() => void create()}
+              >
+                {creating ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Plus className="size-3.5" />
+                )}
+                Create bot
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-/* ---- right panel: Screen tab ------------------------------------------------ */
+/* ---- the roster (sidebar body) --------------------------------------------- */
+
+function Roster({
+  bots,
+  selectedId,
+  onSelect,
+  onNew,
+  runtime,
+}: {
+  bots: Bot[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onNew: (mode: "chat" | "form") => void;
+  runtime: { runtime: string; muse_installed: boolean; meta_key: boolean } | null;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
+
+  return (
+    <div className="bots-roster">
+      <div className="bots-roster-head">
+        <h2>Bots</h2>
+        <div className="bots-newmenu" ref={menuRef}>
+          <button
+            type="button"
+            className="bots-btn primary"
+            style={{ padding: "4px 10px", fontSize: "11.5px" }}
+            onClick={() => setMenuOpen(v => !v)}
+            aria-expanded={menuOpen}
+          >
+            <Plus className="size-3.5" /> New bot
+          </button>
+          {menuOpen && (
+            <div className="cx-menu side-menu" role="menu">
+              <div className="cx-menu-h">Create</div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onNew("chat");
+                }}
+              >
+                <span>Create via chat</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onNew("form");
+                }}
+              >
+                <span>New bot form</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      {runtime && !runtime.muse_installed && (
+        <div className="bots-connect">
+          <b>
+            <Cable className="size-3.5" /> Connect to Muse Code
+          </b>
+          <p>
+            Bots run on Meta's Muse Code runtime. Install it (
+            <code>curl -fsSL https://dev.meta.ai/install.sh | bash</code>) and
+            the page flips to ready — until then tasks run on Universe's own
+            engine.
+          </p>
+        </div>
+      )}
+      {runtime && runtime.muse_installed && !runtime.meta_key && (
+        <div className="bots-connect">
+          <b>
+            <Sparkles className="size-3.5" /> Muse Code is installed
+            <span className="bots-chip rec-chip rec">Meta · Recommended</span>
+          </b>
+          <p>
+            Add your Meta API key in Settings → Providers → Meta to run bots
+            on Muse Code. Until then tasks run on Universe's own engine.
+          </p>
+        </div>
+      )}
+      {bots.length === 0 ? (
+        <p className="bots-roster-note">
+          No bots yet — create your first teammate and hand it real work.
+        </p>
+      ) : (
+        <ul>
+          {bots.map(b => {
+            const last = b.last_result ?? "";
+            return (
+              <li key={b.id}>
+                <button
+                  type="button"
+                  className={`bots-row${selectedId === b.id ? " on" : ""}`}
+                  onClick={() => onSelect(b.id)}
+                >
+                  <BotAvatar
+                    name={b.name}
+                    status={b.status}
+                    size={30}
+                  />
+                  <span className="bots-row-name">
+                    <b>{b.name}</b>
+                    <span>
+                      {b.status === "running"
+                        ? "working…"
+                        : b.status === "waiting_approval"
+                          ? "needs your approval"
+                          : last
+                            ? last.slice(0, 64)
+                            : STATUS_LINE[b.status]}
+                    </span>
+                  </span>
+                  <span className="bots-row-time">
+                    {fmtDay(b.last_run_at)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---- right panel tabs --------------------------------------------------------- */
 
 function ScreenTab({ bot }: { bot: BotDetail }) {
   const [src, setSrc] = useState<string | null>(null);
-
   useEffect(() => {
     let alive = true;
     setSrc(null);
@@ -348,59 +515,46 @@ function ScreenTab({ bot }: { bot: BotDetail }) {
       alive = false;
     };
   }, [bot.id]);
-
   return (
-    <TabsContent
-      value="screen"
-      forceMount
-      className="min-h-0 flex-1 data-[state=inactive]:hidden"
-    >
-      <div className="flex h-full min-h-0 flex-col gap-2 p-3">
-        <div className="flex shrink-0 items-center gap-2">
-          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            Bot's screen — you can control the bot's machine
-          </p>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open the screen in a new window"
-                disabled={!src}
-                onClick={() => {
-                  if (src) window.open(src, "_blank", "noopener");
-                }}
-              >
-                <Maximize2 className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="border border-[var(--ds-line)] bg-[#2b2b2b] text-muted-foreground">
-              Open in a new window
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[var(--ds-line)] bg-black/40">
-          {src ? (
-            <iframe
-              key={bot.id}
-              src={src}
-              title={`${bot.name} — live screen`}
-              className="size-full"
-            />
-          ) : (
-            <div className="flex size-full items-center justify-center">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          )}
-        </div>
+    <div className="bots-screen">
+      <p
+        style={{
+          margin: 0,
+          fontSize: "11.5px",
+          color: "var(--ink3,#999999)",
+        }}
+      >
+        The bot's computer — a live, honest view of its status, transcript and
+        workspace.
+      </p>
+      <div className="bots-screen-frame">
+        {src ? (
+          <iframe
+            key={bot.id}
+            src={src}
+            title={`${bot.name} — live screen`}
+          />
+        ) : (
+          <div className="bots-hero" style={{ padding: 12 }}>
+            <Loader2 className="size-4 animate-spin" />
+          </div>
+        )}
       </div>
-    </TabsContent>
+      {src && (
+        <button
+          type="button"
+          className="bots-btn"
+          style={{ alignSelf: "flex-start" }}
+          onClick={() => window.open(src, "_blank", "noopener")}
+        >
+          <Maximize2 className="size-3.5" /> Open in a new window
+        </button>
+      )}
+    </div>
   );
 }
 
-/* ---- right panel: Details tab ----------------------------------------------- */
-
-const STEPS: { icon: LucideIcon; title: string; hint: string }[] = [
+const STEPS = [
   { icon: PlayCircle, title: "TASK", hint: "Run the job once and watch it" },
   { icon: Save, title: "SKILL", hint: "Save the method as a skill" },
   { icon: Clock, title: "ROUTINE", hint: "Run on a schedule" },
@@ -409,1293 +563,814 @@ const STEPS: { icon: LucideIcon; title: string; hint: string }[] = [
 function Stepper({ bot }: { bot: Bot }) {
   const current = bot.schedule.kind !== "none" ? 2 : bot.skill ? 1 : 0;
   return (
-    <section>
-      <h3 className={SECTION_TITLE}>Path to a routine</h3>
-      <ol className="mt-2 flex items-stretch gap-2">
-        {STEPS.map((s, i) => {
-          const done = i < current;
-          const active = i === current;
-          return (
-            <li key={s.title} className="relative flex-1">
-              {i > 0 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -left-2 top-4 h-px w-2 bg-[var(--ds-line)]"
-                />
-              )}
-              <div
-                className={cn(
-                  "flex h-full flex-col gap-1.5 rounded-lg border p-2.5",
-                  active
-                    ? "border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.1)]"
-                    : done
-                      ? "border-[var(--ds-line)] bg-white/[0.03]"
-                      : "border-[var(--ds-line)] opacity-60"
-                )}
-              >
-                <s.icon
-                  className={cn(
-                    "size-4",
-                    active
-                      ? "text-[var(--ds-accent)]"
-                      : done
-                        ? "text-foreground/70"
-                        : "text-muted-foreground"
-                  )}
-                />
-                <p
-                  className={cn(
-                    "text-[11px] font-semibold tracking-wide",
-                    active ? "text-[var(--ds-accent)]" : "text-foreground/80"
-                  )}
-                >
-                  {s.title}
-                </p>
-                <p className="text-[10px] leading-snug text-muted-foreground">
-                  {s.hint}
-                </p>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
+    <div className="bots-steps">
+      {STEPS.map((s, i) => (
+        <div
+          key={s.title}
+          className={`bots-step${i < current ? " done" : i === current ? " active" : ""}`}
+        >
+          <b>
+            <s.icon className="size-3" /> {s.title}
+          </b>
+          <span>{s.hint}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 
-function DetailsTab({
-  bot,
-  onChanged,
-  onDelete,
-}: {
-  bot: BotDetail;
-  onChanged: () => void;
-  onDelete: () => Promise<void>;
-}) {
-  // save last run as a skill
+const SCHEDULE_PRESETS: Array<{ label: string; sched: BotSchedule }> = [
+  { label: "No schedule", sched: { kind: "none" } },
+  { label: "Every day · 8:00 AM", sched: { kind: "daily", time: "08:00", tz: "UTC" } },
+  { label: "Every day · 6:00 PM", sched: { kind: "daily", time: "18:00", tz: "UTC" } },
+  { label: "Every 30 minutes", sched: { kind: "interval", expr: "30m" } },
+  { label: "Every 6 hours", sched: { kind: "interval", expr: "360m" } },
+];
+
+function DetailsTab({ bot }: { bot: BotDetail }) {
+  const [tools, setTools] = useState<ToolInfo[] | null>(null);
   const [skillName, setSkillName] = useState("");
-  const [savingSkill, setSavingSkill] = useState(false);
-
-  // schedule editor draft — reset on bot switch or poll sync, but never
-  // clobbered while the user has an edit in flight (dirty)
-  const [schedDraft, setSchedDraft] = useState<BotSchedule>(bot.schedule);
-  const [dirty, setDirty] = useState(false);
-  const [savingSched, setSavingSched] = useState(false);
-  const [draftOwner, setDraftOwner] = useState(bot.id);
-  const [seenSched, setSeenSched] = useState(() =>
-    JSON.stringify(bot.schedule)
+  const [sched, setSched] = useState<string>(
+    bot.schedule.kind === "none" ? "none" : "custom"
   );
-  const nextSched = JSON.stringify(bot.schedule);
-  if (draftOwner !== bot.id || (nextSched !== seenSched && !dirty)) {
-    setDraftOwner(bot.id);
-    setSeenSched(nextSched);
-    setSchedDraft(bot.schedule);
-    setDirty(false);
-  }
-
-  // delete confirmation
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const minutes = parseIntervalMinutes(schedDraft.expr);
-  const schedValid =
-    schedDraft.kind === "none" ||
-    (schedDraft.kind === "daily" && !!schedDraft.time) ||
-    (schedDraft.kind === "interval" &&
-      minutes !== "" &&
-      Number(minutes) > 0) ||
-    (schedDraft.kind === "cron" && !!schedDraft.expr?.trim());
-
-  const updateSched = (s: BotSchedule) => {
-    setSchedDraft(s);
-    setDirty(true);
-  };
-
-  const saveSkill = async () => {
-    const name = skillName.trim().replace(/^\/+/, "");
-    if (!name || savingSkill) return;
-    setSavingSkill(true);
-    try {
-      const r = await setBotSkill(bot.id, name);
-      setSkillName("");
-      toast.success("Saved as a skill", { description: `/${r.skill}` });
-      onChanged();
-    } catch (e) {
-      toast.error("Could not save the skill", { description: errText(e) });
-    } finally {
-      setSavingSkill(false);
-    }
-  };
-
-  const buildSchedulePayload = (): BotSchedule => {
-    switch (schedDraft.kind) {
-      case "daily":
-        return {
-          kind: "daily",
-          time: schedDraft.time || undefined,
-          tz: schedDraft.tz?.trim() || undefined,
-        };
-      case "interval":
-        return { kind: "interval", expr: `${minutes}m` };
-      case "cron":
-        return { kind: "cron", expr: schedDraft.expr?.trim() || undefined };
-      default:
-        return { kind: "none" };
-    }
-  };
-
-  const saveSched = async () => {
-    if (!schedValid || savingSched) return;
-    setSavingSched(true);
-    try {
-      const saved = await setBotSchedule(bot.id, buildSchedulePayload());
-      setSchedDraft(saved.schedule);
-      setSeenSched(JSON.stringify(saved.schedule));
-      setDirty(false);
-      toast.success("Schedule saved", {
-        description: describeSchedule(saved.schedule),
-      });
-      onChanged();
-    } catch (e) {
-      toast.error("Could not save the schedule", { description: errText(e) });
-    } finally {
-      setSavingSched(false);
-    }
-  };
-
-  const clearSched = async () => {
-    if (savingSched) return;
-    setSavingSched(true);
-    try {
-      const saved = await clearBotSchedule(bot.id);
-      setSchedDraft(saved.schedule);
-      setSeenSched(JSON.stringify(saved.schedule));
-      setDirty(false);
-      toast.success("Schedule cleared", { description: bot.name });
-      onChanged();
-    } catch (e) {
-      toast.error("Could not clear the schedule", { description: errText(e) });
-    } finally {
-      setSavingSched(false);
-    }
-  };
-
-  const remove = async () => {
-    if (deleting) return;
-    setDeleting(true);
-    try {
-      await onDelete();
-      setConfirmDelete(false);
-    } catch (e) {
-      toast.error("Could not delete the bot", { description: errText(e) });
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <TabsContent
-      value="details"
-      forceMount
-      className="min-h-0 flex-1 data-[state=inactive]:hidden"
-    >
-      <ScrollArea className="h-full">
-        <div className="flex flex-col gap-4 p-4 text-sm">
-          {/* identity — read-only */}
-          <section>
-            <h3 className={SECTION_TITLE}>Bot</h3>
-            <p className="mt-1.5 font-medium text-foreground">{bot.name}</p>
-            <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">
-              {bot.description || "No description."}
-            </p>
-            <p
-              className="mt-2 truncate font-mono text-[11px] text-muted-foreground"
-              title={bot.workspace}
-            >
-              {bot.workspace}
-            </p>
-            {bot.skill && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Active skill:{" "}
-                <span className="font-mono text-[var(--ds-accent)]">/{bot.skill}</span>
-              </p>
-            )}
-          </section>
-
-          <Separator className="bg-[var(--ds-line)]" />
-
-          <Stepper bot={bot} />
-
-          <Separator className="bg-[var(--ds-line)]" />
-
-          {/* save last run as skill */}
-          <section>
-            <h3 className={SECTION_TITLE}>Save last run as skill</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Name the method the bot just figured out — it becomes a reusable
-              Orbit.
-            </p>
-            <div className="mt-2 flex gap-2">
-              <Input
-                value={skillName}
-                onChange={e => setSkillName(e.target.value)}
-                maxLength={64}
-                placeholder="daily-blog-pulse"
-                className={FIELD}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void saveSkill();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                className={cn("h-8 shrink-0 px-3", ACCENT_BTN)}
-                disabled={!skillName.trim() || savingSkill}
-                onClick={() => void saveSkill()}
-              >
-                {savingSkill ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Save className="size-3.5" />
-                )}
-                Save
-              </Button>
-            </div>
-          </section>
-
-          <Separator className="bg-[var(--ds-line)]" />
-
-          {/* schedule editor */}
-          <section>
-            <h3 className={SECTION_TITLE}>Schedule</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Turn the skill into a routine — the bot runs it on its own.
-            </p>
-            <div className="mt-2 flex flex-col gap-2">
-              <Select
-                value={schedDraft.kind}
-                onValueChange={v => updateSched({ ...schedDraft, kind: v as ScheduleKind })}
-              >
-                <SelectTrigger className={FIELD}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="border-[var(--ds-line)] bg-[#2b2b2b]">
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="interval">Interval</SelectItem>
-                  <SelectItem value="cron">Cron</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {schedDraft.kind === "daily" && (
-                <div className="flex gap-2">
-                  <Input
-                    type="time"
-                    value={schedDraft.time ?? ""}
-                    onChange={e =>
-                      updateSched({
-                        ...schedDraft,
-                        kind: "daily",
-                        time: e.target.value || undefined,
-                      })
-                    }
-                    aria-label="Time of day"
-                    className={FIELD}
-                  />
-                  <Input
-                    value={schedDraft.tz ?? ""}
-                    onChange={e =>
-                      updateSched({
-                        ...schedDraft,
-                        kind: "daily",
-                        tz: e.target.value,
-                      })
-                    }
-                    placeholder="Europe/Rome"
-                    aria-label="Timezone"
-                    className={FIELD}
-                  />
-                </div>
-              )}
-
-              {schedDraft.kind === "interval" && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  every
-                  <Input
-                    type="number"
-                    min={1}
-                    value={minutes}
-                    onChange={e =>
-                      updateSched({
-                        ...schedDraft,
-                        kind: "interval",
-                        expr:
-                          e.target.value.trim() === ""
-                            ? undefined
-                            : `${e.target.value.trim()}m`,
-                      })
-                    }
-                    aria-label="Interval minutes"
-                    className="h-8 w-20 border-[var(--ds-line)] bg-white/[0.03] text-xs"
-                  />
-                  minutes
-                </div>
-              )}
-
-              {schedDraft.kind === "cron" && (
-                <Input
-                  value={schedDraft.expr ?? ""}
-                  onChange={e =>
-                    updateSched({
-                      ...schedDraft,
-                      kind: "cron",
-                      expr: e.target.value,
-                    })
-                  }
-                  placeholder="*/30 * * * *"
-                  aria-label="Cron expression"
-                  className={cn(FIELD, "font-mono")}
-                />
-              )}
-
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className={cn("h-8 flex-1", ACCENT_BTN)}
-                  disabled={!schedValid || savingSched}
-                  onClick={() => void saveSched()}
-                >
-                  {savingSched ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Clock className="size-3.5" />
-                  )}
-                  Save schedule
-                </Button>
-                {schedDraft.kind !== "none" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-[var(--ds-line)] bg-transparent text-muted-foreground hover:text-foreground"
-                    disabled={savingSched}
-                    onClick={() => void clearSched()}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <Separator className="bg-[var(--ds-line)]" />
-
-          {/* danger zone */}
-          <section className="rounded-lg border border-[rgba(229,72,77,0.2)] bg-[rgba(229,72,77,0.05)] p-3">
-            <h3 className="text-xs font-medium text-[#ff8589]">Danger zone</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Deleting the bot removes its transcript and schedule. The
-              workspace is kept.
-            </p>
-            <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2 border-[rgba(229,72,77,0.3)] bg-transparent text-[#ff8589] hover:bg-[rgba(229,72,77,0.1)] hover:text-[#ff8589]"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="size-3.5" />
-                Delete bot
-              </Button>
-              <AlertDialogContent className="border-[var(--ds-line)] bg-[#2b2b2b]">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete “{bot.name}”?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This permanently removes the bot, its transcript and its
-                    schedule. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-[#e5484d] text-white hover:bg-[#ff8589]"
-                    disabled={deleting}
-                    onClick={e => {
-                      e.preventDefault();
-                      void remove();
-                    }}
-                  >
-                    {deleting ? "Deleting…" : "Delete"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </section>
-        </div>
-      </ScrollArea>
-    </TabsContent>
-  );
-}
-
-/* ---- right panel: Library tab ------------------------------------------------ */
-
-function LibraryTab({ bot }: { bot: BotDetail }) {
-  return (
-    <TabsContent
-      value="library"
-      forceMount
-      className="min-h-0 flex-1 data-[state=inactive]:hidden"
-    >
-      <ScrollArea className="h-full">
-        <div className="flex flex-col gap-3 p-4">
-          <h3 className={SECTION_TITLE}>Skills</h3>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Skills are reusable bot methods (Orbits) — saved from a run and
-            replayed on any schedule.
-          </p>
-          {bot.skills.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[var(--ds-line)] p-4 text-center text-xs text-muted-foreground">
-              No skills yet — run the job once, then save it from Details.
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {bot.skills.map(s => (
-                <Badge
-                  key={s}
-                  variant="outline"
-                  className={cn(
-                    "gap-1 font-mono text-xs",
-                    s === bot.skill
-                      ? "border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.1)] text-[var(--ds-accent)]"
-                      : "border-[var(--ds-line)] text-muted-foreground"
-                  )}
-                >
-                  <Zap className="size-3" />/{s}
-                </Badge>
-              ))}
-            </div>
-          )}
-          {bot.skill && (
-            <p className="text-xs text-muted-foreground">
-              Active:{" "}
-              <span className="font-mono text-[var(--ds-accent)]">/{bot.skill}</span>
-            </p>
-          )}
-        </div>
-      </ScrollArea>
-    </TabsContent>
-  );
-}
-
-/* ---- dialogs ------------------------------------------------------------------ */
-
-function CreateBotDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCreated: (bot: Bot) => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [saving, setSaving] = useState(false);
-
   useEffect(() => {
-    if (open) {
-      setName("");
-      setDescription("");
-    }
-  }, [open]);
-
-  const submit = async () => {
-    const n = name.trim();
-    if (!n || saving) return;
-    setSaving(true);
-    try {
-      const bot = await createBot(n, description.trim());
-      toast.success("Bot created", { description: n });
-      onOpenChange(false);
-      onCreated(bot);
-    } catch (e) {
-      toast.error("Could not create the bot", { description: errText(e) });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[var(--ds-line)] bg-[#2b2b2b] sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New Bot</DialogTitle>
-          <DialogDescription>
-            One bot, one job — the name is for you; the description holds the
-            job, sources and boundaries.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bot-name">Name</Label>
-            <Input
-              id="bot-name"
-              value={name}
-              maxLength={80}
-              autoFocus
-              placeholder="daily-blog-pulse"
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bot-description">Description</Label>
-            <Textarea
-              id="bot-description"
-              value={description}
-              maxLength={4000}
-              rows={4}
-              placeholder="Every morning at 05:00, pull today's tech headlines from these sources, write a short post in my voice and leave it as a draft."
-              onChange={e => setDescription(e.target.value)}
-              className="resize-none"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
-          <Button
-            className={ACCENT_BTN}
-            disabled={saving || !name.trim()}
-            onClick={() => void submit()}
-          >
-            {saving ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Plus />
-            )}
-            Create
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ApprovalsDialog({
-  bot,
-  open,
-  onOpenChange,
-  onDecided,
-}: {
-  bot: Bot;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onDecided: () => void;
-}) {
-  const [rows, setRows] = useState<BotApproval[] | null>(null);
-  const [deciding, setDeciding] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
     let alive = true;
-    setRows(null);
-    listApprovals(bot.id)
-      .then(r => {
-        if (alive) setRows(r);
+    listTools()
+      .then(t => {
+        if (alive) setTools(t);
       })
-      .catch(e => {
-        if (!alive) return;
-        setRows([]);
-        toast.error("Could not load approvals", { description: errText(e) });
+      .catch(() => {
+        if (alive) setTools([]);
       });
     return () => {
       alive = false;
     };
-  }, [open, bot.id]);
+  }, []);
 
-  const decide = async (a: BotApproval, decision: ApprovalDecision) => {
-    if (deciding) return;
-    setDeciding(a.id);
+  const saveSkill = async () => {
+    const n = skillName.trim();
+    if (!n) return;
     try {
-      await decideApproval(bot.id, a.id, decision);
-      toast.success(decision === "deny" ? "Denied" : "Allowed", {
-        description: a.summary,
-      });
-      // optimistic drop, then a quiet re-sync in case more arrived
-      setRows(rs => (rs ? rs.filter(x => x.id !== a.id) : rs));
-      void listApprovals(bot.id)
-        .then(r => setRows(r))
-        .catch(() => undefined);
-      onDecided();
+      await setBotSkill(bot.id, n);
+      setSkillName("");
+      toast.success(`Method saved as skill /${n.replace(/^\/+/, "")}`);
     } catch (e) {
-      toast.error("Could not record the decision", {
-        description: errText(e),
+      toast.error("Could not save the skill", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
       });
-    } finally {
-      setDeciding(null);
+    }
+  };
+
+  const applySchedule = async (value: string) => {
+    setSched(value);
+    try {
+      if (value === "none") {
+        await clearBotSchedule(bot.id);
+        toast.success("Routine cleared");
+      } else {
+        const preset = SCHEDULE_PRESETS.find(p => p.label === value);
+        if (preset) {
+          await setBotSchedule(bot.id, preset.sched);
+          toast.success(`Routine set — ${preset.label}`);
+        }
+      }
+    } catch (e) {
+      toast.error("Could not set the routine", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
+      });
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[var(--ds-line)] bg-[#2b2b2b] sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Pending approvals</DialogTitle>
-          <DialogDescription>
-            {bot.name} needs a decision before it can continue.
-          </DialogDescription>
-        </DialogHeader>
-        <ScrollArea className="max-h-[55vh] pr-2">
-          {rows === null ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : rows.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              No approvals pending — all caught up.
+    <div>
+      <section className="bots-sec">
+        <h3>
+          <BotIcon className="size-3" /> Identity
+        </h3>
+        <p>{bot.description || "No job definition yet."}</p>
+        <p className="sub">
+          Workspace {bot.workspace?.split("/").slice(-1)[0] || bot.id} · joined{" "}
+          {fmtDay(bot.created_at)}
+        </p>
+      </section>
+
+      <section className="bots-sec">
+        <h3>
+          <Workflow className="size-3" /> Tools — the same as Universe
+        </h3>
+        {tools === null ? (
+          <p className="sub">Reading the tool registry…</p>
+        ) : (
+          <>
+            <p className="sub" style={{ marginTop: 0 }}>
+              {tools.length} built-in tools, resolved through the same
+              registry every Universe turn uses — file, shell, browser, web,
+              the Studio tools, all of it.
             </p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {rows.map(a => (
-                <div
-                  key={a.id}
-                  className="rounded-lg border border-[var(--ds-line)] bg-white/[0.03] p-3"
-                >
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.1)] text-[#ff8a30]"
-                    >
-                      {a.kind}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {fmtStamp(a.ts)}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-medium text-foreground">
-                    {a.summary}
-                  </p>
-                  {a.detail && (
-                    <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
-                      {a.detail}
-                    </p>
-                  )}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      className={cn("px-3", ACCENT_BTN)}
-                      disabled={deciding !== null}
-                      onClick={() => void decide(a, "allow_once")}
-                    >
-                      Allow once
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-[rgba(70,191,114,0.4)] bg-transparent text-[var(--ds-accent)] hover:bg-[rgba(70,191,114,0.1)] hover:text-[var(--ds-accent)]"
-                      disabled={deciding !== null}
-                      onClick={() => void decide(a, "always_allow")}
-                    >
-                      Always allow
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-[rgba(229,72,77,0.3)] bg-transparent text-[#ff8589] hover:bg-[rgba(229,72,77,0.1)] hover:text-[#ff8589]"
-                      disabled={deciding !== null}
-                      onClick={() => void decide(a, "deny")}
-                    >
-                      Deny
-                    </Button>
-                  </div>
+            <div className="bots-tools">
+              {tools.slice(0, 14).map(t => (
+                <div className="bots-tool" key={t.name} title={t.description}>
+                  <b>{t.name}</b>
+                  <span>{t.description}</span>
                 </div>
               ))}
             </div>
-          )}
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+            {tools.length > 14 && (
+              <p className="sub">…and {tools.length - 14} more.</p>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="bots-sec">
+        <h3>
+          <Clock className="size-3" /> Routines
+        </h3>
+        <p className="sub" style={{ marginTop: 0 }}>
+          Give the bot a standing responsibility — it runs on a schedule and
+          reports back here.
+        </p>
+        <div className="bots-fieldrow">
+          <select
+            value={sched}
+            onChange={e => void applySchedule(e.target.value)}
+            aria-label="Routine schedule"
+          >
+            {SCHEDULE_PRESETS.map(p => (
+              <option key={p.label} value={p.label}>
+                {p.label}
+              </option>
+            ))}
+            <option value="custom" disabled>
+              Custom…
+            </option>
+          </select>
+        </div>
+        {bot.schedule.kind !== "none" && (
+          <p className="sub">
+            Active: {bot.schedule.kind}
+            {bot.schedule.time ? ` at ${bot.schedule.time}` : ""}
+            {bot.schedule.expr ? ` (${bot.schedule.expr})` : ""}
+            {bot.schedule.tz ? ` · ${bot.schedule.tz}` : ""}
+          </p>
+        )}
+      </section>
+
+      <section className="bots-sec">
+        <h3>
+          <Sparkles className="size-3" /> Task → Skill → Routine
+        </h3>
+        <Stepper bot={bot} />
+        {bot.skills.length > 0 && (
+          <div className="bots-chiprow" style={{ marginTop: 10 }}>
+            {bot.skills.map(s => (
+              <span key={s} className="bots-chip on">
+                {s}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="bots-fieldrow">
+          <input
+            value={skillName}
+            onChange={e => setSkillName(e.target.value)}
+            placeholder="Save this bot's method as a skill…"
+            onKeyDown={e => {
+              if (e.key === "Enter") void saveSkill();
+            }}
+          />
+          <button
+            type="button"
+            className="bots-btn"
+            disabled={!skillName.trim()}
+            onClick={() => void saveSkill()}
+          >
+            <Save className="size-3.5" /> Save
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LibraryTab({ botId }: { botId: string }) {
+  const [data, setData] = useState<{ path: string; files: SharedFile[] } | null>(
+    null
+  );
+  const load = useCallback(() => {
+    sharedFiles()
+      .then(setData)
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    load();
+    const id = window.setInterval(load, 8000);
+    return () => window.clearInterval(id);
+  }, [load]);
+  return (
+    <div className="bots-pane-pad">
+      <h3
+        style={{
+          margin: "0 0 4px",
+          fontSize: "10.5px",
+          fontWeight: 600,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--ink3,#999999)",
+        }}
+      >
+        Shared computer
+      </h3>
+      <p style={{ margin: "0 0 10px", fontSize: "11.5px", color: "var(--ink3,#999999)" }}>
+        One directory every bot reads and writes — the files substrate bot
+        collaboration flows through.
+      </p>
+      {data && data.files.length === 0 && (
+        <p style={{ fontSize: "12px", color: "var(--ink3,#999999)" }}>
+          (empty — bots write their outputs here)
+        </p>
+      )}
+      {data?.files.map(f => (
+        <div className="bots-file" key={f.name} title={f.name}>
+          <FileText className="size-3.5" style={{ flex: "none" }} />
+          <span style={{ margin: 0, color: "inherit", fontSize: "inherit" }}>
+            {f.name}
+          </span>
+          <span>{f.size}B</span>
+        </div>
+      ))}
+      {data && (
+        <p
+          style={{
+            margin: "10px 0 0",
+            fontSize: "10.5px",
+            color: "var(--ink4,#5e5e5e)",
+          }}
+        >
+          {data.path}
+        </p>
+      )}
+      {botId === "" && null}
+    </div>
   );
 }
 
 /* ---- the page ------------------------------------------------------------------ */
 
+type PanelTab = "screen" | "timeline" | "details" | "library";
+
 export default function BotsPage() {
-  const [bots, setBots] = useState<Bot[] | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
+  const sidebarOpen = useUiSidebar();
+  const [bots, setBots] = useState<Bot[]>([]);
+  const [runtime, setRuntime] = useState<{
+    runtime: string;
+    muse_installed: boolean;
+    meta_key: boolean;
+  } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<BotDetail | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [approvalsOpen, setApprovalsOpen] = useState(false);
-  const [rightOpen, setRightOpen] = useState(true);
-  const [draft, setDraft] = useState("");
+  const [approvals, setApprovals] = useState<BotApproval[]>([]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<PanelTab>("screen");
+  const [createOpen, setCreateOpen] = useState<null | "chat" | "form">(null);
+  const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  // the REAL runtime status: Muse Code CLI on PATH + a Meta API key. When
-  // the runtime is absent the page shows Connect to Muse Code instead of
-  // Add bot — never a fake ready state.
-  const [runtime, setRuntime] = useState<
-    "muse" | "muse_no_key" | "unavailable" | "checking"
-  >("checking");
-  const [connectOpen, setConnectOpen] = useState(false);
-  // bumping this re-arms the detail poll immediately (post-mutation nudge)
-  const [pollBump, setPollBump] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const lastTurnRef = useRef<string | null>(null);
 
-  // "create bot in chat": the /bot command and chat entries land here with
-  // ?create=1 and open the New Bot dialog directly
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("create") === "1") {
-      setCreateOpen(true);
-      window.history.replaceState(null, "", "/bots");
-    }
+  const refreshList = useCallback(() => {
+    listBots()
+      .then(setBots)
+      .catch(() => {});
   }, []);
 
   const refreshRuntime = useCallback(() => {
+    // bots/status lives on the same bridge — a thin fetch here keeps the
+    // roster banner honest (Connect to Muse Code vs ready)
     api
       .botsStatus()
-      .then(s => setRuntime(s.runtime))
-      .catch(() => setRuntime("unavailable"));
+      .then(setRuntime)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
+    refreshList();
     refreshRuntime();
-  }, [refreshRuntime]);
+    const id = window.setInterval(() => {
+      refreshList();
+      refreshRuntime();
+    }, 10000);
+    return () => window.clearInterval(id);
+  }, [refreshList, refreshRuntime]);
 
-  const detailBusy = useRef(false);
-  const optimisticRef = useRef<BotEvent[]>([]);
-  const prevSelected = useRef<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-
-  const refreshList = useCallback(async (silent = false) => {
-    try {
-      const rows = await listBots();
-      setBots(rows);
-      setListError(null);
-    } catch (e) {
-      if (!silent) setListError(errText(e));
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshList();
-  }, [refreshList]);
-
-  // quiet 15s sweep keeps the rail's status dots honest between interactions
-  useEffect(() => {
-    const t = window.setInterval(() => {
-      void refreshList(true);
-    }, 15000);
-    return () => window.clearInterval(t);
-  }, [refreshList]);
-
-  // detail poll — every 4s while a bot is selected (+ nudges after mutations)
-  useEffect(() => {
-    if (prevSelected.current !== selectedId) {
-      prevSelected.current = selectedId;
-      optimisticRef.current = [];
-      setDetail(null);
-    }
+  // selected bot: poll the detail every 4s
+  const refreshDetail = useCallback(() => {
     if (!selectedId) return;
-    let alive = true;
-    const tick = async () => {
-      if (detailBusy.current) return;
-      detailBusy.current = true;
-      try {
-        const d = await getBot(selectedId);
-        if (!alive) return;
-        const pending = optimisticRef.current.filter(
-          o => !d.transcript.some(t => t.role === "user" && t.text === o.text)
-        );
-        optimisticRef.current = pending;
-        setDetail({ ...d, transcript: [...d.transcript, ...pending] });
-        setBots(rows =>
-          rows ? rows.map(b => (b.id === d.id ? botSummary(d) : b)) : rows
-        );
-      } catch (e) {
-        if (!alive) return;
-        if (e instanceof BridgeError && e.status === 404) {
-          setSelectedId(null);
-          setDetail(null);
-          toast.error("This bot no longer exists", {
-            description: "It was deleted elsewhere.",
-          });
-          void refreshList(true);
+    getBot(selectedId)
+      .then(d => {
+        setDetail(d);
+        if (d.last_turn_id && d.last_turn_id !== lastTurnRef.current) {
+          lastTurnRef.current = d.last_turn_id;
+          // refill the SAME Universe timeline for this bot's turn
+          api
+            .refill(d.last_turn_id, 0)
+            .then(r => {
+              for (const ev of r.events ?? [])
+                useChat.getState().ingestEvent(ev as never);
+            })
+            .catch(() => {});
         }
-        // other failures are transient (bridge restart) — stay quiet,
-        // the next tick retries
-      } finally {
-        detailBusy.current = false;
-      }
-    };
-    void tick();
-    const t = window.setInterval(tick, 4000);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
-  }, [selectedId, pollBump, refreshList]);
+      })
+      .catch(() => {});
+    listApprovals(selectedId)
+      .then(setApprovals)
+      .catch(() => {});
+  }, [selectedId]);
+
+  useEffect(() => {
+    refreshDetail();
+    if (!selectedId) return;
+    const id = window.setInterval(refreshDetail, 4000);
+    return () => window.clearInterval(id);
+  }, [refreshDetail, selectedId]);
+
+  // auto-open the panel with the Screen when the bot starts working
+  useEffect(() => {
+    if (detail?.status === "running" && !panelOpen) {
+      setPanelOpen(true);
+      setPanelTab("screen");
+    }
+  }, [detail?.status, panelOpen]);
 
   // keep the transcript pinned to the newest event
-  const transcriptLen = detail?.transcript.length ?? 0;
-  const lastRole = detail?.transcript.at(-1)?.role;
-  const detailId = detail?.id ?? null;
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [transcriptLen, lastRole, detailId]);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [detail?.transcript.length, approvals.length]);
+
+  const select = (id: string) => {
+    setSelectedId(id);
+    setDetail(null);
+    setApprovals([]);
+    lastTurnRef.current = null;
+    setPanelOpen(false);
+    setText("");
+  };
 
   const send = async () => {
-    const task = draft.trim();
-    if (!task || !selectedId || sending) return;
+    if (!selectedId || !detail) return;
+    const t = text.trim();
+    if (!t || sending) return;
+    if (detail.status === "running") {
+      toast.info(`${detail.name} is already working`, {
+        description: "Stop the current run first, or wait for it to finish.",
+      });
+      return;
+    }
     setSending(true);
-    setDraft("");
-    const optimistic: BotEvent = {
-      ts: new Date().toISOString(),
-      role: "user",
-      text: task,
-    };
-    optimisticRef.current = [...optimisticRef.current, optimistic];
-    setDetail(d =>
-      d ? { ...d, transcript: [...d.transcript, optimistic] } : d
-    );
+    setText("");
     try {
-      await runBot(selectedId, task);
-      setPollBump(b => b + 1);
+      const r = await runBot(selectedId, t);
+      if ((r as { approval_required?: boolean }).approval_required) {
+        toast.info("Held for approval", {
+          description: "This task looks like a risky step — decide in the banner.",
+        });
+      }
+      refreshDetail();
+      if (!(r as { approval_required?: boolean }).approval_required) {
+        setPanelOpen(true);
+      }
     } catch (e) {
-      toast.error("Could not start the run", { description: errText(e) });
-      setDraft(prev => prev || task);
-      optimisticRef.current = optimisticRef.current.filter(
-        x => x !== optimistic
-      );
-      setDetail(d =>
-        d
-          ? { ...d, transcript: d.transcript.filter(x => x !== optimistic) }
-          : d
-      );
+      toast.error("Could not hand off the task", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
+      });
     } finally {
       setSending(false);
     }
   };
 
   const stop = async () => {
-    if (!selectedId || stopping) return;
-    setStopping(true);
+    if (!selectedId) return;
     try {
       await stopBot(selectedId);
-      toast.success("Stop requested", {
-        description: "The bot will wrap up its current step.",
-      });
-      setPollBump(b => b + 1);
+      toast.success(`${detail?.name ?? "Bot"} stopped`);
+      refreshDetail();
     } catch (e) {
-      toast.error("Could not stop the bot", { description: errText(e) });
-    } finally {
-      setStopping(false);
+      toast.error("Could not stop the run", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
+      });
     }
   };
 
-  const removeBot = useCallback(async () => {
-    if (!detail) throw new Error("no bot selected");
-    await deleteBot(detail.id);
-    toast.success("Bot deleted", { description: detail.name });
-    setSelectedId(null);
-    setDetail(null);
-    void refreshList(true);
-  }, [detail, refreshList]);
+  const decide = async (approvalId: string, decision: "allow_once" | "always_allow" | "deny") => {
+    if (!selectedId) return;
+    try {
+      await decideApproval(selectedId, approvalId, decision);
+      refreshDetail();
+    } catch (e) {
+      toast.error("Could not record the decision", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
+      });
+    }
+  };
+
+  const remove = async () => {
+    if (!selectedId || !detail) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      window.setTimeout(() => setConfirmDelete(false), 3200);
+      return;
+    }
+    try {
+      await deleteBot(selectedId);
+      toast.success(`${detail.name} removed`);
+      setSelectedId(null);
+      setDetail(null);
+      refreshList();
+    } catch (e) {
+      toast.error("Could not delete the bot", {
+        description: e instanceof Error ? e.message : "bridge unreachable",
+      });
+    }
+  };
+
+  // mic: MediaRecorder → /api/meta/transcribe → text into the composer
+  const toggleMic = async () => {
+    if (recording) {
+      recorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = e => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        if (blob.size < 1200) return;
+        toast.info("Transcribing…", {
+          description: "Meta · muse-voice-transcribe-1.0 (model auto-selected)",
+        });
+        try {
+          const t = await transcribeAudio(blob);
+          if (t) {
+            setText(prev => (prev ? `${prev} ${t}` : t));
+            taRef.current?.focus();
+          }
+        } catch (e) {
+          toast.error("Transcription failed", {
+            description:
+              e instanceof Error ? e.message : "check the Meta API key in Settings",
+          });
+        }
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch {
+      toast.error("Microphone unavailable", {
+        description: "Grant microphone access to speak to this bot.",
+      });
+    }
+  };
+
+  const onCreated = (bot: Bot) => {
+    setCreateOpen(null);
+    refreshList();
+    setSelectedId(bot.id);
+  };
+
+  const transcript = detail?.transcript ?? [];
+  const running = detail?.status === "running";
+  const pendingApprovals = approvals;
 
   return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-[var(--canvas)] text-foreground">
-      {/* ---- sidebar: the shell's left column in Bots mode. Same width and
-          tokens as the workspace sidebar — only the body changes (the
-          switcher stays; the bots rail replaces the task tree). ---- */}
-      <aside className="flex w-[264px] shrink-0 flex-col overflow-hidden bg-[var(--ds-surface-1)]">
-        <div className="zsb-ws-row">
-          <WorkspaceSwitcher />
-        </div>
-        <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-2.5">
-          <h1 className="text-sm font-semibold tracking-wide text-[var(--ds-ink)]">
-            Bots
-          </h1>
-          {runtime === "muse" || runtime === "muse_no_key" ? (
-            <Button
-              size="sm"
-              className={cn("h-8 gap-1.5 px-3", ACCENT_BTN)}
-              onClick={() =>
-                runtime === "muse"
-                  ? setCreateOpen(true)
-                  : setConnectOpen(true)
-              }
-              title={
-                runtime === "muse"
-                  ? "Create a bot"
-                  : "Muse Code is installed but needs the Meta API key"
-              }
-            >
-              <Plus className="size-3.5" />
-              New Bot
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              className={cn("h-8 gap-1.5 px-3", ACCENT_BTN)}
-              onClick={() => setConnectOpen(true)}
-              title="Bots run on Meta's Muse Code — connect it first"
-            >
-              <Zap className="size-3.5" />
-              Connect to Muse Code
-            </Button>
-          )}
-        </div>
-        <ScrollArea className="min-h-0 flex-1 px-2 pb-3">
-          <div className="flex flex-col gap-0.5">
-            {bots === null &&
-              !listError &&
-              Array.from({ length: 5 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2.5 rounded-lg px-2.5 py-2"
-                >
-                  <div className="size-8 animate-pulse rounded-full bg-white/[0.06]" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-2.5 w-2/3 animate-pulse rounded bg-white/[0.06]" />
-                    <div className="h-2 w-4/5 animate-pulse rounded bg-white/[0.04]" />
-                  </div>
-                </div>
-              ))}
-            {bots?.map(b => {
-              const selected = selectedId === b.id;
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => setSelectedId(b.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
-                    selected
-                      ? "bg-[var(--ds-surface-3)]"
-                      : "hover:bg-white/[0.045]"
-                  )}
-                >
-                  <BotAvatar name={b.name} size="size-8" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-[var(--ds-ink)]">
-                      {b.name}
-                    </span>
-                    <span
-                      className="block truncate text-[11px] text-[var(--ds-ink-3)]"
-                      title={b.last_result ?? undefined}
-                    >
-                      {b.last_result ?? "No runs yet"}
-                    </span>
-                  </span>
-                  <StatusDot status={b.status} />
-                </button>
-              );
-            })}
-            {bots !== null && bots.length === 0 && (
-              <p className="px-2 py-6 text-center text-xs leading-relaxed text-[var(--ds-ink-3)]">
-                Nothing here yet — your bots will line up in this rail.
+    <div className="app-root">
+      <div className={`app${sidebarOpen ? "" : " sb-closed"}`}>
+        <Sidebar
+          open={sidebarOpen}
+          surface="bots"
+          botsBody={
+            <Roster
+              bots={bots}
+              selectedId={selectedId}
+              onSelect={select}
+              onNew={mode => setCreateOpen(mode)}
+              runtime={runtime}
+            />
+          }
+        />
+        <main className="bots-main">
+          {!detail ? (
+            <div className="bots-hero">
+              <BotAvatar name="B" size={52} />
+              <h1>Your always-on teammates</h1>
+              <p>
+                Bots are persistent agents with their own workspace, memory and
+                the SAME Universe tools. Message one like a colleague — it
+                works, reports back here, and only pulls you in when a step
+                needs your approval.
               </p>
-            )}
-          </div>
-        </ScrollArea>
-      </aside>
-
-      {/* ---- center: the bot chat — floating pill header (Grok reference),
-          transcript, composer card ---- */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="relative flex h-14 shrink-0 items-center justify-center px-4">
-          {detail ? (
-            <>
-              {/* the floating IM pill: avatar + name + live status */}
-              <div className="flex items-center gap-2.5 rounded-full border border-[var(--ds-line)] bg-[var(--ds-surface-1)] py-1.5 pl-2 pr-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
-                <BotAvatar name={detail.name} size="size-7" />
-                <h2 className="shrink-0 text-sm font-semibold text-[var(--ds-ink)]">
-                  {detail.name}
-                </h2>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "shrink-0 gap-1.5 rounded-full",
-                    STATUS_META[detail.status].badge
-                  )}
+              <div className="bots-hero-actions">
+                <button
+                  type="button"
+                  className="bots-btn primary"
+                  onClick={() => setCreateOpen("chat")}
                 >
-                  <StatusDot status={detail.status} />
-                  {STATUS_META[detail.status].label}
-                </Badge>
+                  <Sparkles className="size-3.5" /> Create via chat
+                </button>
+                <button
+                  type="button"
+                  className="bots-btn"
+                  onClick={() => setCreateOpen("form")}
+                >
+                  <Plus className="size-3.5" /> New bot
+                </button>
               </div>
-              {/* right cluster: schedule/skill + stop + panel toggle */}
-              <div className="absolute right-4 flex items-center gap-1.5">
-                <Chip icon={Clock} text={describeSchedule(detail.schedule)} />
-                {detail.skill && <Chip icon={Zap} text={`/${detail.skill}`} accent />}
-                {(detail.status === "running" ||
-                  detail.status === "waiting_approval") && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground hover:text-foreground"
-                        disabled={stopping}
-                        onClick={() => void stop()}
-                      >
-                        {stopping ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Square className="size-3.5" />
-                        )}
-                        Stop
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent className="border border-[var(--ds-line)] bg-[#2b2b2b] text-muted-foreground">
-                      Ask the bot to stop after its current step
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={
-                        rightOpen ? "Hide the side panel" : "Show the side panel"
+              {bots.length > 0 && (
+                <p style={{ fontSize: 11.5, color: "var(--ink4,#5e5e5e)" }}>
+                  {bots.length} on the roster — pick one on the left.
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <header className="bots-head">
+                <BotAvatar
+                  name={detail.name}
+                  status={detail.status}
+                  size={32}
+                />
+                <div className="bots-head-name">
+                  <b>{detail.name}</b>
+                  <span title={transcript.at(-1)?.text ?? undefined}>
+                    {running
+                      ? "working — watch the Timeline"
+                      : STATUS_LINE[detail.status]}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className={`bots-ptab${panelOpen && panelTab === "screen" ? " on" : ""}`}
+                  onClick={() => {
+                    setPanelOpen(true);
+                    setPanelTab("screen");
+                  }}
+                >
+                  <Monitor className="size-3.5" /> Screen
+                </button>
+                <button
+                  type="button"
+                  className={`bots-ptab${panelOpen && panelTab === "timeline" ? " on" : ""}`}
+                  onClick={() => {
+                    setPanelOpen(true);
+                    setPanelTab("timeline");
+                  }}
+                >
+                  <Clock className="size-3.5" /> Timeline
+                </button>
+                <button
+                  type="button"
+                  className={`bots-ptab${panelOpen && panelTab === "details" ? " on" : ""}`}
+                  onClick={() => {
+                    setPanelOpen(true);
+                    setPanelTab("details");
+                  }}
+                >
+                  <Workflow className="size-3.5" /> Details
+                </button>
+                <span className="cx-pop">
+                  <button
+                    type="button"
+                    className="bots-iconbtn"
+                    title={confirmDelete ? "Click again to confirm" : "Delete bot"}
+                    onClick={() => void remove()}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </span>
+                <button
+                  type="button"
+                  className="bots-iconbtn"
+                  title={panelOpen ? "Close the panel" : "Open the panel"}
+                  onClick={() => setPanelOpen(v => !v)}
+                >
+                  {panelOpen ? (
+                    <X className="size-4" />
+                  ) : (
+                    <ChevronDown
+                      className="size-4"
+                      style={{ transform: "rotate(-90deg)" }}
+                    />
+                  )}
+                </button>
+              </header>
+
+              {pendingApprovals.length > 0 && (
+                <div className="bots-approvals">
+                  {pendingApprovals.map(a => (
+                    <div key={a.id} style={{ marginBottom: pendingApprovals.length > 1 ? 10 : 0 }}>
+                      <h4>
+                        <ShieldAlert className="size-3.5" /> Approval needed ·{" "}
+                        {a.kind.replace(/_/g, " ")}
+                      </h4>
+                      <p>{a.summary}</p>
+                      <div className="bots-approvals-actions">
+                        <button
+                          type="button"
+                          className="bots-btn primary"
+                          onClick={() => void decide(a.id, "allow_once")}
+                        >
+                          Allow once
+                        </button>
+                        <button
+                          type="button"
+                          className="bots-btn"
+                          onClick={() => void decide(a.id, "always_allow")}
+                        >
+                          Always allow
+                        </button>
+                        <button
+                          type="button"
+                          className="bots-btn danger"
+                          onClick={() => void decide(a.id, "deny")}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <ConsentBanner />
+
+              <div className="bots-transcript" ref={scrollRef}>
+                <div className="bots-thread">
+                  {transcript.length === 0 && (
+                    <div className="bots-ev">
+                      <div className="bots-ev-system">
+                        Say what you need — {detail.name} runs it with the
+                        same Universe tools and reports back here.
+                      </div>
+                    </div>
+                  )}
+                  {transcript.map((ev, i) => (
+                    <EventBubble key={`${ev.ts}-${i}`} ev={ev} />
+                  ))}
+                  {running && (
+                    <div className="bots-ev">
+                      <div className="bots-ev-system">
+                        <Loader2
+                          className="size-3 animate-spin"
+                          style={{ display: "inline", verticalAlign: "-2px", marginRight: 6 }}
+                        />
+                        working — tool calls stream in the Timeline
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bots-composer">
+                <div className="bots-composer-card">
+                  <button
+                    type="button"
+                    className={`bots-iconbtn${recording ? " rec" : ""}`}
+                    title={
+                      recording ? "Stop recording" : "Speak (Meta · one-shot)"
+                    }
+                    onClick={() => void toggleMic()}
+                  >
+                    {recording ? (
+                      <MicOff className="size-4" />
+                    ) : (
+                      <Mic className="size-4" />
+                    )}
+                  </button>
+                  <textarea
+                    ref={taRef}
+                    rows={1}
+                    value={text}
+                    placeholder={`Message ${detail.name}…`}
+                    onChange={e => setText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void send();
                       }
-                      onClick={() => setRightOpen(v => !v)}
+                    }}
+                  />
+                  {running ? (
+                    <button
+                      type="button"
+                      className="bots-iconbtn"
+                      title="Stop the run"
+                      onClick={() => void stop()}
                     >
-                      <PanelRight
-                        className={rightOpen ? "text-[var(--ds-ink)]" : undefined}
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent className="border border-[var(--ds-line)] bg-[#2b2b2b] text-muted-foreground">
-                    {rightOpen ? "Hide panel" : "Show panel"}
-                  </TooltipContent>
-                </Tooltip>
+                      <Square className="size-4" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="bots-iconbtn send"
+                      title="Send"
+                      disabled={!text.trim() || sending}
+                      onClick={() => void send()}
+                    >
+                      {sending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <ArrowUp className="size-4" />
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </>
-          ) : (
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              Bots
-            </h2>
           )}
-        </header>
+        </main>
 
-        {bots === null && listError ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-            <ShieldAlert className="size-6 text-[#ff8589]" />
-            <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-              {listError}
-            </p>
-            <Button
-              variant="outline"
-              className="border-[var(--ds-line)] bg-transparent hover:text-foreground"
-              onClick={() => void refreshList()}
-            >
-              Retry
-            </Button>
-          </div>
-        ) : bots === null ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : bots.length === 0 ? (
-          runtime === "unavailable" || runtime === "muse_no_key" ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
-              <div className="flex size-16 items-center justify-center rounded-full border border-[var(--ds-line)] bg-white/[0.03] text-[var(--ds-ink-2)]">
-                <Zap className="size-7" />
-              </div>
-              <div className="space-y-1.5">
-                <h2 className="text-lg font-semibold text-[var(--ds-ink)]">
-                  Connect to Muse Code
-                </h2>
-                <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
-                  {runtime === "muse_no_key"
-                    ? "Muse Code is installed, but bots need the Meta API key. Add it once in Settings → Providers → Meta."
-                    : "Bots run on Meta's Muse Code. Install the CLI and sign in once — Universe picks it up automatically."}
-                </p>
-              </div>
-              <Button
-                size="lg"
-                className={cn("px-6", ACCENT_BTN)}
-                onClick={() => setConnectOpen(true)}
+        {panelOpen && detail && (
+          <aside className="bots-panel" aria-label="Bot panel">
+            <div className="bots-panel-tabs">
+              {(
+                [
+                  ["screen", "Screen", Monitor],
+                  ["timeline", "Timeline", Clock],
+                  ["details", "Details", Workflow],
+                  ["library", "Library", Library],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`bots-ptab${panelTab === id ? " on" : ""}`}
+                  onClick={() => setPanelTab(id)}
+                >
+                  <Icon className="size-3.5" /> {label}
+                </button>
+              ))}
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="bots-iconbtn"
+                title="Close the panel"
+                onClick={() => setPanelOpen(false)}
               >
-                <Zap />
-                Connect to Muse Code
-              </Button>
+                <X className="size-4" />
+              </button>
             </div>
-          ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
-            <div className="flex size-16 items-center justify-center rounded-full border border-[rgba(70,191,114,0.3)] bg-[var(--ds-accent-dim)] text-[var(--ds-accent)]">
-              <Sparkles className="size-7" />
-            </div>
-            <div className="space-y-1.5">
-              <h2 className="text-lg font-semibold text-[var(--ds-ink)]">
-                Create your first bot
-              </h2>
-              <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
-                One bot, one job — give it a task once, let it master the
-                method, then put it on a schedule. It runs on its own machine
-                and reports back here.
-              </p>
-            </div>
-            <Button
-              size="lg"
-              className={cn("px-6", ACCENT_BTN)}
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus />
-              New Bot
-            </Button>
-          </div>
-          )
-        ) : detail ? (
-          <>
-            {detail.approvals_pending > 0 && (
-              <div className="mx-4 mt-3 flex shrink-0 items-center gap-3 rounded-xl border border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.08)] px-4 py-2.5">
-                <ShieldAlert className="size-4 shrink-0 text-[#ff8a30]" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-[#ffb37a]">
-                    Bot is waiting for your approval
-                  </p>
-                  <p className="text-xs text-[rgba(255,138,48,0.7)]">
-                    {detail.approvals_pending} pending decision
-                    {detail.approvals_pending === 1 ? "" : "s"} — it pauses
-                    until you answer.
-                  </p>
+            <div className="bots-panel-body">
+              {panelTab === "screen" && <ScreenTab bot={detail} />}
+              {panelTab === "timeline" && (
+                <div className="bots-pane">
+                  <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                    {detail.last_turn_id ? (
+                      <ActivityPane
+                        goalId={detail.last_turn_id}
+                        title={`${detail.name} · Timeline`}
+                      />
+                    ) : (
+                      <div className="bots-pane-pad">
+                        <p style={{ fontSize: "12.5px", color: "var(--ink3,#999999)" }}>
+                          No run yet — hand {detail.name} a task and its run
+                          streams here on the SAME Universe timeline: plan,
+                          tool calls, durations, artifacts.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  className={cn("shrink-0", ACCENT_BTN)}
-                  onClick={() => setApprovalsOpen(true)}
-                >
-                  Review
-                </Button>
-              </div>
-            )}
-
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="flex min-h-full flex-col justify-end gap-3 p-4">
-                {detail.transcript.length === 0 && (
-                  <p className="mx-auto max-w-xs pt-10 text-center text-xs leading-relaxed text-muted-foreground">
-                    No activity yet — describe the job below and send it. The
-                    bot runs it on its machine and reports back here.
-                  </p>
-                )}
-                {detail.transcript.map((ev, i) => (
-                  <EventBubble key={i} ev={ev} />
-                ))}
-                <div ref={bottomRef} aria-hidden="true" />
-              </div>
-            </ScrollArea>
-
-            <div className="shrink-0 p-3">
-              <div className="composer flex items-end gap-2 p-2">
-                <Textarea
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  placeholder={`Send ${detail.name} a task…`}
-                  disabled={sending}
-                  rows={1}
-                  className="max-h-40 min-h-9 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0 dark:bg-transparent md:text-sm"
-                />
-                <Button
-                  size="icon-sm"
-                  className={ACCENT_BTN}
-                  aria-label="Send task"
-                  disabled={sending || !draft.trim()}
-                  onClick={() => void send()}
-                >
-                  {sending ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <SendHorizonal />
-                  )}
-                </Button>
-              </div>
+              )}
+              {panelTab === "details" && <DetailsTab bot={detail} />}
+              {panelTab === "library" && <LibraryTab botId={detail.id} />}
             </div>
-          </>
-        ) : selectedId ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3">
-            <Loader2 className="size-5 animate-spin text-[var(--ds-accent)]" />
-            <p className="text-xs text-muted-foreground">
-              Connecting to the bot…
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm text-muted-foreground">
-              Select a bot on the left — or create a new one.
-            </p>
-          </div>
+          </aside>
         )}
-      </main>
+      </div>
 
-      {/* ---- right panel: the bot's machine (screen / details / library) ---- */}
-      {detail && (
-        <section
-          className={cn(
-            "w-[40%] min-w-[360px] shrink-0 flex-col overflow-hidden border-l border-[var(--ds-line)] bg-[var(--ds-surface-1)]",
-            rightOpen ? "flex" : "hidden"
-          )}
-        >
-          <Tabs defaultValue="screen" className="flex min-h-0 flex-1 flex-col gap-0">
-            <div className="shrink-0 border-b border-[var(--ds-line)] px-3 py-2">
-              <TabsList className="h-8 w-full border border-[var(--ds-line)] bg-white/[0.03]">
-                <TabsTrigger value="screen" className="h-7 text-xs">
-                  Screen
-                </TabsTrigger>
-                <TabsTrigger value="details" className="h-7 text-xs">
-                  Details
-                </TabsTrigger>
-                <TabsTrigger value="library" className="h-7 text-xs">
-                  Library
-                </TabsTrigger>
-              </TabsList>
-            </div>
-            <ScreenTab bot={detail} />
-            <DetailsTab
-              bot={detail}
-              onChanged={() => setPollBump(b => b + 1)}
-              onDelete={removeBot}
-            />
-            <LibraryTab bot={detail} />
-          </Tabs>
-        </section>
-      )}
-
-      <CreateBotDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={bot => {
-          setSelectedId(bot.id);
-          setRightOpen(true);
-          void refreshList(true);
-        }}
-      />
-      {detail && (
-        <ApprovalsDialog
-          bot={detail}
-          open={approvalsOpen}
-          onOpenChange={setApprovalsOpen}
-          onDecided={() => setPollBump(b => b + 1)}
+      {createOpen && (
+        <CreateBotDialog
+          onClose={() => setCreateOpen(null)}
+          onCreated={onCreated}
         />
       )}
     </div>
   );
+}
+
+/* ---- the ui store slice (sidebar open) — the same source as the shell --- */
+
+function useUiSidebar(): boolean {
+  return useUi(s => s.sidebarOpen);
 }

@@ -20,12 +20,29 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from loguru import logger
 
 from bots import store
 from providers.meta_media import resolve_key
+
+# The bridge wires this at startup: dispatch a bot task as a REAL turn
+# through the same orchestrator chat uses — literally the same tools and
+# the same timeline (eventsByGoal). Contract:
+#   async fn(bot, task) -> (turn_id, asyncio.Task | None, reply_getter)
+# where reply_getter() resolves the turn's final reply once the task
+# settles (the session engine keeps results in memory, not goals rows).
+Dispatcher = Callable[
+    [dict[str, Any], str],
+    Awaitable[tuple[str, "asyncio.Task[Any] | None", Callable[[], Awaitable[str]]]],
+]
+_dispatch: Dispatcher | None = None
+
+
+def set_dispatcher(fn: Dispatcher | None) -> None:
+    global _dispatch
+    _dispatch = fn
 
 # risky-step heuristic: these verbs route through the approvals queue
 RISKY_RE = re.compile(
@@ -114,14 +131,16 @@ async def _execute(bot_id: str, task: str) -> None:
         if muse_bin and key is not None:
             final_text, error = await _run_muse(bot_id, bot, task,
                                                 muse_bin, key)
-        else:
+        elif _dispatch is not None:
             if muse_bin and key is None:
                 store.append_event(
                     bot_id, "system",
                     "Muse Code is installed but no Meta API key is configured "
-                    "— running with Universe's built-in engine instead. Add "
+                    "— running on Universe's own engine instead. Add "
                     "MODEL_API_KEY in Settings → Providers → Meta to run bots "
                     "on Muse Code.")
+            final_text, error = await _run_engine(bot_id, bot, task)
+        else:
             final_text, error = await _run_llm(bot_id, bot, task)
     except asyncio.CancelledError:
         store.set_status(bot_id, "idle", result="stopped by the user")
@@ -237,6 +256,56 @@ def _digest_muse_event(
             label = f"{pt.split('.')[-1]}: {detail}" if detail else pt
             return ("system", str(label)[:200]), None, None
     return None, None, None
+
+
+async def _run_engine(bot_id: str, bot: dict[str, Any],
+                      task: str) -> tuple[str, str | None]:
+    """Universe-engine path: the task runs as a REAL turn through the same
+    orchestrator as chat — the bot gets literally the same tools (file,
+    shell, browser, web, Studio tools…) and its run streams through the
+    same event bus, so the SAME Universe timeline renders it. The final
+    reply lands in the transcript when the turn settles."""
+    assert _dispatch is not None
+    try:
+        turn_id, tg, reply_getter = await _dispatch(bot, task)
+    except Exception as exc:  # noqa: BLE001 — a failed dispatch is a failed run
+        return "", f"the engine refused the bot task: {exc}"
+    if turn_id:
+        store.set_last_turn(bot_id, turn_id)
+        store.append_event(
+            bot_id, "system",
+            "Running on the Universe engine — the same tools and the same "
+            "timeline as chat. Watch the Timeline panel for live tool "
+            "calls.")
+    if tg is not None:
+        try:
+            await tg
+        except asyncio.CancelledError:
+            # the user stopped the bot — the underlying turn must die too
+            if not tg.done():
+                tg.cancel()
+            raise
+        except Exception as exc:  # noqa: BLE001
+            return "", str(exc)
+    reply = ""
+    if reply_getter is not None:
+        try:
+            reply = (await reply_getter()).strip()
+        except Exception:  # noqa: BLE001 — reply extraction must never crash
+            reply = ""
+    if not reply:
+        try:
+            from storage.local import get_storage
+            row = get_storage().query_one(
+                "SELECT final_summary FROM goals WHERE id=?;", (turn_id,))
+            if row and row.get("final_summary"):
+                fs = json.loads(row["final_summary"])
+                reply = str(fs.get("reply") or "")
+        except Exception:  # noqa: BLE001 — summary parsing must never crash the run
+            reply = ""
+    if not reply:
+        reply = "done — see the Timeline for what was executed."
+    return reply, None
 
 
 async def _run_llm(bot_id: str, bot: dict[str, Any],

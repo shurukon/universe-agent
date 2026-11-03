@@ -50,6 +50,11 @@ export interface BotEvent {
 
 export interface BotDetail extends Bot {
   transcript: BotEvent[];
+  /** the bot's live/last Universe turn — the SAME event bus the chat
+   *  streams, so the SAME timeline renders the bot's run */
+  last_turn_id?: string | null;
+  /** the bot's task container in the goals table (owner 'bot:<id>') */
+  container_id?: string | null;
 }
 
 export interface BotApproval {
@@ -205,6 +210,84 @@ export async function deleteBot(id: string): Promise<void> {
   await botsRequest<Record<string, never>>(`/api/bots/${seg(id)}`, {
     method: "DELETE",
   });
+}
+
+/** Create-via-chat: describe the bot in one line; the configured engine
+ *  drafts the name + job definition (engine=false → the raw text rode
+ *  through because no provider is reachable). */
+export async function draftBot(
+  text: string
+): Promise<{ name: string; description: string; engine: boolean }> {
+  return botsRequest<{ name: string; description: string; engine: boolean }>(
+    "/api/bots/draft",
+    { method: "POST", body: JSON.stringify({ text }) }
+  );
+}
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  capability: string;
+  consent: boolean;
+}
+
+/** The REAL Universe tool inventory — the same registry every turn
+ *  resolves through. Bots carry literally these tools. */
+export async function listTools(): Promise<ToolInfo[]> {
+  const r = await botsRequest<{ tools?: ToolInfo[]; count?: number }>(
+    "/api/tools"
+  );
+  return Array.isArray(r?.tools) ? r.tools : [];
+}
+
+export interface SharedFile {
+  name: string;
+  size: number;
+  mtime: string | null;
+}
+
+/** The bots' shared computer — one directory every bot reads/writes. */
+export async function sharedFiles(): Promise<{
+  path: string;
+  files: SharedFile[];
+}> {
+  return botsRequest<{ path: string; files: SharedFile[] }>(
+    "/api/bots/shared/files"
+  );
+}
+
+/** One-shot mic transcription (Meta · muse-voice-transcribe-1.0 — the
+ *  voice model is selected automatically, there is exactly one). The
+ *  browser records webm/opus; the bridge converts to 16k mono WAV. */
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const { url, token } = await bridgeConfig();
+  const form = new FormData();
+  form.append("audio", blob, "clip.webm");
+  let res: Response;
+  try {
+    res = await fetch(`${url}/api/meta/transcribe`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+  } catch {
+    throw new BridgeError("unreachable", "Universe bridge is not responding", 0);
+  }
+  if (!res.ok) {
+    let message = `transcription failed (${res.status})`;
+    try {
+      const body = (await res.json()) as {
+        error?: { message?: string };
+        detail?: string;
+      };
+      message = body?.error?.message ?? body?.detail ?? message;
+    } catch {
+      /* keep the default */
+    }
+    throw new BridgeError("stt_failed", message, res.status);
+  }
+  const r = (await res.json()) as { text?: string };
+  return (r?.text ?? "").trim();
 }
 
 /**

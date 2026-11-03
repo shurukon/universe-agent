@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -448,25 +449,24 @@ def _text_with_attachments(text: str, attachments: list[str]) -> str:
 STUDIO_TOOL_DIRECTIVE: dict[str, str] = {
     "design": (
         "Universe Studio · Design workspace. Begin this task with the "
-        "StudioDesign tool (open-design daemon on http://127.0.0.1:7456 — "
-        "websites, pages, presentations; artifacts export to HTML/PDF/ZIP/JSX). "
-        "Create or iterate the artifact there, verify it by reading the "
-        "daemon's response, and report the artifact path. You may still use "
-        "your other core tools (shell, files, web) whenever the design work "
-        "needs them."
+        "built-in StudioDesign tool (open-design daemon on "
+        "http://127.0.0.1:7456 — websites, pages, presentations; artifacts "
+        "export to HTML/PDF/ZIP/JSX). Create or iterate the artifact there, "
+        "verify it by reading the daemon's response, and report the artifact "
+        "path. You may still use your other core tools (shell, files, web) "
+        "whenever the design work needs them."
     ),
     "video": (
         "Universe Studio · Studio (video editor) workspace. Begin this task "
-        "with the StudioAVE tool (AVE video editor MCP on "
-        "http://127.0.0.1:19789/mcp — timeline CRUD, clips, keyframes, "
-        "effects, export). List the AVE tools first when the project state "
-        "is unknown, then drive the edit step by step and verify every "
-        "result. You may still use your other core tools whenever the edit "
-        "needs them."
+        "with the built-in StudioAVE tool (Universe's video editor — "
+        "timeline CRUD, clips, keyframes, effects, export). List the editor "
+        "tools first when the project state is unknown, then drive the edit "
+        "step by step and verify every result. You may still use your other "
+        "core tools whenever the edit needs them."
     ),
     "3d": (
-        "Universe Studio · 3D workspace. Begin this task with the "
-        "StudioBlender tool (Blender MCP addon socket 127.0.0.1:9876 — "
+        "Universe Studio · 3D workspace. Begin this task with the built-in "
+        "StudioBlender tool (the Blender bridge socket 127.0.0.1:9876 — "
         "scene info, object/model creation, materials, rendering). Read the "
         "scene first, then build/model step by step, verifying each command "
         "result. When a visual reference helps, generate one with the Meta "
@@ -706,6 +706,25 @@ async def memory() -> dict[str, Any]:
 
 
 # ---- Round-7 parity pass readouts (/status /version /context /doctor /memory) —
+
+@app.get("/api/tools")
+async def tools_list() -> dict[str, Any]:
+    """The REAL Universe tool inventory — the same registry the turn engine
+    resolves every call through (connectors.builtin). The Bots page renders
+    it verbatim: bots carry literally these tools."""
+    from connectors.builtin import get_registry
+    reg = get_registry()
+    out = []
+    for name in reg.names():
+        t = reg.get(name)
+        out.append({
+            "name": name,
+            "description": (getattr(t, "description", "") or "")[:300],
+            "capability": getattr(t, "capability", "") or "",
+            "consent": bool(getattr(t, "consent", False)),
+        })
+    return {"tools": out, "count": len(out)}
+
 
 @app.get("/api/status-parity")
 async def status_parity() -> dict[str, Any]:
@@ -993,7 +1012,8 @@ async def sessions(limit: int = 50, project_id: str | None = None,
     try:
         sql_s = ("SELECT id, title as text, 'active' as status, created_at, updated_at as completed_at, '' as final_summary, "
                  "project_id, title, id as session_id, archived, deleted, pinned, 'task' as kind "
-                 "FROM sessions WHERE deleted=0")
+                 "FROM sessions WHERE deleted=0 AND id NOT IN "
+                 "(SELECT id FROM goals WHERE owner_session_id LIKE 'bot:%')")
         params_s: list[Any] = []
         if not include_archived:
             sql_s += " AND archived=0"
@@ -1012,7 +1032,8 @@ async def sessions(limit: int = 50, project_id: str | None = None,
     try:
         sql_g = ("SELECT id, text, status, created_at, completed_at, final_summary, "
                  "project_id, title, parent_goal_id as session_id, archived, deleted, pinned, kind "
-                 "FROM goals WHERE deleted=0 AND kind='task'")
+                 "FROM goals WHERE deleted=0 AND kind='task' "
+                 "AND (owner_session_id IS NULL OR owner_session_id NOT LIKE 'bot:%')")
         params_g: list[Any] = []
         if not include_archived:
             sql_g += " AND archived=0"
@@ -1070,11 +1091,13 @@ async def goals(limit: int = 50, project_id: str | None = None,
                include_archived: bool = False, q: str = "") -> dict[str, Any]:
     limit = max(1, min(limit, 200))
     # tasks only in the sidebar: message goals (children) are rendered
-    # INSIDE their task thread, never as separate rows
+    # INSIDE their task thread, never as separate rows. Bot containers
+    # (owner_session_id='bot:<id>') live in the Bots surface only.
     sql = ("SELECT id, text, status, created_at, completed_at, final_summary, "
            "project_id, title, owner_session_id AS session_id, archived, "
            "deleted, pinned, kind "
-           "FROM goals WHERE deleted=0 AND kind='task'")
+           "FROM goals WHERE deleted=0 AND kind='task' "
+           "AND (owner_session_id IS NULL OR owner_session_id NOT LIKE 'bot:%')")
     params: list[Any] = []
     if not include_archived:
         sql += " AND archived=0"
@@ -1100,6 +1123,8 @@ async def goals(limit: int = 50, project_id: str | None = None,
             item["bridge_status"] = gt.status
         out.append(item)
     for gt in st.running():                      # bridge goals not yet flushed
+        if getattr(gt, "_bot_owned", False):
+            continue                             # bots live in the Bots surface
         if not any(o["turn_id"] == gt.turn_id for o in out):
             # only message-goals whose task row isn't flushed yet surface as
             # their parent task (never as standalone sidebar rows)
@@ -3236,6 +3261,109 @@ class MetaTestReq(BaseModel):
     key: str | None = None
 
 
+# ---- Bots → Universe engine: the SAME orchestrator, tools and timeline -----
+
+def _bot_container(bot: dict[str, Any]) -> str:
+    """The bot's task container in the goals table — one per bot, owner
+    'bot:<id>' so it stays out of the Universe sidebar (/api/goals filters
+    it) while every bot message turn streams through the normal event bus
+    and renders in the SAME Universe timeline."""
+    from bots import store
+    known = store.get_bot(bot["id"]) or {}
+    cid = known.get("container_id")
+    if cid:
+        row = get_storage().query_one("SELECT id FROM goals WHERE id=?;", (cid,))
+        if row is not None:
+            return cid
+    from core.agent.base_agent import new_id
+    cid = new_id("task-")
+    with get_storage().transaction() as conn:
+        conn.execute(
+            "INSERT INTO goals(id, text, status, kind, title, project_id, "
+            "created_at, owner_session_id) VALUES(?,?,?,?,?,?,?,?);",
+            (cid, "", "active", "task", f"Bot · {bot['name']}", "",
+             time.time(), f"bot:{bot['id']}"))
+    store.update_bot(bot["id"], container_id=cid)
+    return cid
+
+
+async def _dispatch_bot_turn(
+    bot: dict[str, Any], task: str
+) -> tuple[str, "asyncio.Task[None] | None", Any]:
+    """Run a bot task as a REAL turn through the SAME orchestrator chat
+    uses — the bot gets literally the same tools (file, shell, browser,
+    web, the Studio tools…) and its events stream on the same bus, so the
+    SAME Universe timeline renders its run. Returns (turn_id, task,
+    reply_getter)."""
+    _runtime.init()
+    if _runtime.orchestrator is None:
+        raise RuntimeError(
+            f"backend not initialized: {_runtime.init_error or 'unknown'}")
+    from bots import store
+    from core.agent.base_agent import new_id
+    bot_id = bot["id"]
+    container_id = _bot_container(bot)
+    text = (
+        f"You are '{bot['name']}', the user's persistent Universe bot — a "
+        "teammate they hand work to in the Bots surface. Job definition "
+        f"(role, sources and boundaries): {bot['description'] or task}\n"
+        f"Your own workspace (your computer) is {bot.get('workspace') or ''} "
+        "— keep your files there and always use ABSOLUTE paths under it "
+        "when writing or reading files. The shared computer every bot reads "
+        f"and writes is {store.shared_dir()}. Complete the task end-to-end "
+        "with your tools and report the outcome concisely."
+        f"\n\n---\nTask: {task}"
+    )
+    turn_id = new_id("turn-")
+    gt = get_state().create(turn_id, text, task_id=container_id)
+    get_state().prune_expired()
+    gt.set_status("running")
+    # the /api/goals running-goals sweep must never surface bot turns as
+    # standalone sidebar rows (their container lives in the Bots surface)
+    gt._bot_owned = True  # type: ignore[attr-defined]
+    orch = _runtime.orchestrator
+    bus = get_event_bus()
+
+    async def _run() -> None:
+        try:
+            with bus.bind_goal(turn_id):
+                emit("turn_started", turn_id=turn_id, text=text[:2000],
+                     language="en", task_id=container_id)
+                summary = await orch.run_turn(
+                    text, language="en", turn_id=turn_id,
+                    owner_session_id=f"bot:{bot_id}",
+                    project_id="",
+                    project_root=bot.get("workspace") or "",
+                    session_id=container_id,
+                )
+                gt.result = summary
+                if isinstance(summary, dict) and not summary.get("success", True):
+                    gt.set_status("failed")
+                    gt.error = str(summary.get("error", ""))[:500]
+                else:
+                    gt.set_status("completed")
+                    gt.error = ""
+        except asyncio.CancelledError:
+            gt.set_status("cancelled")
+            raise
+        except Exception as exc:  # noqa: BLE001 — keep bookkeeping truthful
+            gt.set_status("failed")
+            if not gt.error:
+                gt.error = str(exc)[:500]
+
+    gt.task = asyncio.create_task(_run())
+
+    async def _reply() -> str:
+        s = gt.result
+        if isinstance(s, dict):
+            return str(s.get("reply") or "")
+        if isinstance(s, str):
+            return s
+        return ""
+
+    return turn_id, gt.task, _reply
+
+
 @app.get("/api/bots")
 async def bots_list() -> dict[str, Any]:
     from bots import store
@@ -3290,6 +3418,46 @@ async def bots_create(req: BotCreate) -> dict[str, Any]:
     return {"bot": store.create_bot(req.name, req.description)}
 
 
+class BotDraftReq(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@app.post("/api/bots/draft")
+async def bots_draft(req: BotDraftReq) -> dict[str, Any]:
+    """Create-via-chat: the user describes the bot in one message and the
+    configured engine drafts the name + job definition for a REAL bot row
+    (nothing is invented here — with no provider reachable the raw text
+    becomes the description and the honest fallback name is used)."""
+    text = req.text.strip()
+    fallback_name = " ".join(text.split()[:4])[:40] or "New bot"
+    try:
+        from providers.client import get_llm_client
+        client = get_llm_client()
+        res = await client.complete(agent="bots", messages=[
+            {"role": "system", "content": (
+                "Turn the user's description of an assistant/bot into a "
+                "compact draft. Reply with ONLY one JSON object: "
+                "{\"name\": a short product-quality bot name (1-3 words), "
+                "\"description\": one or two sentences defining the bot's "
+                "ongoing job, its sources and its boundaries}. No markdown, "
+                "no commentary.")},
+            {"role": "user", "content": text},
+        ])
+        raw = res if isinstance(res, str) else str(
+            getattr(res, "text", "") or getattr(res, "content", "") or "")
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        if m:
+            data = json.loads(m.group(0))
+            name = str(data.get("name") or "").strip()[:80]
+            desc = str(data.get("description") or "").strip()[:2000]
+            if name:
+                return {"name": name, "description": desc or text,
+                        "engine": True}
+    except Exception:  # noqa: BLE001 — drafting degrades to the raw text
+        pass
+    return {"name": fallback_name, "description": text, "engine": False}
+
+
 @app.get("/api/bots/{bot_id}")
 async def bots_get(bot_id: str) -> dict[str, Any]:
     from bots import store
@@ -3318,6 +3486,10 @@ async def bots_run(bot_id: str, req: BotRunReq) -> dict[str, Any]:
     if not req.task.strip():
         raise HTTPException(400, {"code": "bad_task",
                                   "message": "task text required"})
+    # wire the engine dispatcher (idempotent): with no Meta key the bot's
+    # task runs as a REAL turn through the same orchestrator as chat —
+    # the same tools, the same event bus, the same timeline
+    runtime.set_dispatcher(_dispatch_bot_turn)
     result = await runtime.request_run(bot_id, req.task.strip())
     return {"ok": True, **result}
 

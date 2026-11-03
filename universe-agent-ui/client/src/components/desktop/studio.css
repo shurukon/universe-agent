@@ -2,37 +2,21 @@
    The SAME design system as the Universe shell: neutral surfaces,
    hairlines, the green accent, no glass, no blue. Scope: .studio-*. */
 
-/* ---- the empty-state tool cards (the mandatory picker) ---------------- */
-.studio-cards-holder {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 168px;
-  z-index: 30;
+/* ---- the tool picker: IN THE FLOW, directly above the composer — it
+   never covers the chat. Clicking a card only selects it. ------------- */
+.studio-picker {
+  width: 100%;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
-  pointer-events: none;
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  padding: 0 26px 10px;
 }
-/* once a tool is picked the cards recede — the dock owns the surface now;
-   "Switch tool" in the dock head brings them back */
-.studio-cards-holder[aria-hidden="true"] {
-  opacity: 0;
-  transform: translateY(14px);
-  visibility: hidden;
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease,
-    visibility 0s linear 0.18s;
-}
-.studio-cards {
-  pointer-events: auto;
+.studio-picker-cards {
   display: grid;
   grid-template-columns: 1.55fr 1fr;
   gap: 10px;
   width: 660px;
-  max-width: calc(100vw - 96px);
+  max-width: min(660px, 100%);
   animation: rise 0.5s ease 0.12s backwards;
 }
 .studio-cards-col {
@@ -169,10 +153,61 @@
   color: var(--zc-permission, #ff8a30);
 }
 
-/* ---- the workspace dock (design / AVE / 3D embed) ---------------------- */
+/* ---- the preview right sidebar (opens AFTER the task is sent) ---------- */
 .studio-main {
   position: relative;
 }
+.studio-preview {
+  flex-shrink: 0;
+  width: min(46vw, 760px);
+  min-width: 400px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--zc-line, #414141);
+  background: var(--zc-canvas, #161616);
+  animation: slide-in 0.22s var(--ds-ease, ease) backwards;
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.studio-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--zc-line, #414141);
+  color: var(--zc-ink-dim, #999999);
+  flex-shrink: 0;
+}
+.studio-preview-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--zc-ink, #d4d4d4);
+}
+.studio-preview-sp {
+  flex: 1;
+}
+.studio-preview-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.studio-preview-body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* legacy dock classes still style the pending/viewport/3D bodies inside
+   the preview — kept as the shared inner-surface vocabulary */
 .studio-dock {
   margin: 0 auto 10px;
   width: min(990px, calc(100% - 32px));
@@ -184,6 +219,11 @@
   background: var(--zc-panel, #2b2b2b);
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+}
+
+/* inside the preview sidebar the embed fills the pane edge-to-edge */
+.studio-preview .studio-embed {
+  height: 100%;
 }
 .studio-dock-head {
   display: flex;
@@ -232,7 +272,7 @@
   animation: spin 1s linear infinite;
 }
 .studio-dock-body {
-  height: 52vh;
+  height: 100%;
   min-height: 320px;
   background: var(--zc-canvas, #161616);
 }

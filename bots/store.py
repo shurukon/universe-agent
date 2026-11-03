@@ -131,7 +131,8 @@ def update_bot(bot_id: str, **fields: Any) -> dict[str, Any] | None:
         if bot is None:
             return None
         for k, v in fields.items():
-            if k in ("schedule", "skill", "last_result", "status"):
+            if k in ("schedule", "skill", "last_result", "status",
+                     "container_id", "last_turn_id"):
                 bot[k] = v
         _save()
         return to_public(bot, include_transcript=True)
@@ -250,6 +251,17 @@ def shared_files() -> list[dict[str, Any]]:
     return out[:200]
 
 
+def set_last_turn(bot_id: str, turn_id: str) -> None:
+    """Record the live turn id so the UI can stream the SAME Universe
+    timeline (eventsByGoal) for this bot's run."""
+    with _lock:
+        bot = _raw(bot_id)
+        if bot is None:
+            return
+        bot["last_turn_id"] = turn_id
+        _save()
+
+
 def to_public(bot: dict[str, Any], *, include_transcript: bool = False) -> dict[str, Any]:
     out = {
         "id": bot["id"],
@@ -264,6 +276,8 @@ def to_public(bot: dict[str, Any], *, include_transcript: bool = False) -> dict[
         "last_result": bot.get("last_result"),
         "approvals_pending": len(bot.get("approvals") or []),
         "workspace": bot.get("workspace", ""),
+        "container_id": bot.get("container_id") or None,
+        "last_turn_id": bot.get("last_turn_id") or None,
     }
     if include_transcript:
         out["transcript"] = list(bot.get("transcript") or [])

@@ -215,8 +215,18 @@ function Recap({ model }: { model: FlowModel }) {
   );
 }
 
-export default function ActivityPane() {
-  const turnId = useLiveGoalId();
+export default function ActivityPane({
+  goalId = null,
+  title = "Activity",
+}: {
+  /** Pin the pane to ONE goal (the Bots surface re-renders this exact
+   *  component over a bot's turn so the timeline is literally the same);
+   *  default null = the live goal on screen (Universe/Studio behavior). */
+  goalId?: string | null;
+  title?: string;
+}) {
+  const liveId = useLiveGoalId();
+  const turnId = goalId ?? liveId;
   const events = useChat(s => (turnId ? s.eventsByGoal[turnId] : undefined));
   const consents = useChat(s => s.consents.length);
   // ticking "now" so working elapsed counters move; pauses when idle
@@ -271,7 +281,8 @@ export default function ActivityPane() {
     <div className="rail-pane">
       <div className="rail-pane-head">
         <span className="rail-pane-title mono">
-          Activity{running ? " · live" : ""}
+          {title}
+          {running ? " · live" : ""}
         </span>
       </div>
 
