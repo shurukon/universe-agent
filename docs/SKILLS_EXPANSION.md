@@ -53,7 +53,7 @@ not the aggregator:
 | googleworkspace/cli | Apache-2.0 | ✅ included |
 | trailofbits/skills | CC-BY-SA-4.0 | ❌ excluded — ShareAlike incompatible with this project's MIT license |
 | hashicorp/agent-skills | MPL-2.0 | ⚠️ excluded — weaker copyleft than GPL/CC-BY-SA, but still outside the stated MIT/Apache-2.0-only policy; a project-owner call, not made unilaterally |
-| Apollo GraphQL, Auth0, Sentry, Brave Search, alirezarezvani/claude-skills (pm-skills) | not yet checked | 🔲 open — see below |
+| Apollo GraphQL, Auth0, Sentry, Brave Search, alirezarezvani pm-skills pack | not yet checked | 🔲 open — see below |
 
 ## What changed
 
@@ -69,7 +69,7 @@ total, 0 in quarantine):
 | research / security / api / devops / planning | unchanged | unchanged |
 
 `planning` is still at zero — no verified source was found for it in this
-pass (alirezarezvani/claude-skills' pm-skills subset is a candidate but its
+pass (alirezarezvani pm-skills subset is a candidate but its
 own license wasn't checked before this work concluded).
 
 ## How it was done (reproducible)
@@ -108,7 +108,7 @@ All five previously-unverified candidates checked out clean at the source
 — Apollo GraphQL (MIT), Auth0 (Apache-2.0, real repo is `auth0/agent-skills`,
 not the guessed `auth0-skills`), Sentry (Apache-2.0), Brave Search (MIT,
 real repo is `brave/brave-search-skills`, not `brave/skills`), and
-alirezarezvani/claude-skills (MIT — confirmed to be substantial first-party
+alirezarezvani pm-skills (MIT — confirmed to be substantial first-party
 content, not another link-only index).
 
 Further searching for MIT/Apache-2.0 alternatives to the two round-1

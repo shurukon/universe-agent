@@ -1,5 +1,0 @@
-{
-  "env": {
-    "GATEGUARD_EXEMPT_GLOBS": "d:/universecomputer/universe-compter/universe-agent-ui/client/src/**,d:/universecomputer/universe-compter/universe-agent-ui/electron/**,d:/universecomputer/universe-compter/tests/**,d:/universecomputer/universe-compter/docs/**"
-  }
-}

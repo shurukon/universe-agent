@@ -74,7 +74,7 @@ def _within_scope(path: str) -> bool:
 
 
 def file_read(path: str, offset: int = 1, limit: int = 1000) -> dict:
-    """Read a page of a text file in LINE units (Claude Code parity).
+    """Read a page of a text file in LINE units (reference parity).
 
     Args:
         path: absolute path (or project-relative) of the file to read.

@@ -14,7 +14,7 @@
     "dev:client:desktop": "vite --port 5199 --strictPort",
     "electron:dev": "wait-on -t 60000 http://127.0.0.1:5199 && electron .",
     "desktop:prod": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --win nsis --config electron-builder.yml"
+    "dist": "npm run build && electron-builder --linux AppImage deb --config electron-builder.yml"
   },
   "dependencies": {
     "@fontsource/figtree": "^5.3.0",

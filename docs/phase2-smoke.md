@@ -1,4 +1,4 @@
-# Phase 2 — live smoke scenario (ZCode shell rebuild)
+# Phase 2 — live smoke scenario (Universe shell rebuild)
 
 The DoD scenario for the Phase-2 UI shell, per the approved plan: a real
 session with a local mock provider where palette opens, todos update, tool

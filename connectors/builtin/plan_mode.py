@@ -1,6 +1,6 @@
 """connectors/builtin/plan_mode.py — the plan-mode exit door.
 
-plan.submit is the ZCode ExitPlanMode twin: while the gate is in plan
+plan.submit is the Universe ExitPlanMode twin: while the gate is in plan
 mode the agent researches read-only and drafts its plan; calling
 plan.submit asks for the user's approval through the EXISTING explicit-
 consent path (the consent prompt IS the plan approval), and once

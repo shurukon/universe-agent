@@ -1,7 +1,7 @@
 /**
  * pages/Automations.tsx — the standalone Automations page (Phase C).
  *
- * ZCode parity: scheduled goals on a 5-field cron, managed directly by
+ * shell parity: scheduled goals on a 5-field cron, managed directly by
  * the user. The bridge (/api/automations) is a thin CRUD over the same
  * schedule.AutomationScheduler the agent's cron.* tools drive — creating
  * one here is direct user intent, so no consent gate applies; every row

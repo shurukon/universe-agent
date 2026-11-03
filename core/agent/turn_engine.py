@@ -1,37 +1,35 @@
-"""core/agent/turn_engine.py — THE ZCode turn engine, ported verbatim.
+"""core/agent/turn_engine.py — THE Universe turn engine, ported verbatim.
 
 This is the replacement for the old bounded tool loop (max_rounds counter,
 sequential tool execution). The semantics below are the ones REA recovered
-from the actual ZCode bundle (zcode_pretty/zcode.cjs, evidence ev_a867728f)
-and the Claude Code v2.1.277 engine loop (byte windows @217916000 /
-@209729744) — see D:\\ClaudeDesktop\\Temp\\opencode\\re7\\loop_findings.md:
+from the reference engine loop (round-7 findings):
 
 1. `run_turn` is `runRegularTurnLoop`: `for(;;)` — UNBOUNDED. A turn runs
    until the model answers without tool calls, a tool's turn-control asks
    for a stop, the operator's env cap (GAX_TOOL_MAX_ROUNDS) fires, the
    caller aborts, or an error surfaces. There is NO per-turn round budget.
-2. Between model steps (in order, exactly as ZCode's loop does):
+2. Between model steps (in order, exactly as Universe's loop does):
    a. drain steering + background notices → they become turn-request
       entries (queued user messages STEER the running turn);
       a drain resets the repeated-tool-call detector.
    b. microcompact (phase PreRequest on step 0, MidTurn afterwards).
    c. autocompact on the context limit with the rapid-refill breaker
       (max 3 consecutive rapid refills, toolTurnThreshold 3).
-3. The model step (`model_step`) = ZCode's runModelBackedTurnStep /
+3. The model step (`model_step`) = Universe's runModelBackedTurnStep /
    agent_step: streaming call, output-token-limit continuation (max 3,
    with the exact "Resume directly" resume prompt), per-part events.
-4. Tool execution = ZCode's executeToolCallsForModelStep through a turn
+4. Tool execution = Universe's executeToolCallsForModelStep through a turn
    FSM (scheduleTools → startToolExecution → completeTool×N →
    aggregateResults) and a dependency-aware scheduler that groups
    consecutive concurrent-safe calls into parallel batches (parallelGroups
    + executionOrder); mutating or explicit-consent tools run alone.
-   Unknown tool → synthetic tool_result error (Claude Code tG behavior).
+   Unknown tool → synthetic tool_result error (reference-engine behavior).
 5. Every result is committed to the turn record and mirrored on the
    timeline. Tool results may carry turn_control {stop_after_result,
-   reason} — the ZCode tool-driven turn stop.
+   reason} — the Universe tool-driven turn stop.
 6. Memory stays OURS (the one deliberate divergence): pre-turn recall and
    the turn-end memory cycle live in the orchestrator; this engine exposes
-   the ZCode `memory_update` ambient-entry mechanism (pending memory
+   the Universe `memory_update` ambient-entry mechanism (pending memory
    notices injected between steps) so background consolidation can push
    mid-turn updates through it later.
 
@@ -54,7 +52,7 @@ from core.agent.base_agent import (MALFORMED_RETRY_MAX_TOKENS, POLLING_TOOLS,
 
 logger_turn = logging.getLogger("universe.turn_engine")
 
-# ZCode module constants (Gg module @173038): the finish reasons that
+# Universe module constants (Gg module @173038): the finish reasons that
 # trigger output-token continuation and the continuation ceiling.
 OUTPUT_TOKEN_FINISH_REASONS = frozenset(
     {"max_tokens", "max_output_tokens", "model_context_window_exceeded"})
@@ -64,7 +62,7 @@ OUTPUT_TOKEN_RESUME_PROMPT = (
     "of what you were doing. Pick up mid-thought if that is where the cut "
     "happened. Break remaining work into smaller pieces.")
 
-# Rapid-refill breaker (ZCode G0n @174907): maxConsecutiveRapidRefills 3,
+# Rapid-refill breaker (Universe G0n @174907): maxConsecutiveRapidRefills 3,
 # toolTurnThreshold 3 — compaction that re-fills within 3 tool turns,
 # 3 times in a row, is a broken context: fail loudly instead of looping.
 RAPID_REFILL_MAX_CONSECUTIVE = 3
@@ -73,12 +71,12 @@ RAPID_REFILL_TOOL_TURN_THRESHOLD = 3
 # Operator limit (deliberate, kept from the old engine): GAX_TOOL_MAX_ROUNDS
 # caps a turn's model steps. DEFAULT 200 (2026-11 migration decision): a
 # runaway tool loop dies after 200 steps instead of burning the provider
-# forever; set 0 explicitly for ZCode-style unbounded.
+# forever; set 0 explicitly for Universe-style unbounded.
 TOOL_STEP_LIMIT_ENV = "GAX_TOOL_MAX_ROUNDS"
 
 
 class LLMOutputLimitExceeded(Exception):
-    """ZCode's model_output_limit_exceeded: the model hit the output-token
+    """Universe's model_output_limit_exceeded: the model hit the output-token
     limit OUTPUT_TOKEN_CONTINUATION_MAX times without finishing. Recoverable
     (the provider may succeed later) — the orchestrator surfaces it as a
     provider halt with this kind."""
@@ -92,12 +90,12 @@ CONSECUTIVE_FAILURE_CAP = 5
 
 
 # ---------------------------------------------------------------------------
-# Turn FSM (ZCode: wa wrapper + turnMachine)
+# Turn FSM (Universe: wa wrapper + turnMachine)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class TurnMachine:
-    """The ZCode turn state machine. States map 1:1 to the RE'd runtime:
+    """The Universe turn state machine. States map 1:1 to the RE'd runtime:
     idle → model_request (startModelRequest) → scheduling (scheduleTools)
     → executing (startToolExecution) → aggregating (aggregateResults)
     → back to model_request, or complete (complete)."""
@@ -143,7 +141,7 @@ class TurnMachine:
 
 
 # ---------------------------------------------------------------------------
-# Dependency-aware tool scheduler (ZCode: yLe/Iyn/Tyn + ToolExecutorImpl)
+# Dependency-aware tool scheduler (Universe: yLe/Iyn/Tyn + ToolExecutorImpl)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -165,7 +163,7 @@ READ_CAPABILITIES = frozenset({
 
 
 def _classify_tool_call(tool_name: str, registry_tool: Any) -> dict[str, Any]:
-    """ZCode scheduler metadata for one call: {dependsOn, readOnly,
+    """Universe scheduler metadata for one call: {dependsOn, readOnly,
     destructive, concurrentSafe, sideEffectScope}. Sourced from the tool's
     own consent/capability declaration — the same contract the gate uses."""
     consent = str(getattr(registry_tool, "consent", "per_turn") or "per_turn")
@@ -191,7 +189,7 @@ def _classify_tool_call(tool_name: str, registry_tool: Any) -> dict[str, Any]:
 
 def schedule_tool_calls(tool_calls: list[dict[str, Any]],
                         registry: Any) -> ScheduleResult:
-    """ZCode scheduleTools: consecutive concurrent-safe read calls group
+    """Universe scheduleTools: consecutive concurrent-safe read calls group
     into one parallel batch; any mutating/destructive call runs alone.
     Declaration order (the model's serialization) is the execution order
     baseline — a later call never jumps before an earlier one it could
@@ -218,7 +216,7 @@ def schedule_tool_calls(tool_calls: list[dict[str, Any]],
 
 
 # ---------------------------------------------------------------------------
-# Compaction tracking (ZCode: compactTracking + Uze/Bze/qze)
+# Compaction tracking (Universe: compactTracking + Uze/Bze/qze)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -237,7 +235,7 @@ class CompactTracking:
     def check_rapid_refill(self) -> None:
         """The breaker: compaction that re-fills within RAPID_REFILL_TOOL_TURN_
         THRESHOLD tool turns, RAPID_REFILL_MAX_CONSECUTIVE times in a row,
-        trips — the turn fails loudly (ZCode: rapid_refill_blocked)."""
+        trips — the turn fails loudly (Universe: rapid_refill_blocked)."""
         if (self.tool_turns_since_compact < RAPID_REFILL_TOOL_TURN_THRESHOLD):
             self.consecutive_rapid_refills += 1
             if self.consecutive_rapid_refills > RAPID_REFILL_MAX_CONSECUTIVE:
@@ -278,10 +276,10 @@ async def run_turn(
     response_format: dict | None = None,
     on_event: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> tuple[Any, list[dict[str, Any]], TurnResult]:
-    """One ZCode turn: unbounded model↔tools loop with the verbatim
+    """One Universe turn: unbounded model↔tools loop with the verbatim
     between-steps protocol. Returns (last_response, raw_tool_events,
     TurnResult). The orchestrator owns everything around it (persistence,
-    memory cycle, checkpoints) — exactly as ZCode's runtime does."""
+    memory cycle, checkpoints) — exactly as Universe's runtime does."""
     from connectors.builtin import get_registry
     from context.compaction import (compact_messages, should_compact)
     from observability.events import emit as _emit
@@ -319,8 +317,8 @@ async def run_turn(
     events: list[dict[str, Any]] = []
     repeated_calls: dict[str, int] = {}
     compact_tracking = CompactTracking()
-    microcompacts_used = 0          # ZCode microcompact cap: 5 rounds
-    output_continuations = 0        # ZCode continuation ceiling: 3
+    microcompacts_used = 0          # Universe microcompact cap: 5 rounds
+    output_continuations = 0        # Universe continuation ceiling: 3
     consecutive_failures = 0
     step_index = 0
     tool_calls_total = 0
@@ -370,7 +368,7 @@ async def run_turn(
                     "role": "user",
                     "content": f"[USER COURSE-CORRECTION] {st_text}",
                 })
-            # ZCode: a steer drain resets the repeated-tool-call detector
+            # Universe: a steer drain resets the repeated-tool-call detector
             repeated_calls.clear()
         memory_notice = ""
         if pending_memory_notice is not None:
@@ -379,7 +377,7 @@ async def run_turn(
             except Exception:
                 memory_notice = ""
         if memory_notice:
-            # ZCode memory_update ambient entry (consumePendingProjectMemory
+            # Universe memory_update ambient entry (consumePendingProjectMemory
             # Update): never narrated, never framed as work
             messages.append({
                 "role": "system",
@@ -393,7 +391,7 @@ async def run_turn(
         approx = _approx_tokens(messages)
         if (approx >= int(context_window_tokens * 0.9)
                 and microcompacts_used < 5):
-            # ZCode microcompact: trim old tool OUTPUTS (no model call),
+            # Universe microcompact: trim old tool OUTPUTS (no model call),
             # keeping structure; a cheap pass that buys real headroom.
             _microcompact_tool_outputs(messages, max_chars=2000)
             microcompacts_used += 1
@@ -414,7 +412,7 @@ async def run_turn(
             messages = compact_messages(messages, keep_recent=6,
                                         keep_system=True)
             if summarized:
-                # ZCode todo_reminder parity: re-ground after the summary
+                # Universe todo_reminder parity: re-ground after the summary
                 messages.append({
                     "role": "system",
                     "content": ("Prior context was summarized to fit the "
@@ -427,7 +425,7 @@ async def run_turn(
 
         # ---- 4. model step (agent_step) --------------------------------
         if operator_cap > 0 and step_index >= operator_cap:
-            # ZCode/Claude maxTurns semantics: the turn ENDS here with the
+            # reference maxTurns semantics: the turn ENDS here with the
             # last step's output — no forced finalization round
             ev("max_turns_reached", turn_count=step_index,
                max_turns=operator_cap)
@@ -484,7 +482,7 @@ async def run_turn(
               tool_call_count=len(calls),
               output_tokens=int(getattr(resp, "output_tokens", 0) or 0))
 
-        # ---- 5. output-token continuation FIRST (ZCode PLi @174892): a
+        # ---- 5. output-token continuation FIRST (Universe PLi @174892): a
         # token-limit cut does NOT execute tools — the turn continues with
         # the resume prompt, up to 3 continuations; exhausted → honest
         # recoverable model_output_limit_exceeded error. -------------------
@@ -521,7 +519,7 @@ async def run_turn(
                 f"{OUTPUT_TOKEN_CONTINUATION_MAX} times without finishing "
                 "the turn")
 
-        # ---- 6. no tool calls → the turn completes (ZCode: complete) ---
+        # ---- 6. no tool calls → the turn completes (Universe: complete) ---
         if not calls:
             turn_machine.complete("success")
             result = TurnResult(
@@ -647,7 +645,7 @@ async def run_turn(
             ev("turn_control_stop", reason=str(stop_control.get("reason", "")),
                tool_call_id=str(stop_control.get("tool_call_id", "")))
             turn_machine.complete("turn_control")
-            # one final no-tools reply closes the turn (ZCode: text-only
+            # one final no-tools reply closes the turn (Universe: text-only
             # continuation after a tool requests the stop)
             try:
                 resp = await llm_client.complete(
@@ -664,7 +662,7 @@ async def run_turn(
                 tool_calls_total=tool_calls_total)
             return resp, events, result
 
-        # ZCode nudge: long work without plan should create todos so user sees progress strip
+        # Universe nudge: long work without plan should create todos so user sees progress strip
         if step_index == 3 and tool_calls_total >= 3:
             has_todo = any(str(e.get("tool", "")).lower() == "todowrite" for e in events)
             if not has_todo:
@@ -688,7 +686,7 @@ async def run_turn(
 
 def _microcompact_tool_outputs(messages: list[dict[str, Any]],
                                max_chars: int) -> None:
-    """ZCode microcompact: shrink OLD tool results in place (keep the last
+    """Universe microcompact: shrink OLD tool results in place (keep the last
     two intact — the model is reading those right now)."""
     tool_idx = [i for i, m in enumerate(messages)
                 if m.get("role") == "tool"]
@@ -707,7 +705,7 @@ async def _execute_batch(
     """One scheduler batch: parallel for concurrent-safe members (they are
     grouped only when consecutive + safe), each through registry.call with
     the per-call timeout. Unknown tool → synthetic tool_result error
-    (Claude Code tG). Bad arguments → honest tool error, no crash."""
+    (reference engine). Bad arguments → honest tool error, no crash."""
     from context.compaction import compact_tool_output
     from security.secret_filter import redact_dict
 

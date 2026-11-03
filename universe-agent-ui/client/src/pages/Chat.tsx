@@ -82,7 +82,7 @@ export default function ChatPage() {
   }, [runningGoalId]);
 
   // finished run: the auto-opened Activity pane returns to the picker —
-  // the live ZCode window shows "Open tab" on a finished task (measured
+  // the live Universe window shows "Open tab" on a finished task (measured
   // 2026-10-23). Runs end → picker; viewing another finished task → picker.
   // (A tab the user opens inside a finished task stays put: the reset only
   // fires on a goal change or on the run ending.)
@@ -120,10 +120,10 @@ export default function ChatPage() {
           <ChatMessages />
           <ConsentBanner />
           <QuestionBanner />
-          {/* ZCode order: the chat flow, banners, then the composer — the
+          {/* Universe order: the chat flow, banners, then the composer — the
               composer card now carries its own workspace head row (the
               project crumbs moved inside the card), and the stripped-under
-              card bar + hint line are gone (ZCode 3.12.1 home has none) */}
+              card bar + hint line are gone (Universe 3.12.1 home has none) */}
           <Composer centered={isEmpty} />
         </main>
         {railOpen && (
@@ -135,7 +135,7 @@ export default function ChatPage() {
             }}
           />
         )}
-        {/* the floating edge-toggle is retired (ZCode-literal: the panel
+        {/* the floating edge-toggle is retired (Universe: the panel
             opens from the view header's side-panel icon on the top bar) */}
       </div>
     </div>

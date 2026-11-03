@@ -170,8 +170,8 @@ def test_set_value_on_missing_window_is_honest(broker):
 # ---- the tool contract ------------------------------------------------------------
 
 def test_tools_register_with_explicit_consent():
-    """ZCode CUA names (RE map): the machine.control set is registered under
-    the names ZCode's computer-use plugin exposes — no legacy computer.* set
+    """Universe CUA names (RE map): the machine.control set is registered under
+    the names Universe's computer-use plugin exposes — no legacy computer.* set
     remains."""
     from connectors.builtin import reset_registry_for_tests
     reg = reset_registry_for_tests()

@@ -236,6 +236,7 @@ def _register_builtins(reg: ToolRegistry) -> None:
     from connectors.builtin.search_tools import register as reg_search
     from connectors.builtin.task_tools import register as reg_task_tools
     from connectors.builtin.parity_tools import register as reg_parity_tools
+    from connectors.builtin.studio import register as reg_studio
     reg_files(reg)
     reg_shell(reg)
     reg_web(reg)
@@ -257,10 +258,11 @@ def _register_builtins(reg: ToolRegistry) -> None:
     reg_plan_mode(reg)
     reg_task_tools(reg)
     reg_parity_tools(reg)
+    reg_studio(reg)
     reg_ask_user(reg)
     reg_cron(reg)
     reg_computer_use(reg)
-    # ---- ZCode parity: per-tool defaults for plan mode & timeout ----
+    # ---- shell parity: per-tool defaults for plan mode & timeout ----
     _PLAN_ALLOWED = {
         "Read", "LS", "Grep", "Glob", "GitStatus", "GitDiff", "GitLog",
         "MemoryQuery", "Skill", "ToolSearch", "CapabilityCatalog",
@@ -286,6 +288,8 @@ def _register_builtins(reg: ToolRegistry) -> None:
         "BrowserNavigate": 30, "BrowserClick": 30, "BrowserFill": 30, "BrowserSnapshot": 30,
         "BrowserScreenshot": 30, "BrowserExtract": 30, "BrowserConsole": 30, "BrowserTabs": 30,
         "Agent": 600,
+        # Universe Studio services: AVE exports and Blender renders are slow
+        "StudioAVE": 180, "StudioDesign": 90, "StudioBlender": 600,
     }
     for _tool in reg._tools.values():
         if not hasattr(_tool, 'timeout_s') or _tool.timeout_s is None:

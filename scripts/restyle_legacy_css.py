@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""One-shot restyle of the legacy CSS sheets to the measured ZCode palette.
+"""One-shot restyle of the legacy CSS sheets to the measured Universe palette.
 
 The token layer (design-system.css/shell.css/index.css) is already
-ZCode-literal, but the older interaction sheets still hard-code the retired
+Universe, but the older interaction sheets still hard-code the retired
 teal accents — rgba(32,128,141,…) borders/glows/tints — plus a handful of
 legacy hex values that bypass the variables. This rewrites them in place:
 
   * teal rgba tints  -> neutral white lifts (alpha-aware: strong usages
     become rgba(255,255,255,.16), soft tints rgba(255,255,255,.05))
-  * amber #d8a25f / rgba(216,162,95,…) -> ZCode orange #ff8a30 family
-  * settings sheet's self-contained Linear hexes -> ZCode surfaces/inks
-  * #0b0d11 -> #161616 (ZCode canvas)
+  * amber #d8a25f / rgba(216,162,95,…) -> Universe orange #ff8a30 family
+  * settings sheet's self-contained Linear hexes -> Universe surfaces/inks
+  * #0b0d11 -> #161616 (Universe canvas)
 
 Idempotent: running it twice changes nothing the second time.
 """

@@ -1,9 +1,9 @@
-"""universe_desktop_bridge/slash.py — ZCode's slash-command surface for Universe.
+"""universe_desktop_bridge/slash.py — Universe's slash-command surface for Universe.
 
-Extracted verbatim from the installed ZCode runtime (docs/zcode-re-map.md
+Extracted verbatim from the installed Universe runtime (docs/shell-re-map.md
 section 1): the 20 built-ins, their aliases, and the .md command-file
 discovery order + frontmatter contract. Commands with a Universe counterpart
-report an `action` the desktop client can run; commands ZCode has that
+report an `action` the desktop client can run; commands Universe has that
 Universe does not report a `supported: false` placeholder instead of pretending.
 
 The bridge owns the registry so the desktop UI and the CLI share one truth.
@@ -64,11 +64,11 @@ BUILTINS: tuple[SlashCommand, ...] = (
     # /goal is DELETED (2026-10-28): one turn engine runs every task —
     # there is no long-horizon goal mode to switch into.
     # Universe surfaces that existed as local composer actions before the
-    # ZCode-parity registry: kept as built-ins so /settings etc. stay live
+    # shell-parity registry: kept as built-ins so /settings etc. stay live
     SlashCommand("settings", "Open Settings", "/settings", "settings", aliases=("setting",)),
     SlashCommand("automations", "Manage scheduled goals", "/automations", "automations"),
     SlashCommand("terminal", "Toggle the terminal pane", "/terminal", "terminal"),
-    # ---- Round-7 Claude Code parity additions (claude binary category
+    # ---- Round-7 parity additions (reference-engine category
     # map/actions; summaries are the RE'd descriptions where captured).
     # Only commands with a REAL Universe surface are wired with an action;
     # no fake placeholders.
@@ -85,7 +85,7 @@ BUILTINS: tuple[SlashCommand, ...] = (
     SlashCommand("doctor", "Check the connection health", "/doctor", "doctor"),
     SlashCommand("version", "Show the Universe desktop version", "/version", "version"),
     # NOTE: no builtin /review — user .md command files own that name the
-    # same way ZCode lets a custom command shadow a default (resolve()
+    # same way Universe lets a custom command shadow a default (resolve()
     # tries builtins first, so a builtin here would hide real custom files).
 )
 
@@ -94,14 +94,14 @@ for _c in BUILTINS:
     for _a in _c.aliases:
         _BY_NAME.setdefault(_a, _c)
 
-# ZCode's reserved name — filtered from the live menu even if a .md file
+# Universe's reserved name — filtered from the live menu even if a .md file
 # uses it (the runtime owns it).
 _RESERVED = {"compress"}
 
 
 @dataclass
 class CommandFile:
-    """A discovered .md command (frontmatter contract from the zcode-guide
+    """A discovered .md command (frontmatter contract from the shell-guide
     diagnosing-commands skill)."""
     name: str                # file stem, subdirs join with ":"
     description: str
@@ -151,27 +151,27 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
 
 
 def _command_roots() -> list[Path]:
-    """ZCode's discovery order: the user dirs, then the workspace dirs
+    """Universe's discovery order: the user dirs, then the workspace dirs
     walked up from the repo."""
     roots: list[Path] = []
     home = Path(os.path.expanduser("~"))
-    for base in (home / ".zcode" / "commands", home / ".agents" / "commands"):
+    for base in (home / ".shell" / "commands", home / ".agents" / "commands"):
         if base.is_dir():
             roots.append(base)
     here = Path(__file__).resolve()
     for parent in list(here.parents)[:6]:
-        for name in (".zcode/commands", ".agents/commands"):
+        for name in (".shell/commands", ".agents/commands"):
             cand = parent / name
             if cand.is_dir() and cand not in roots:
                 roots.append(cand)
-    plugin_root = os.environ.get("ZCODE_COMMANDS_ROOT", "")
+    plugin_root = os.environ.get("UNIVERSE_COMMANDS_ROOT", "")
     if plugin_root and Path(plugin_root).is_dir() and Path(plugin_root) not in roots:
         roots.append(Path(plugin_root))
     return roots
 
 
 def discover_command_files() -> list[CommandFile]:
-    """Every .md command on disk, filtered by ZCode's rules (built-in and
+    """Every .md command on disk, filtered by Universe's rules (built-in and
     reserved names never shadow the live menu)."""
     out: list[CommandFile] = []
     for root in _command_roots():

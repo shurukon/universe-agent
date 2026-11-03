@@ -1,8 +1,8 @@
-"""v0027 — sessions + checkpoints for ZCode harness."""
+"""v0027 — sessions + checkpoints for Universe harness."""
 from __future__ import annotations
 from schema.migrations import register
 from storage.local import LocalStorage
-@register(27, "sessions + checkpoints (ZCode harness)")
+@register(27, "sessions + checkpoints (Universe harness)")
 def upgrade(st: LocalStorage) -> None:
     st.execute("CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, workspace_root TEXT DEFAULT '', title TEXT DEFAULT 'New session', created_at REAL NOT NULL, updated_at REAL NOT NULL);")
     st.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);")

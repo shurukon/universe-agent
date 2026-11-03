@@ -36,7 +36,7 @@ body {
             height: 100%;
             box-sizing: border-box
 }
-/* scrollbar parity: handled by zcode-parity.css scrollbar-color 0.104 */
+/* scrollbar parity: handled by universe-parity.css scrollbar-color 0.104 */
 .flex-sp {
   flex: 1
 }
@@ -782,7 +782,7 @@ body.side-off .sidebar {
        the composer is a stacking context (backdrop-filter), so a raised
        strip would bury the composer's popovers (model picker) under it.
        The tone/border that separate the two cards live in
-       zcode-parity.css, imported last. ---- */
+       universe-parity.css, imported last. ---- */
 .project-bar {
   display: flex; align-items: center; gap: 8px;
   min-height: 40px; padding: 0 6px 0 4px;

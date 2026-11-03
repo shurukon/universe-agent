@@ -15,7 +15,7 @@ Actions:
     in practice: block once, the retry with facts goes through).
   * block        — every matching call is blocked (a hard rule).
 
-Every interception emits hook_intercepted so the UI's Hooks badge (ZCode
+Every interception emits hook_intercepted so the UI's Hooks badge (Universe
 parity, Phase 2) can show what stopped what.
 """
 from hooks.manager import (

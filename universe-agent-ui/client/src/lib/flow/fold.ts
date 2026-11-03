@@ -11,7 +11,7 @@ import type { BridgeEvent } from "@/lib/api";
 export type FlowToolState =
   "pending" | "running" | "completed" | "error" | "blocked";
 
-/** ZCode tool-family groups (Phase 2 item 3): consecutive calls of the
+/** Universe tool-family groups (Phase 2 item 3): consecutive calls of the
  *  same family fold into one row — "Explore · 6 events · 2 messages". */
 export type ToolFamily = "explore" | "terminal" | "changes" | "other";
 
@@ -89,7 +89,7 @@ export interface FlowToolCall {
   error: string | null;
   result: string | null;
   ts: number;
-  /** ZCode row: how many bridge events fed this call (requested, running,
+  /** Universe row: how many bridge events fed this call (requested, running,
    *  finished/failed, blocked, hook intercepts) */
   events: number;
   /** hook_intercepted rows this call produced (the Hooks badge) */
@@ -122,7 +122,7 @@ export interface FlowBrain {
   handoffIn: string | null;
   /** live streamed thinking (llm_delta events), last ~4KB */
   text: string;
-  /** measured thinking time (ZCode Thought duration): the summed spans
+  /** measured thinking time (Universe Thought duration): the summed spans
    *  between the goal start / end of a tool call and the next tool/agent
    *  event — real event timestamps, never wall-clock guesses */
   thinkMs: number;
@@ -168,7 +168,7 @@ export interface FlowModel {
 }
 
 /** Internal plumbing the user never sees as "work". */
-/** Internal plumbing the user never sees as "work". ZCode's Skill tool is
+/** Internal plumbing the user never sees as "work". Universe's Skill tool is
  *  agent-visible (it chooses a skill before working), so nothing is hidden
  *  by name anymore — the set stays as the seam if a hidden tool returns. */
 const HIDDEN_TOOLS = new Set<string>();
@@ -229,7 +229,7 @@ export function foldFlow(
   let handoffIn: string | null = null;
   // live streamed thinking (M5): llm_delta accumulation, capped at ~4KB
   let brainText = "";
-  // measured thinking spans (ZCode Thought duration): an llm event opens a
+  // measured thinking spans (Universe Thought duration): an llm event opens a
   // span; the first non-llm work event (tool/agent/terminal) closes it
   let thinkMs = 0;
   let thinkOpenTs: number | null = null;
@@ -365,7 +365,7 @@ export function foldFlow(
       case "tool_requested":
       case "tool_running": {
         if (!ev.tool || HIDDEN_TOOLS.has(ev.tool)) break;
-        // work begins: the thinking span is closed here (ZCode Thought
+        // work begins: the thinking span is closed here (Universe Thought
         // measures the silent gap before the next visible action)
         if (thinkOpenTs !== null) {
           thinkMs += Math.max(0, (ev.ts - thinkOpenTs) * 1000);

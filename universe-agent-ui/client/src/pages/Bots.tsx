@@ -81,7 +81,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { BridgeError } from "@/lib/api";
+import { BridgeError, api } from "@/lib/api";
 import {
   botScreenUrl,
   clearBotSchedule,
@@ -108,9 +108,9 @@ import type {
 import { cn } from "@/lib/utils";
 import WorkspaceSwitcher from "@/components/desktop/WorkspaceSwitcher";
 
-/* ---- design tokens — design-system.css (ZCode-measured neutrals) -------- */
+/* ---- design tokens — design-system.css (Universe-measured neutrals) -------- */
 
-/* ZCode primary: the light square button (send-btn.ready language) */
+/* Universe primary: the light square button (send-btn.ready language) */
 const ACCENT_BTN = "bg-[#d4d4d4] text-[#161616] hover:bg-white";
 const FIELD =
   "h-8 w-full border-[var(--ds-line)] bg-white/[0.03] text-xs";
@@ -1143,8 +1143,35 @@ export default function BotsPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  // the REAL runtime status: Muse Code CLI on PATH + a Meta API key. When
+  // the runtime is absent the page shows Connect to Muse Code instead of
+  // Add bot — never a fake ready state.
+  const [runtime, setRuntime] = useState<
+    "muse" | "muse_no_key" | "unavailable" | "checking"
+  >("checking");
+  const [connectOpen, setConnectOpen] = useState(false);
   // bumping this re-arms the detail poll immediately (post-mutation nudge)
   const [pollBump, setPollBump] = useState(0);
+
+  // "create bot in chat": the /bot command and chat entries land here with
+  // ?create=1 and open the New Bot dialog directly
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("create") === "1") {
+      setCreateOpen(true);
+      window.history.replaceState(null, "", "/bots");
+    }
+  }, []);
+
+  const refreshRuntime = useCallback(() => {
+    api
+      .botsStatus()
+      .then(s => setRuntime(s.runtime))
+      .catch(() => setRuntime("unavailable"));
+  }, []);
+
+  useEffect(() => {
+    refreshRuntime();
+  }, [refreshRuntime]);
 
   const detailBusy = useRef(false);
   const optimisticRef = useRef<BotEvent[]>([]);
@@ -1299,14 +1326,35 @@ export default function BotsPage() {
           <h1 className="text-sm font-semibold tracking-wide text-[var(--ds-ink)]">
             Bots
           </h1>
-          <Button
-            size="sm"
-            className={cn("h-8 gap-1.5 px-3", ACCENT_BTN)}
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="size-3.5" />
-            New Bot
-          </Button>
+          {runtime === "muse" || runtime === "muse_no_key" ? (
+            <Button
+              size="sm"
+              className={cn("h-8 gap-1.5 px-3", ACCENT_BTN)}
+              onClick={() =>
+                runtime === "muse"
+                  ? setCreateOpen(true)
+                  : setConnectOpen(true)
+              }
+              title={
+                runtime === "muse"
+                  ? "Create a bot"
+                  : "Muse Code is installed but needs the Meta API key"
+              }
+            >
+              <Plus className="size-3.5" />
+              New Bot
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className={cn("h-8 gap-1.5 px-3", ACCENT_BTN)}
+              onClick={() => setConnectOpen(true)}
+              title="Bots run on Meta's Muse Code — connect it first"
+            >
+              <Zap className="size-3.5" />
+              Connect to Muse Code
+            </Button>
+          )}
         </div>
         <ScrollArea className="min-h-0 flex-1 px-2 pb-3">
           <div className="flex flex-col gap-0.5">
@@ -1461,6 +1509,31 @@ export default function BotsPage() {
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : bots.length === 0 ? (
+          runtime === "unavailable" || runtime === "muse_no_key" ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
+              <div className="flex size-16 items-center justify-center rounded-full border border-[var(--ds-line)] bg-white/[0.03] text-[var(--ds-ink-2)]">
+                <Zap className="size-7" />
+              </div>
+              <div className="space-y-1.5">
+                <h2 className="text-lg font-semibold text-[var(--ds-ink)]">
+                  Connect to Muse Code
+                </h2>
+                <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+                  {runtime === "muse_no_key"
+                    ? "Muse Code is installed, but bots need the Meta API key. Add it once in Settings → Providers → Meta."
+                    : "Bots run on Meta's Muse Code. Install the CLI and sign in once — Universe picks it up automatically."}
+                </p>
+              </div>
+              <Button
+                size="lg"
+                className={cn("px-6", ACCENT_BTN)}
+                onClick={() => setConnectOpen(true)}
+              >
+                <Zap />
+                Connect to Muse Code
+              </Button>
+            </div>
+          ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
             <div className="flex size-16 items-center justify-center rounded-full border border-[rgba(70,191,114,0.3)] bg-[var(--ds-accent-dim)] text-[var(--ds-accent)]">
               <Sparkles className="size-7" />
@@ -1484,6 +1557,7 @@ export default function BotsPage() {
               New Bot
             </Button>
           </div>
+          )
         ) : detail ? (
           <>
             {detail.approvals_pending > 0 && (

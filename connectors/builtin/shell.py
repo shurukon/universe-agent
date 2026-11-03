@@ -3,13 +3,10 @@
 §6, §10. Prompts on first use per goal. Long-running sessions killed at 5 min.
 Quarantine-tier skills run this in a Docker sandbox (security/sandbox.py).
 
-Windows without WSL2 (2026-07): shell.exec routes through
-security/windows_sandbox.py's elevated -> unelevated chain automatically —
-mirroring upstream's own fallback (see that module's docstring). It NEVER
-falls through to unsandboxed execution on its own. Fully unsandboxed
-execution is a SEPARATE tool below (shell_exec_unsandboxed, consent=explicit)
-so bypassing the sandbox is always a deliberate, gated choice — not
-something that happens silently because setup failed.
+Fully unsandboxed execution is a SEPARATE tool below
+(shell_exec_unsandboxed, consent=explicit) so bypassing the OS session
+boundary is always a deliberate, gated choice — never something that
+happens silently.
 """
 from __future__ import annotations
 
@@ -132,30 +129,12 @@ def _run_sandboxed_dispatch(cmd: str, cwd: str = ".", env: dict | None = None,
                             timeout: int = SHELL_TIMEOUT) -> dict:
     """THE single dispatch every command-running tool must use.
 
-    Windows-native → the real sandbox (elevated → unelevated, fail-closed);
-    WSL2/Linux/macOS → the plain runner (the OS session is the isolation).
-    Audit 2026-10: Monitor/PowerShell/TestRunner/CoverageReport used to
-    call _run/_run_argv DIRECTLY, so on a windows_native machine they ran
-    with NO sandbox while Bash went through one — same consent ladder,
-    weaker guarantee; the sandbox was a policy an agent could bypass by
-    picking a different tool. Routing them all through here makes the
-    guarantee uniform, and the SHELL_TIMEOUT cap uniform too.
+    Linux/macOS → the plain runner: the OS session is the isolation
+    boundary (Universe targets Linux desktops; every command-running tool
+    routes through here so the consent ladder and the SHELL_TIMEOUT cap
+    stay uniform across Monitor/TestRunner/Bash).
     """
     cwd = _resolve_cwd(cwd)
-    from security.windows_sandbox import detect_platform
-    plat = detect_platform()
-    if plat == "windows_native":
-        from security.windows_sandbox import run_sandboxed as run_windows_sandboxed
-        result = run_windows_sandboxed(cmd, cwd=cwd, env=env,
-                                       timeout=min(timeout, SHELL_TIMEOUT))
-        if result["ok"] or result.get("returncode") is not None:
-            # real execution happened (even a failing command's non-zero
-            # exit code counts) — don't fall through to unsandboxed.
-            return result
-        # fallback: try unsandboxed with warning (first call should succeed)
-        import loguru as _lg
-        _lg.logger.warning("Windows sandbox setup failed ({}); falling back to unsandboxed", result.get("error",""))
-        return _run(cmd, cwd=cwd, timeout=min(timeout, SHELL_TIMEOUT), env=env)
     return _run(cmd, cwd=cwd, timeout=min(timeout, SHELL_TIMEOUT), env=env)
 
 
@@ -164,8 +143,7 @@ def shell_exec(cmd: str = "", cwd: str = ".", timeout: int = 120,
     """Execute a shell command inside the sandbox (scoped to the project).
 
     Args:
-        cmd: the shell command to run (POSIX syntax; on Windows it runs
-            inside the native sandbox which understands the same syntax).
+        cmd: the shell command to run (POSIX syntax).
         cwd: working directory for the command — defaults to the active
             project root; pass an absolute path to work elsewhere.
         timeout: max seconds to wait (default 120, hard cap 300).
@@ -182,10 +160,9 @@ def shell_exec(cmd: str = "", cwd: str = ".", timeout: int = 120,
 def shell_exec_unsandboxed(cmd: str = "", cwd: str = ".", timeout: int = 120,
                            env: dict | None = None, command: str = "", script: str = "") -> dict:
     """Runs `cmd` with NO sandbox at all — full access to the real
-    filesystem and network, on any platform. Only reachable via
-    consent=explicit: this is Universe's equivalent of upstream's
-    "danger-full-access", which is deliberately never an automatic
-    fallback (see security/windows_sandbox.py's module docstring).
+    filesystem and network. Only reachable via consent=explicit: this is
+    Universe's "danger-full-access", deliberately never an automatic
+    fallback.
 
     Args:
         cmd: the shell command to run.

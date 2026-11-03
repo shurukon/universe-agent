@@ -25,12 +25,12 @@
   height: 100%;
   align-items: stretch;
 }
-/* LEFT navigation rail — ZCode settings layout (05-settings-open.png):
+/* LEFT navigation rail — Universe settings layout (05-settings-open.png):
    pinned to the far-left edge, FULL window height, panel tone #2b2b2b,
    a #414141 hairline on its right. It NEVER moves while the content
    scrolls — only its own overflow (very short windows) can scroll it. */
 .sx-rail {
-  width: 264px;                        /* ZCode sidebar width, measured */
+  width: 264px;                        /* Universe sidebar width, measured */
   flex-shrink: 0;
   height: 100%;
   padding: 48px 12px 20px;

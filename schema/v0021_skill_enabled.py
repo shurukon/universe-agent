@@ -1,4 +1,4 @@
-"""v21: skills.enabled — the Settings → Skills toggle (ZCode parity).
+"""v21: skills.enabled — the Settings → Skills toggle (shell parity).
 
 A skill the user switched off stays in the corpus (durable source of
 truth, signatures intact) but is excluded from every L4 search so agents

@@ -2,7 +2,7 @@
 
 The REPL/CLI speaks session semantics: chat messages land in the CURRENT
 session; /new rotates it, /fork replaces it with a copy, /sessions use
-switches it. The holder is intentionally process-local (like Claude
+switches it. The holder is intentionally process-local (like a terminal
 Code's in-terminal session) — persistence lives in SessionStore.
 """
 from __future__ import annotations

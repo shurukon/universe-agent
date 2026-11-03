@@ -1,6 +1,6 @@
-"""connectors/builtin/search_tools.py — ZCode's search + messaging tools.
+"""connectors/builtin/search_tools.py — Universe's search + messaging tools.
 
-The three tools ZCode ships that Universe had no counterpart for (RE map
+The three tools Universe ships that Universe had no counterpart for (RE map
 §6): Grep (content search), Glob (pattern file search), SendMessage
 (agent-to-agent message). All three stay inside the project root and the
 capability gate exactly like every other builtin.

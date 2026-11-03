@@ -1,6 +1,6 @@
 /**
  * hooks/useKeyboardShortcuts.ts — the one global shortcut registry
- * (ZCode Phase 2). Mounted once by App; owns the keys the shell claims:
+ * (Universe Phase 2). Mounted once by App; owns the keys the shell claims:
  *
  *   Ctrl+B  toggle sidebar
  *   Ctrl+K  command palette
@@ -40,7 +40,7 @@ export function useKeyboardShortcuts(): void {
         input?.focus();
       } else if (key === "j") {
         e.preventDefault();
-        // ZCode behavior: Ctrl+J toggles the terminal pane — open when
+        // Universe behavior: Ctrl+J toggles the terminal pane — open when
         // closed (or another tab is showing), close when it's on screen
         const rail = useRail.getState();
         if (rail.open && rail.tab === "terminal") rail.closeRail();

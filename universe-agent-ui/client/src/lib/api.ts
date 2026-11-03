@@ -558,7 +558,7 @@ export function invalidateModelsCache(_name?: string) {
 
 export const api = {
   health: () => request<Health>("/api/health"),
-  // Round-7 CC parity readouts (/status /version /context /doctor /memory)
+  // Round-7 parity pass readouts (/status /version /context /doctor /memory)
   statusParity: () =>
     request<{
       ok: boolean;
@@ -602,6 +602,19 @@ export const api = {
       post_tokens?: number;
     }>(`/api/turn/${encodeURIComponent(turnId)}/compact`, { method: "POST" }),
 
+  botsStatus: () =>
+    request<{
+      runtime: "muse" | "muse_no_key" | "unavailable";
+      muse_installed: boolean;
+      muse_path: string;
+      meta_key: boolean;
+    }>("/api/bots/status"),
+
+  /** One real Blender viewport frame through the addon socket (Studio 3D
+   *  Live view). 503 = the addon is unreachable — an honest error. */
+  blenderViewport: () =>
+    request<{ b64: string; format: string }>("/api/studio/blender/viewport"),
+
   memory: () => request<Record<string, unknown>>("/api/memory"),
 
   goals: (limit = 50, projectId?: string, includeArchived = false) =>
@@ -629,6 +642,9 @@ export const api = {
        *  bridge validates + merges them into the goal text as one fenced
        *  block so the agent reads them with its own tools */
       attachments?: string[];
+      /** Universe Studio: the tool card picked before sending — the same
+       *  agent engine, anchored to begin with that tool */
+      studioTool?: "design" | "video" | "3d";
     }
   ) =>
     request<StartGoalResponse>("/api/turn", {
@@ -643,6 +659,7 @@ export const api = {
           ? { effort: opts.effort }
           : {}),
         ...(opts?.attachments?.length ? { attachments: opts.attachments } : {}),
+        ...(opts?.studioTool ? { studio_tool: opts.studioTool } : {}),
       }),
     }),
 

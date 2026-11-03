@@ -16,7 +16,7 @@ deterministic:
                   leave green prompt (#46bf72) + ink output (#d4d4d4) pixels
 
 Numeric verification only (the model cannot see screenshots); evidence
-captures land in docs/zcode-live-screens/phase-c-*.png.
+captures land in docs/shell-live-screens/phase-c-*.png.
 Exit 0 = every step passed.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from PIL import ImageGrab
 from pywinauto import Desktop
 from pywinauto.keyboard import send_keys
 
-OUT = r"D:\Universecomputer\Universe-compter\docs\zcode-live-screens"
+OUT = r"D:\Universecomputer\Universe-compter\docs\shell-live-screens"
 LOG = r"D:\Universecomputer\Universe-compter\universe-agent-ui\p3_electron.log"
 TITLE = "Universe Agent — Desktop"
 

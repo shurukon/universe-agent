@@ -179,7 +179,7 @@ def test_tool_name_sanitize_roundtrip():
     sends sanitized names and maps them back, so dispatch always sees
     the real registry name. Pure function — no network."""
     from providers.client import _sanitize_tool_name
-    # ZCode names (Phase 2) are already provider-safe; the sanitizer is
+    # Universe names (Phase 2) are already provider-safe; the sanitizer is
     # the safety net for thirdparty/mcp names that still carry dots
     assert _sanitize_tool_name("LS") == "LS"
     assert _sanitize_tool_name("mcp.call-tool") == "mcp_call-tool"

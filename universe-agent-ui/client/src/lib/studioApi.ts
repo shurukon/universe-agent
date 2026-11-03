@@ -237,3 +237,123 @@ export async function segmentImage(
     body: JSON.stringify({ prompt, image_url: imageUrl }),
   });
 }
+
+/* ---- Design workspace (real open-design daemon surfaces) ------------------ */
+
+export interface DesignProject {
+  id: string;
+  name: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface DesignSkill {
+  id: string;
+  name: string;
+  description?: string;
+  od_mode?: string;
+}
+
+export interface DesignSystem {
+  id: string;
+  title: string;
+  category?: string;
+  summary?: string;
+}
+
+export interface DesignSessionFile {
+  name: string;
+  size: number;
+  mtime: number;
+}
+
+export interface DesignOverview {
+  daemon: boolean;
+  projects: DesignProject[];
+  skills: DesignSkill[];
+  designSystems: DesignSystem[];
+  sessionFiles: DesignSessionFile[];
+}
+
+export interface DesignComment {
+  id: string;
+  target: string;
+  body: string;
+  anchor: string;
+  ts: number;
+}
+
+/** GET /api/studio/design/overview — real daemon projects/skills/systems. */
+export async function getDesignOverview(): Promise<DesignOverview> {
+  const raw = await studioRequest<Record<string, unknown>>(
+    "/api/studio/design/overview"
+  );
+  const rec = raw ?? {};
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  return {
+    daemon: rec["daemon"] === true,
+    projects: arr(rec["projects"]) as DesignProject[],
+    skills: arr(rec["skills"]) as DesignSkill[],
+    designSystems: arr(rec["designSystems"]) as DesignSystem[],
+    sessionFiles: arr(rec["sessionFiles"]) as DesignSessionFile[],
+  };
+}
+
+/** POST /api/studio/design/projects — one real daemon project. */
+export async function createDesignProject(
+  name: string
+): Promise<DesignProject | null> {
+  const r = await studioRequest<Record<string, unknown>>(
+    "/api/studio/design/projects",
+    { method: "POST", body: JSON.stringify({ name }) }
+  );
+  const p = r?.["project"];
+  return p && typeof p === "object" ? (p as DesignProject) : null;
+}
+
+/** GET /api/studio/design/files/{name}/source — the real file source. */
+export async function getDesignFileSource(
+  name: string
+): Promise<string> {
+  const r = await studioRequest<Record<string, unknown>>(
+    `/api/studio/design/files/${encodeURIComponent(name)}/source`
+  );
+  return typeof r?.["source"] === "string" ? r["source"] : "";
+}
+
+/** POST /api/studio/design/recolor — real palette swap inside the file. */
+export async function designRecolor(
+  name: string,
+  mapping: Record<string, string>
+): Promise<{ replaced: number }> {
+  const r = await studioRequest<Record<string, unknown>>(
+    "/api/studio/design/recolor",
+    { method: "POST", body: JSON.stringify({ name, mapping }) }
+  );
+  return { replaced: Number(r?.["replaced"] ?? 0) };
+}
+
+/** GET /api/studio/design/comments — real persisted comments for a target. */
+export async function listDesignComments(
+  target: string
+): Promise<DesignComment[]> {
+  const r = await studioRequest<Record<string, unknown>>(
+    `/api/studio/design/comments?target=${encodeURIComponent(target)}`
+  );
+  const rows = r?.["comments"];
+  return Array.isArray(rows) ? (rows as DesignComment[]) : [];
+}
+
+/** POST /api/studio/design/comments — append one real comment. */
+export async function addDesignComment(
+  target: string,
+  body: string,
+  anchor: string
+): Promise<DesignComment | null> {
+  const r = await studioRequest<Record<string, unknown>>(
+    "/api/studio/design/comments",
+    { method: "POST", body: JSON.stringify({ target, body, anchor }) }
+  );
+  const c = r?.["comment"];
+  return c && typeof c === "object" ? (c as DesignComment) : null;
+}

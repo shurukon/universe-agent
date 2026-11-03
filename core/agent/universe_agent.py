@@ -1,8 +1,8 @@
-"""core/agent/orchestrator.py — the Orchestrator (the one ZCode-model agent).
+"""core/agent/orchestrator.py — the Orchestrator (the one Universe-model agent).
 
 The single mind behind the chat. Every message is a TURN of one
 professional agent that owns every tool, every skill and the machine's
-memory. The turn runs on the ZCode turn engine (core/agent/turn_engine.py —
+memory. The turn runs on the Universe turn engine (core/agent/turn_engine.py —
 REA-verified verbatim: unbounded model↔tools loop, turn FSM, dependency-
 aware parallel tool scheduler, microcompact + autocompact with the
 rapid-refill breaker between steps, steering drained at step boundaries,
@@ -43,12 +43,12 @@ from core.agent.turn_engine import LLMOutputLimitExceeded
 from core.memory import UniverseMemory, get_memory
 from failure.checkpoint import checkpoint, load_checkpoint
 from observability.timeline import record as timeline_record
-AGENT_TURN_SYSTEM = """You are {name} — a professional agent (the Claude Code / ZCode model):
+AGENT_TURN_SYSTEM = """You are {name} — a professional agent (the durable-session agent model):
 a single mind that owns every tool, every skill, and the memory of this
 machine. You talk to the user directly, in {language}.
 
 1. THIS IS ORDINARY AGENT WORK. Treat the message as a normal professional
-   request, exactly like Claude Code treats one: no goal framing, no
+   request, exactly like a terminal agent treats one: no goal framing, no
    plan announcements for simple work, never call the request "a goal",
    never narrate ceremony — think in facts, act on them.
 2. CONVERSATION IS NATURAL. Greetings, questions and comments get plain,
@@ -72,11 +72,24 @@ machine. You talk to the user directly, in {language}.
    A blocked tool (consent/gate) is a decision point: say what was
    blocked, then take the next path. Secrets, destructive and
    irreversible actions go through the consent gate — never route around it.
+8. UNIVERSE STUDIO TOOLS. Three real tool surfaces belong to you:
+   - StudioAVE — drive the AVE video editor (MCP 127.0.0.1:19789): list its
+     catalog, then cut, trim, keyframe, color and export real timelines.
+   - StudioDesign — drive the open-design daemon (127.0.0.1:7456) to create
+     websites, pages and presentations; read the daemon's own responses.
+   - StudioBlender — command Blender through its MCP addon socket
+     (127.0.0.1:9876): get_scene_info first, then model, materialize and
+     render with execute_code and the addon's command types.
+   When a task carries a "[Universe Studio · …]" directive, BEGIN with that
+   tool and verify every service response; you may still use every other
+   tool around it. When a visual reference helps a Design or 3D task,
+   generate one with the Meta image pipeline (the same Meta API key powers
+   chat, images and speech — no separate key is ever needed).
 """
 
 
 
-# Round-7 CC parity (claude binary @206814953 live annex, adapted to the
+# Round-7 parity (reference-harness live annex, adapted to the
 # gate's reality): plan mode here blocks every write-capable tool, so the
 # plan lives in the turn + TodoWrite; the plan FILE is the first post-
 # approval action.
@@ -96,7 +109,7 @@ wait for approval. Write-capable tools are blocked by the gate until then.
   approaches. Approval phrases ("Is this plan okay?", "Should I proceed?",
   "How does this look?") MUST go through ExitPlanMode instead.
 - After approval your first actions are: write the plan file under
-  {project_root}/.zcode/plans/<task>.md, commit the TodoWrite list for the
+  {project_root}/.shell/plans/<task>.md, commit the TodoWrite list for the
   phases, then execute them one by one with verification.
 """
 
@@ -178,7 +191,7 @@ from providers.manager import get_provider_manager
 from security.capability import get_gate
 from storage.local import get_storage
 
-# NOTE: Classification/chat routing removed — ZCode happy path: every message is a turn.
+# NOTE: Classification/chat routing removed — Universe happy path: every message is a turn.
 # The turn engine itself returns no_tool_calls for pure conversation; no pre-routing needed.
 # Deleted: CLASSIFY_SYSTEM, _CHAT_PATTERNS, _WORK_MARKERS, _WORK_IDIOM_RE, _contains_work_intent,
 # _FAKE_TOOL_PATTERNS, _looks_like_chat etc. (see git history before v26).
@@ -214,12 +227,12 @@ class UniverseAgent:
                                 owner_session_id: str, project_id,
                                 project_root, session_id,
                                 effort) -> dict[str, Any]:
-        """The session-engine turn (the Claude Code / Codex contract).
+        """The session-engine turn (the durable-session contract).
 
         The session transcript is the ONLY durable state: no goals rows,
         no planets, no gravity — the turn is appended to the transcript,
         replayed as context, and closed with a turn_end event. The tool
-        loop still runs on the same ZCode turn engine and the Capability
+        loop still runs on the same Universe turn engine and the Capability
         Gate still guards every call. GAX_ENGINE=goal restores the legacy
         goal-state path until it is deleted after the burn-in period.
 
@@ -282,7 +295,7 @@ class UniverseAgent:
                        parent_goal_id: str | None = None,
                        goal_id: str | None = None,
                        effort: str | None = None) -> dict[str, Any]:
-        """Execute one turn with durable state transitions and the ZCode
+        """Execute one turn with durable state transitions and the Universe
         turn engine (unbounded; the operator cap GAX_TOOL_MAX_ROUNDS still
         applies when set). An explicit turn_id lets frontends (the desktop
         bridge) correlate the turn with their own request before the first
@@ -358,17 +371,17 @@ class UniverseAgent:
         try:
             await lock.acquire()
             held = True
-            # ---- THE AGENT TURN (the Claude Code / ZCode model) ------
+            # ---- THE AGENT TURN (the durable-session agent model) ------
             # The message IS the input to one professional turn: no
             # classify call, no keyword router, no media/acceptance
             # gates, no goal mode. One agent with the full toolset
             # decides what a turn needs — answering directly for
             # conversation, acting with tools for real work — inside the
-            # ZCode turn engine.
+            # Universe turn engine.
             classification = {"category": "general", "domain": "general",
                               "intent": "agent_turn", "complexity": "adaptive"}
             language = str(language or "en")
-            # ZCode happy path: planet (L1) is per TASK, not per turn.
+            # Universe happy path: planet (L1) is per TASK, not per turn.
             task_key = session_id or turn_id
             existing = self.memory.l1.get_planet_by_goal(task_key)
             if existing is not None:
@@ -654,7 +667,7 @@ class UniverseAgent:
                 goal_text=goal_text, language=language,
                 owner_session_id=owner_session_id)
         except LLMOutputLimitExceeded as exc:
-            # ZCode's model_output_limit_exceeded: the turn is recoverable
+            # Universe's model_output_limit_exceeded: the turn is recoverable
             # provider-side but cannot continue here — surface it as the
             # provider halt it is.
             reason = str(exc)[:500]
@@ -777,7 +790,7 @@ class UniverseAgent:
                              l3_stars: list[dict[str, Any]],
                              rules: list[dict[str, Any]],
                              project_root: str) -> list[dict[str, Any]]:
-        """The ZCode-style turn prompt: identity + live memory
+        """The Universe-style turn prompt: identity + live memory
         (relevant skills, remembered knowledge, standing rules) + the
         session history + this message. Collected memory is trusted; the
         user text and history are untrusted data, never instructions."""
@@ -1049,7 +1062,7 @@ class UniverseAgent:
             "acceptance": acceptance or {"success": bool(asteroid.task_success)},
         }
 
-    # ---- chat removed — ZCode: every message is a turn (no_tool_calls is conversation)
+    # ---- chat removed — Universe: every message is a turn (no_tool_calls is conversation)
     async def chat(self, text: str, **kwargs):
         """Compat shim: routes chat through run_turn (no_tool_calls is conversation)."""
         res = await self.run_turn(text, **kwargs)

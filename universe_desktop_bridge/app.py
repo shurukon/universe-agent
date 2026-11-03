@@ -384,11 +384,11 @@ class GoalRequest(BaseModel):
     # idempotency: a client-generated id; a duplicate within the window is
     # rejected with the original turn_id instead of double-sending.
     client_msg_id: str | None = Field(default=None, max_length=64)
-    # ZCode "Max" chip (thinking level): fast/balanced/max maps to the goal's
+    # Universe "Max" chip (thinking level): fast/balanced/max maps to the goal's
     # per-round token budget in the agent loop. Absent = the effort field or
     # the 4096 default — additive and optional, so older clients are unaffected.
     effort: str | None = Field(default=None, pattern="^(low|medium|high)$")
-    # the ZCode-parity name for the same chip (Settings picker vocabulary):
+    # the shell-parity name for the same chip (Settings picker vocabulary):
     # fast/balanced/max; when present it wins over the legacy effort value.
     thinking_level: str | None = Field(default=None, pattern="^(fast|balanced|max)$")
     # composer attachments (images / video / docs): real absolute file
@@ -397,6 +397,12 @@ class GoalRequest(BaseModel):
     # (VisionAnalyze for images, shell ffprobe for video) instead of
     # receiving megabytes inline
     attachments: list[str] = Field(default_factory=list)
+    # Universe Studio: the tool card the user picked before sending
+    # (design | video | 3d). The task still runs on the SAME agent engine —
+    # the directive only tells the agent which tool to begin with. Absent
+    # for ordinary chat goals, so older clients are unaffected.
+    studio_tool: str | None = Field(default=None,
+                                    pattern="^(design|video|3d)$")
 
 
 def _sanitize_attachments(paths: list[str]) -> list[str]:
@@ -439,8 +445,49 @@ def _text_with_attachments(text: str, attachments: list[str]) -> str:
     )
 
 
+STUDIO_TOOL_DIRECTIVE: dict[str, str] = {
+    "design": (
+        "Universe Studio · Design workspace. Begin this task with the "
+        "StudioDesign tool (open-design daemon on http://127.0.0.1:7456 — "
+        "websites, pages, presentations; artifacts export to HTML/PDF/ZIP/JSX). "
+        "Create or iterate the artifact there, verify it by reading the "
+        "daemon's response, and report the artifact path. You may still use "
+        "your other core tools (shell, files, web) whenever the design work "
+        "needs them."
+    ),
+    "video": (
+        "Universe Studio · Studio (video editor) workspace. Begin this task "
+        "with the StudioAVE tool (AVE video editor MCP on "
+        "http://127.0.0.1:19789/mcp — timeline CRUD, clips, keyframes, "
+        "effects, export). List the AVE tools first when the project state "
+        "is unknown, then drive the edit step by step and verify every "
+        "result. You may still use your other core tools whenever the edit "
+        "needs them."
+    ),
+    "3d": (
+        "Universe Studio · 3D workspace. Begin this task with the "
+        "StudioBlender tool (Blender MCP addon socket 127.0.0.1:9876 — "
+        "scene info, object/model creation, materials, rendering). Read the "
+        "scene first, then build/model step by step, verifying each command "
+        "result. When a visual reference helps, generate one with the Meta "
+        "image endpoint before modeling. You may still use your other core "
+        "tools whenever the 3D work needs them."
+    ),
+}
+
+
+def _text_with_studio_tool(text: str, tool: str | None) -> str:
+    """One directive block appended to the user's text — the SAME agent runs
+    the task; the block only anchors which studio tool opens the work. The
+    user's wording is never rewritten."""
+    directive = STUDIO_TOOL_DIRECTIVE.get(tool or "")
+    if not directive:
+        return text
+    return f"{text}\n\n---\n[{directive}]"
+
+
 def _resolve_effort(effort: str | None, thinking_level: str | None) -> str | None:
-    """One vocabulary for the thinking-level chips: the ZCode-parity
+    """One vocabulary for the thinking-level chips: the shell-parity
     fast/balanced/max names win when present; the legacy low/medium/high
     effort value survives for older clients (fast≈low, max≈high)."""
     if thinking_level:
@@ -497,7 +544,7 @@ class SettingsUpdate(BaseModel):
     # default language hints for goal runs ("en" | "ar" | "" = auto).
     # sendGoal sends it instead of the hardcoded "en".
     response_language: str | None = None
-    # ZCode parity: what a message typed WHILE a goal is running does —
+    # shell parity: what a message typed WHILE a goal is running does —
     # "steer" = course-correct mid-run (existing); "queue" = run as the
     # next follow-up once the goal finishes (never interrupts)
     interaction_behavior: str | None = None
@@ -658,7 +705,7 @@ async def memory() -> dict[str, Any]:
     return memory_snapshot()
 
 
-# ---- Round-7 CC parity readouts (/status /version /context /doctor /memory) —
+# ---- Round-7 parity pass readouts (/status /version /context /doctor /memory) —
 
 @app.get("/api/status-parity")
 async def status_parity() -> dict[str, Any]:
@@ -697,8 +744,8 @@ class ExportRequest(BaseModel):
 
 @app.post("/api/export")
 async def export_transcript(req: ExportRequest) -> dict[str, Any]:
-    """Round-7 CC parity (/export): write the task's transcript thread to a
-    real markdown file under <project_root>/.zcode/exports/ and return the
+    """Round-7 parity pass (/export): write the task's transcript thread to a
+    real markdown file under <project_root>/.shell/exports/ and return the
     path. The thread is the bridge's own message store — nothing new."""
     st = get_state()
     turn_id = req.turn_id or ""
@@ -716,7 +763,7 @@ async def export_transcript(req: ExportRequest) -> dict[str, Any]:
     try:
         from config import get_config
         root = get_config().get("project_root") or "."
-        exports = Path(root) / ".zcode" / "exports"
+        exports = Path(root) / ".shell" / "exports"
         exports.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         raise HTTPException(500, {"code": "export_root",
@@ -1182,6 +1229,9 @@ async def start_goal(req: GoalRequest) -> dict[str, Any]:
     _attachments = _sanitize_attachments(req.attachments)
     if _attachments:
         text = _text_with_attachments(text, _attachments)
+    # Universe Studio: the picked tool card rides the goal as a directive
+    # block (the engine is the same; only the opening tool changes)
+    text = _text_with_studio_tool(text, req.studio_tool)
     if not text:
         raise HTTPException(422, "empty goal text")
     # follow-up queue (interaction_behavior="queue"): a message sent while a
@@ -1304,7 +1354,8 @@ async def start_goal(req: GoalRequest) -> dict[str, Any]:
         try:
             with bus.bind_goal(turn_id):
                 emit("turn_started", turn_id=turn_id, text=text[:2000],
-                     language=req.language, task_id=task_id)
+                     language=req.language, task_id=task_id,
+                     studio_tool=req.studio_tool or "")
                 summary = await orch.run_turn(
                     text, language=req.language,
                     turn_id=turn_id,
@@ -1798,7 +1849,7 @@ async def delete_project(pid: str, hard: bool = False) -> dict[str, Any]:
     return {"ok": True, "removed": pid, "hard": hard}
 
 
-# ---- automations (Phase C — ZCode Automations page) ------------------------------
+# ---- automations (Phase C — Universe Automations page) ------------------------------
 #
 # Thin CRUD over scheduling.AutomationScheduler — the same engine the agent's
 # cron.* tools drive. The USER creating an automation from the desktop page
@@ -2297,7 +2348,7 @@ class PermissionModeUpdate(BaseModel):
 
 @app.get("/api/commands")
 async def list_slash_commands() -> dict[str, Any]:
-    """The live slash-command menu (ZCode's built-ins + .md command files)."""
+    """The live slash-command menu (Universe's built-ins + .md command files)."""
     from universe_desktop_bridge.slash import list_commands
     return {"commands": list_commands()}
 
@@ -2338,7 +2389,7 @@ class FeedbackRequest(BaseModel):
 
 @app.post("/api/feedback")
 async def file_feedback(req: FeedbackRequest) -> dict[str, Any]:
-    """ZCode chat-row parity: the assistant message's Like/Dislike buttons.
+    """Universe chat-row parity: the assistant message's Like/Dislike buttons.
     The goal must exist (a rating on a phantom row is a client bug), but any
     lifecycle state is accepted — the user may rate the moment a reply ends.
     Idempotent per (goal, rating): re-clicking the same button is a no-op so
@@ -3061,7 +3112,7 @@ async def events_ws(ws: WebSocket) -> None:
 
 # ---- terminal rail over WebSocket (Phase C — no node-pty) -------------------------
 #
-# ZCode-parity terminal panel. There is NO pseudo-terminal: every submitted
+# shell-parity terminal panel. There is NO pseudo-terminal: every submitted
 # line is one shell.exec-style run (spawn → capture → 5-min kill-tree),
 # streamed back as a result message. A per-connection `cwd` makes `cd`
 # stick across runs: the panel sends {"type":"cd","path":…} as an explicit
@@ -3189,6 +3240,46 @@ class MetaTestReq(BaseModel):
 async def bots_list() -> dict[str, Any]:
     from bots import store
     return {"bots": store.list_bots()}
+
+
+@app.get("/api/bots/status")
+async def bots_status() -> dict[str, Any]:
+    """Bots runtime availability, read live: is the real Muse Code CLI on
+    PATH, and is a Meta API key configured? The Bots page shows Connect to
+    Muse Code instead of Add bot when the runtime is absent — never a
+    fake ready state."""
+    import glob as _glob
+    import shutil
+
+    def _find_muse() -> str:
+        hit = shutil.which("muse")
+        if hit:
+            return hit
+        # versioned installs ship as muse-bin-<ver> in ~/.local/bin —
+        # accept the newest one; it is the same real CLI
+        hits = sorted(
+            _glob.glob(str(Path.home() / ".local" / "bin" / "muse-bin-*"))
+        )
+        return hits[-1] if hits else ""
+
+    muse_bin = _find_muse()
+    meta_key = False
+    try:
+        from providers.meta_media import resolve_key
+        key = await resolve_key(None)
+        meta_key = bool(key)
+    except Exception:
+        meta_key = False
+    if muse_bin and meta_key:
+        runtime = "muse"
+    elif muse_bin:
+        runtime = "muse_no_key"
+    else:
+        runtime = "unavailable"
+    return {"runtime": runtime,
+            "muse_installed": bool(muse_bin),
+            "muse_path": muse_bin or "",
+            "meta_key": meta_key}
 
 
 @app.post("/api/bots")
@@ -3563,6 +3654,250 @@ async def studio_stop(sid: str) -> dict[str, Any]:
         raise HTTPException(404, {"code": "service_unknown",
                                   "message": f"studio service {sid!r} unknown"})
     return await studio.stop_service(sid)
+
+
+@app.get("/api/studio/blender/viewport")
+async def studio_blender_viewport() -> dict[str, Any]:
+    """One real get_viewport_screenshot through the blender-mcp addon socket
+    (127.0.0.1:9876) — the Studio Live view shows the actual Blender
+    viewport, never a placeholder. Unreachable Blender is an honest 503."""
+    from connectors.builtin.studio import _blender_command
+    try:
+        resp = await _blender_command(
+            "get_viewport_screenshot",
+            {"format": "png", "max_size": 1600},
+            timeout=60.0,
+        )
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        raise HTTPException(503, {"code": "blender_unreachable",
+                                  "message": str(exc)[:300]})
+    if str(resp.get("status", "")) != "success":
+        raise HTTPException(502, {"code": "blender_error",
+                                  "message": str(resp.get("message", ""))[:300]})
+    result = resp.get("result") or {}
+    b64 = ""
+    if isinstance(result, dict):
+        b64 = str(result.get("screenshot") or result.get("base64_image") or
+                  result.get("image") or "")
+    if not b64:
+        raise HTTPException(502, {"code": "blender_error",
+                                  "message": "addon returned no screenshot data"})
+    if "," in b64 and b64.strip().startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    return {"b64": b64.strip(), "format": "png"}
+
+
+# ---- Design workspace (real open-design daemon surfaces) ---------------------
+
+DESIGN_DAEMON = "http://127.0.0.1:7456"
+# The agent's session workspace — where Universe writes real deliverable
+# files (orbit-coffee.html, decks, ...). The Design workspace previews and
+# edits THESE files; nothing here is simulated.
+AGENT_CWD = Path(__file__).resolve().parent.parent
+
+
+def _design_session_files() -> list[dict[str, Any]]:
+    """Real .html/.svg deliverables in the agent's working directory."""
+    out: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for pattern in ("*.html", "*.svg", "*.pptx.html"):
+        for p in sorted(AGENT_CWD.glob(pattern)):
+            if p in seen or p.name.startswith("."):
+                continue
+            seen.add(p)
+            try:
+                st = p.stat()
+                out.append({"name": p.name, "size": st.st_size,
+                            "mtime": int(st.st_mtime)})
+            except OSError:
+                continue
+    return out
+
+
+def _design_file_path(name: str) -> Path:
+    """Resolve a session file inside AGENT_CWD only — no traversal."""
+    if "/" in name or "\\" in name or name.startswith("."):
+        raise HTTPException(400, {"code": "bad_file",
+                                  "message": "invalid file name"})
+    p = (AGENT_CWD / name).resolve()
+    if p.parent != AGENT_CWD or not p.is_file():
+        raise HTTPException(404, {"code": "file_not_found",
+                                  "message": f"{name} is not a session file"})
+    return p
+
+
+async def _daemon(method: str, path: str, **kw: Any) -> Any:
+    """One real request to the open-design daemon (loopback-only)."""
+    import httpx as _hx
+    try:
+        async with _hx.AsyncClient(timeout=8.0) as c:
+            r = await c.request(method, f"{DESIGN_DAEMON}{path}", **kw)
+            if r.status_code >= 400:
+                raise HTTPException(r.status_code,
+                                    {"code": "daemon_error",
+                                     "message": r.text[:300]})
+            return r.json() if "application/json" in r.headers.get(
+                "content-type", "") else r.text
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — connection refused etc.
+        raise HTTPException(503, {"code": "daemon_unreachable",
+                                  "message": f"open-design daemon is not "
+                                             f"running on 7456: {exc}"}) from exc
+
+
+@app.get("/api/studio/design/overview")
+async def design_overview() -> dict[str, Any]:
+    """Everything the Design workspace renders in one call — all REAL:
+    projects, skills and design systems straight from the daemon."""
+    projects: Any = []
+    skills: Any = []
+    systems: Any = []
+    daemon_ok = True
+    try:
+        projects = (await _daemon("GET", "/api/projects")).get("projects", [])
+    except HTTPException:
+        daemon_ok = False
+    try:
+        skills = (await _daemon("GET", "/api/skills")).get("skills", [])
+    except HTTPException:
+        pass
+    try:
+        systems = (await _daemon("GET", "/api/design-systems")).get(
+            "designSystems", [])
+    except HTTPException:
+        pass
+    return {"daemon": daemon_ok, "projects": projects, "skills": skills,
+            "designSystems": systems,
+            "sessionFiles": _design_session_files()}
+
+
+class DesignProjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+@app.post("/api/studio/design/projects")
+async def design_project_create(req: DesignProjectCreate) -> dict[str, Any]:
+    """Create ONE real project in the open-design daemon."""
+    import uuid as _uuid
+    pid = _uuid.uuid4().hex[:12]
+    body = {"id": pid, "name": req.name.strip()}
+    data = await _daemon("POST", "/api/projects", json=body)
+    return {"project": data.get("project") if isinstance(data, dict) else data,
+            "id": pid}
+
+
+@app.get("/api/studio/design/projects/{pid}/artifacts")
+async def design_project_artifacts(pid: str) -> dict[str, Any]:
+    """Real live-artifact list for one daemon project."""
+    try:
+        return await _daemon("GET", "/api/live-artifacts",
+                             params={"projectId": pid})
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise
+        return {"artifacts": []}
+
+
+@app.get("/api/studio/design/artifacts/{aid}/preview")
+async def design_artifact_preview(aid: str, project_id: str) -> Response:
+    """The daemon's REAL rendered preview for one artifact (proxied bytes)."""
+    import httpx as _hx
+    try:
+        async with _hx.AsyncClient(timeout=8.0) as c:
+            r = await c.get(
+                f"{DESIGN_DAEMON}/api/live-artifacts/{aid}/preview",
+                params={"projectId": project_id})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, {"code": "daemon_unreachable",
+                                  "message": str(exc)[:200]}) from exc
+    if r.status_code >= 400:
+        raise HTTPException(r.status_code, {"code": "daemon_error",
+                                            "message": r.text[:200]})
+    return Response(content=r.content,
+                    media_type=r.headers.get("content-type", "text/html"))
+
+
+@app.get("/api/studio/design/files/{name}/preview")
+async def design_file_preview(name: str) -> Response:
+    """Serve a REAL agent-produced file for the preview iframe."""
+    p = _design_file_path(name)
+    media = "image/svg+xml" if p.suffix == ".svg" else "text/html"
+    return Response(content=p.read_bytes(), media_type=media)
+
+
+@app.get("/api/studio/design/files/{name}/source")
+async def design_file_source(name: str) -> dict[str, Any]:
+    """The real file source — the workspace code view reads this."""
+    p = _design_file_path(name)
+    return {"name": name, "source": p.read_text(errors="replace")}
+
+
+class DesignRecolor(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    mapping: dict[str, str] = Field(default_factory=dict)
+
+
+@app.post("/api/studio/design/recolor")
+async def design_recolor(req: DesignRecolor) -> dict[str, Any]:
+    """REAL palette swap: rewrite every mapped hex color inside the file."""
+    import re as _re
+    p = _design_file_path(req.name)
+    src = p.read_text(errors="replace")
+    count = 0
+    for old, new in req.mapping.items():
+        if not (_re.fullmatch(r"[0-9a-fA-F]{6}", old)
+                and _re.fullmatch(r"[0-9a-fA-F]{6}", new)):
+            raise HTTPException(400, {"code": "bad_color",
+                                      "message": "colors must be #rrggbb"})
+        pat = _re.compile(r"#[0-9a-fA-F]{3}(?![0-9a-fA-F])|#[0-9a-fA-F]{6}",
+                          _re.IGNORECASE)
+        def _sub(m: "_re.Match[str]", _o=old.lower(), _n=new) -> str:
+            nonlocal count
+            v = m.group(0)
+            full = v[1:]
+            if len(full) == 3:
+                full = "".join(ch * 2 for ch in full)
+            if full.lower() == _o:
+                count += 1
+                return f"#{_n}"
+            return v
+        src = pat.sub(_sub, src)
+    p.write_text(src)
+    return {"ok": True, "file": req.name, "replaced": count}
+
+
+class DesignComment(BaseModel):
+    target: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=2000)
+    anchor: str = Field(default="", max_length=120)
+
+
+@app.get("/api/studio/design/comments")
+async def design_comments(target: str = "") -> dict[str, Any]:
+    """Real persisted design comments (JSONL under the config home)."""
+    path = get_config().home / "design-comments.jsonl"
+    rows: list[dict[str, Any]] = []
+    if path.exists():
+        for line in path.read_text().splitlines():
+            try:
+                r = json.loads(line)
+                if not target or r.get("target") == target:
+                    rows.append(r)
+            except ValueError:
+                continue
+    return {"comments": rows}
+
+
+@app.post("/api/studio/design/comments")
+async def design_comment_add(req: DesignComment) -> dict[str, Any]:
+    path = get_config().home / "design-comments.jsonl"
+    row = {"id": f"cmt-{int(time.time()*1000)}", "target": req.target,
+           "body": req.body, "anchor": req.anchor,
+           "ts": int(time.time())}
+    with path.open("a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    return {"comment": row}
 
 
 # ---- Nebula (Memory — Obsidian-like vault) ----------------------------------

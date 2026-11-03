@@ -1,6 +1,6 @@
 """tests/e2e/test_session_e2e.py — end-to-end tests for the session engine.
 
-The session is the unit of work (Claude Code / Codex contract): every user
+The session is the unit of work (the durable-session contract): every user
 message is a turn inside a session; the transcript is the only durable
 state; resume is a replay, fork is a copy, compaction is a recorded event.
 These tests drive the REAL stack — orchestrator, turn engine, session

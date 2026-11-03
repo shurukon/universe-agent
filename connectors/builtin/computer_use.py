@@ -1,6 +1,6 @@
 """connectors/builtin/computer_use.py — the machine.control tools (Phase D).
 
-ZCode computer-use parity over the universe_cua_helper broker: a separate
+Universe computer-use parity over the universe_cua_helper broker: a separate
 process speaking NDJSON (see universe_cua_helper.py). Every tool here is
 consent=explicit — the user approves the FIRST machine.control call of a
 goal through the consent banner, and the TransparencyBar ("Universe is

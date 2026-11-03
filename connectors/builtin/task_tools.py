@@ -1,10 +1,10 @@
-"""connectors/builtin/task_tools.py — the Claude Code task-family parity.
+"""connectors/builtin/task_tools.py — the tracked task-family tools.
 
-Round-7 RE (claude binary): Claude Code 2.x ships a tracked task system used
+Round-7 RE: the reference engine ships a tracked task system used
 by agent teams — TaskCreate/TaskUpdate/TaskGet/TaskList/TaskStop over one
 shared ledger whose rows carry subject/description/activeForm/metadata,
 addBlocks/addBlockedBy/owner dependency edges, and a status set that includes
-"deleted". TaskOutput (ZCode's TaskOutput; alt names AgentOutput/BashOutput)
+"deleted". TaskOutput (Universe's TaskOutput; alt names AgentOutput/BashOutput)
 reads the transcript a tool collected so far.
 
 Universe implementation: an in-process ledger keyed by turn_id + task_id —
@@ -198,7 +198,7 @@ def task_stop(taskId: str = "", task_id: str = "", shell_id: str = "",
 
 def task_output(taskId: str = "", task_id: str = "", turn_id: str = "",
                 **_: Any) -> dict[str, Any]:
-    """ZCode's TaskOutput (alt names AgentOutput/BashOutput in the alias
+    """Universe's TaskOutput (alt names AgentOutput/BashOutput in the alias
     table): the transcript collected so far for a task id."""
     tid = str(taskId or task_id or "").strip()
     if not tid:
@@ -263,7 +263,7 @@ def register(reg) -> None:
         name="TaskOutput", capability="TaskOutput",
         description=(
             "Read the transcript accumulated so far for a background or "
-            "tracked task id (ZCode TaskOutput; alias names AgentOutput/"
+            "tracked task id (Universe TaskOutput; alias names AgentOutput/"
             "BashOutput accepted)."
         ),
         handler=task_output, consent="auto"))

@@ -2,7 +2,7 @@
 
 The goal-era split (user order 2026-10-28): NOT every task is a goal. The
 'goal' run mode (/goal long-horizon variant with its own budget and annex)
-is deleted; the ZCode turn engine (core/agent/turn_engine.py) runs every
+is deleted; the Universe turn engine (core/agent/turn_engine.py) runs every
 task with the same unbounded loop, and task identity no longer carries a
 mode marker. goals.run_mode is dropped from the schema; the historical
 values ('task' on every row since the column's default never let anything

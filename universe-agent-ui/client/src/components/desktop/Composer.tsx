@@ -1,19 +1,22 @@
 /**
- * components/desktop/Composer.tsx — the input (redesign 2026-09, ZCode
- * pass 2026-10). Auto-resize textarea, mic (voice channel), a tri-state
- * send button (idle · ready · stop), the model chip, and the ZCode chip
- * row: Switch mode (full/plan/ask) · Max (thinking level) · context
+ * components/desktop/Composer.tsx — the input (redesign 2026-09, studio
+ * variant 2026-11). Auto-resize textarea, a bar-level mic (voice channel),
+ * a tri-state send button (idle · ready · stop), the model chip, and the
+ * chip row: Switch mode (full/plan/ask) · Max (thinking level) · context
  * usage · attachments (v1: text file paths). While a goal runs the
  * composer follows Settings → interaction_behavior: "steer" (default)
  * course-corrects live; "queue" buffers the message as a follow-up and
  * shows the queued indicator.
  *
- * Slash commands (Phase C): typing "/" opens the inline autocomplete —
- * over the bridge's live registry — ZCode's 20 built-ins plus discovered
- * .md command files (zcode-guide contract). A built-in with an action runs
- * it; a custom command expands to its prompt on send; an unknown "/word"
- * is sent literally — the model sees what the user typed, never a silent
- * guess.
+ * variant="studio" (Universe Studio): the same card with NO permission
+ * modes and NO automation chip — instead the picked tool card rides the
+ * bar (Studio · Design · 3D) and typing stays locked until one is chosen.
+ *
+ * Slash commands: typing "/" opens the inline autocomplete — over the
+ * bridge's live registry — built-ins plus discovered .md command files.
+ * A built-in with an action runs it; a custom command expands to its
+ * prompt on send; an unknown "/word" is sent literally — the model sees
+ * what the user typed, never a silent guess.
  */
 import ContextMeter from "./ContextMeter";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +55,8 @@ import { useComposition } from "@/hooks/useComposition";
 import ModelPicker from "@/components/desktop/ModelPicker";
 import ProjectBar from "@/components/desktop/ProjectBar";
 import { api } from "@/lib/api";
+
+export type StudioTool = "design" | "video" | "3d";
 
 const VOICE_ERROR: Record<string, string> = {
   connecting: "Opening the voice channel…",
@@ -99,7 +104,7 @@ const kindOf = (p: string): "image" | "video" | "text" => {
 };
 
 type EffortLevel = "max" | "high" | "low";
-/** ZCode-literal thinking levels (3.14.3 live UI): Max / High / Low. The
+/** Universe thinking levels (3.14.3 live UI): Max / High / Low. The
  *  bridge keeps its effort domain (low|medium|high) and a pick maps onto
  *  it one step down the order: Max→high, High→medium, Low→low. */
 const EFFORTS: EffortLevel[] = ["max", "high", "low"];
@@ -141,7 +146,7 @@ const MODES: Array<{
   },
 ];
 
-/** ZCode's home shows a row of template chips under the card. Universe keeps
+/** Universe's home shows a row of template chips under the card. Universe keeps
  *  the surface honest: a chip writes a REAL opening prompt into the
  *  composer (or opens the page it names) — no fake template engine. */
 const SUGGESTS: Array<{
@@ -181,7 +186,46 @@ const SUGGESTS: Array<{
   },
 ];
 
-export default function Composer({ centered = false }: { centered?: boolean }) {
+/** Universe Studio's tool chips: the SAME three cards the empty state
+ *  shows, miniaturized into the bar once a tool is picked. Studio (the
+ *  video editor) leads, then Design, then the square 3D. */
+const STUDIO_TOOLS: Array<{
+  id: StudioTool;
+  label: string;
+  icon: LucideIcon;
+  title: string;
+}> = [
+  {
+    id: "video",
+    label: "Studio",
+    icon: Film,
+    title: "Studio — video editor powered by Universe",
+  },
+  {
+    id: "design",
+    label: "Design",
+    icon: Presentation,
+    title: "Design — websites, pages and presentations",
+  },
+  {
+    id: "3d",
+    label: "3D",
+    icon: MonitorDot,
+    title: "3D — model and render with Blender",
+  },
+];
+
+export default function Composer({
+  centered = false,
+  variant = "universe",
+  studioTool = null,
+  onStudioTool,
+}: {
+  centered?: boolean;
+  variant?: "universe" | "studio";
+  studioTool?: StudioTool | null;
+  onStudioTool?: (tool: StudioTool | null) => void;
+}) {
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [, navigate] = useLocation();
@@ -212,9 +256,9 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
   const [voiceState, setVoiceState] = useState<VoiceState>("off");
   const voiceRef = useRef<VoiceClient | null>(null);
 
-  // the ZCode chips: mode + thinking level + computer use — the level list
+  // the Universe chips: mode + thinking level + computer use — the level list
   // also lives in the [+] menu; the bar carries the permission + computer
-  // chips exactly like ZCode 3.14.3's follow-up bar
+  // chips exactly like Universe 3.14.3's follow-up bar
   const [level, setLevel] = useState<EffortLevel>("max");
   const [permMenu, setPermMenu] = useState(false);
   const computerUse = useUi(s => s.computerUse);
@@ -222,8 +266,8 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
   const [attachOpen, setAttachOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
 
-  // ---- slash commands (ZCode's live registry) -----------------------------
-  // The bridge owns the menu: ZCode's 20 built-ins + discovered .md command
+  // ---- slash commands (Universe's live registry) -----------------------------
+  // The bridge owns the menu: Universe's 20 built-ins + discovered .md command
   // files. Built-ins with an action run it; the honest placeholders say so
   // instead of pretending; custom commands insert "/name " so args follow.
   const [slashCommands, setSlashCommands] = useState<
@@ -436,10 +480,10 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
       taRef.current?.focus();
       return;
     }
-    // ZCode has this command, Universe has no counterpart yet — say so plainly
+    // Universe has this command, Universe has no counterpart yet — say so plainly
     setText("");
     toast(
-      `${cmd.usage.split(" ")[0]} is a ZCode command — Universe lands it in a later phase`,
+      `${cmd.usage.split(" ")[0]} is a Universe command — Universe lands it in a later phase`,
       {
         description: cmd.summary,
       }
@@ -455,7 +499,7 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
   // messages; a per-message pick wins until the setting changes again
   useEffect(() => {
     const d = settings?.default_thinking_level;
-    // stored on the effort domain (low|medium|high) — remap into the ZCode
+    // stored on the effort domain (low|medium|high) — remap into the Universe
     // vocabulary by strength: low→Low, medium→High, high→Max
     if (d === "low") setLevel("low");
     else if (d === "medium") setLevel("high");
@@ -463,11 +507,15 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
   }, [settings?.default_thinking_level]);
 
   const busy = !!runningGoal;
+  const isStudio = variant === "studio";
   // while a goal runs the composer STAYS a live control (M3): in steer mode
   // Enter course-corrects the running goal; in queue mode it buffers a
   // follow-up the bridge runs when the goal ends. Stop lives on its button.
+  // Studio: a tool card MUST be picked before anything can be written or
+  // sent — the mandatory choice the Studio empty state asks for.
+  const toolPicked = !isStudio || !!studioTool;
   const canSend =
-    text.trim().length > 0 && !sending && connection !== "offline";
+    text.trim().length > 0 && !sending && connection !== "offline" && toolPicked;
   const canStop = busy && !sending;
   // a goal stuck "running" (missed terminal WS event, bridge restart)
   // freezes send with no explanation — say why, with the way out
@@ -484,7 +532,7 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
   }, [text]);
 
   // Edit on a sent user message: prefill the composer with that text and
-  // focus it. The threaded model continues the session, so ZCode's
+  // focus it. The threaded model continues the session, so Universe's
   // branch-and-resend maps to seed + focus + send through the live path.
   const seed = useUi(s => s.composerSeed);
   useEffect(() => {
@@ -510,7 +558,7 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
       return;
     }
     if (!canSend) return;
-    // ZCode slash resolution: the bridge owns the registry. A .md command
+    // Universe slash resolution: the bridge owns the registry. A .md command
     // expands to its prompt ($ARGUMENTS rides along); a bare built-in runs
     // its action; anything else is sent literally — never a silent guess.
     // (/goal is DELETED 2026-10-28: one engine runs every task; unknown
@@ -529,10 +577,10 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
               runAction(cmd.action);
               return;
             }
-            // unsupported ZCode command: honest placeholder, nothing sent
+            // unsupported Universe command: honest placeholder, nothing sent
             setText("");
             toast(
-              `${res.name} is a ZCode command — Universe lands it in a later phase`,
+              `${res.name} is a Universe command — Universe lands it in a later phase`,
               {
                 description: (res.command as { summary?: string })?.summary,
               }
@@ -608,10 +656,17 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
       useChat.getState().settings &&
       !useChat.getState().settings!.voice_enabled
     ) {
-      toast.error("Voice mode is off — enable it in Settings → Voice first", {
-        description: "Voice input",
-      });
-      return;
+      // the mic is the voice control now: the first click turns the voice
+      // channel ON itself (Meta STT is the only provider — nothing else to
+      // pick), instead of bouncing the user into Settings
+      try {
+        await st0.saveSettings({ voice_enabled: true, stt_provider: "meta" });
+      } catch {
+        toast.error("Could not enable the voice channel — check Settings → Voice", {
+          description: "Voice input",
+        });
+        return;
+      }
     }
     const client = new VoiceClient({
       onState: (s, detail) => {
@@ -669,15 +724,21 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
 
   const micLive = voiceState !== "off";
 
-  // ZCode's live composer (2026-10-24 reference): an empty/new-task
-  // surface says "Ask ZCode anything, @ to add context, / for commands or
-  // capabilities"; an OPEN session says "Ask for follow-up changes"
-  // whether the goal runs or has finished (measured 2026-10-23)
-  const placeholder = centered
-    ? "Ask Universe anything, @ to add context, / for commands or capabilities"
-    : queueMode
-      ? "Keep typing to queue follow-up changes"
-      : "Ask for follow-up changes";
+  // the live composer reference: an empty/new-task surface says "Ask
+  // Universe anything, @ to add context, / for commands or capabilities";
+  // an OPEN session says "Ask for follow-up changes" whether the goal runs
+  // or has finished. Studio's locked state says why it is locked.
+  const placeholder = isStudio
+    ? studioTool
+      ? centered
+        ? "Describe what Universe should build with the picked tool…"
+        : "Describe the change for the picked tool…"
+      : "Pick a tool first — Studio, Design or 3D"
+    : centered
+      ? "Ask Universe anything, @ to add context, / for commands or capabilities"
+      : queueMode
+        ? "Keep typing to queue follow-up changes"
+        : "Ask for follow-up changes";
 
   // "/" opens the inline slash autocomplete (Phase C) — the popup keys are
   // handled in the textarea's onKeyDown below; typing a path or fraction
@@ -783,7 +844,7 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
 
   return (
     <div className={`composer-wrap${centered ? " centered" : ""}`}>
-      {/* ZCode's running composer is bare: the queue semantics live in the
+      {/* Universe's running composer is bare: the queue semantics live in the
          placeholder ("Keep typing to queue follow-up changes") — no extra
          status rows above the input. On the new-task surface the card sits
          inside the workspace shell that carries the crumb band (measured
@@ -859,28 +920,31 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
                 </span>
                 <span>paste or drop images &amp; video — attached by path</span>
               </div>
-              {/* Permission mode lives here now (ZCode-literal bar): the chip
-                was a Universe-only bar control; the switching stays real and
-                reachable from the same [+] menu */}
-              <div className="add-sep" role="separator" aria-hidden="true" />
-              {MODES.map(m => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`add-item${permissionMode === m.id ? " on" : ""}`}
-                  role="menuitemradio"
-                  aria-checked={permissionMode === m.id}
-                  onClick={() => {
-                    setAttachOpen(false);
-                    if (permissionMode !== m.id)
-                      void switchPermissionMode(m.id);
-                  }}
-                >
-                  <ShieldCheck size={12} strokeWidth={1.8} />
-                  <span>{m.label}</span>
-                  <span className="cx-lv">{m.note}</span>
-                </button>
-              ))}
+              {/* Permission modes live in the Universe [+] menu only —
+                  Universe Studio runs with no mode gate at all */}
+              {!isStudio && (
+                <>
+                  <div className="add-sep" role="separator" aria-hidden="true" />
+                  {MODES.map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`add-item${permissionMode === m.id ? " on" : ""}`}
+                      role="menuitemradio"
+                      aria-checked={permissionMode === m.id}
+                      onClick={() => {
+                        setAttachOpen(false);
+                        if (permissionMode !== m.id)
+                          void switchPermissionMode(m.id);
+                      }}
+                    >
+                      <ShieldCheck size={12} strokeWidth={1.8} />
+                      <span>{m.label}</span>
+                      <span className="cx-lv">{m.note}</span>
+                    </button>
+                  ))}
+                </>
+              )}
               <div className="add-sep" role="separator" aria-hidden="true" />
               {EFFORTS.map(e => (
                 <button
@@ -1005,10 +1069,10 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
             onPaste={e => {
               void onComposerPaste(e);
             }}
-            disabled={connection === "offline"}
+            disabled={connection === "offline" || (isStudio && !studioTool)}
           />
           <div className="composer-bar">
-            {/* "+" leads the bar — ZCode's add-context slot */}
+            {/* "+" leads the bar — the add-context slot */}
             <button
               className="icon-btn"
               disabled={!attachEnabled}
@@ -1027,56 +1091,78 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
               <Plus size={16} strokeWidth={2} />
             </button>
 
-            {/* ZCode-literal bar: the permission chip (orange when the mode
-              lets the agent act without the gate) + the Computer Use chip;
-              the thinking-level list moved into the [+] menu */}
-            <span className="cx-pop">
-              <button
-                type="button"
-                className={`cx-chip perm${
-                  permissionMode === "edit" || permissionMode === "full"
-                    ? ""
-                    : " calm"
-                }`}
-                onClick={() => setPermMenu(v => !v)}
-                title={`Permission: "${MODES.find(m => m.id === permissionMode)?.label}" — ${MODES.find(m => m.id === permissionMode)?.note}`}
-                aria-label="Permission mode"
-                aria-expanded={permMenu}
-              >
-                {permissionMode === "edit" || permissionMode === "full" ? (
-                  <TriangleAlert size={16} strokeWidth={2} />
-                ) : (
-                  <ShieldCheck size={16} strokeWidth={2} />
-                )}
-                <b>{MODES.find(m => m.id === permissionMode)?.label}</b>
-                <ChevronDown size={14} strokeWidth={2} />
-              </button>
-              {permMenu && (
-                <span
-                  className="cx-menu"
-                  role="menu"
-                  aria-label="Permission modes"
+            {/* Universe Studio's tool chips — the picked tool card rides the
+              bar; tap another to switch before sending. Universe has none. */}
+            {isStudio &&
+              STUDIO_TOOLS.map(t => {
+                const ToolIcon = t.icon;
+                const active = studioTool === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`cx-chip tool${active ? " on" : ""}`}
+                    onClick={() => onStudioTool?.(active ? null : t.id)}
+                    aria-pressed={active}
+                    title={`${t.title}${active ? " — tap again to clear" : ""}`}
+                  >
+                    <ToolIcon size={16} strokeWidth={2} />
+                    <b>{t.label}</b>
+                    {active && <span className="comp-dot" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+
+            {/* the permission chip is Universe-only — Studio runs ungated */}
+            {!isStudio && (
+              <span className="cx-pop">
+                <button
+                  type="button"
+                  className={`cx-chip perm${
+                    permissionMode === "edit" || permissionMode === "full"
+                      ? ""
+                      : " calm"
+                  }`}
+                  onClick={() => setPermMenu(v => !v)}
+                  title={`Permission: "${MODES.find(m => m.id === permissionMode)?.label}" — ${MODES.find(m => m.id === permissionMode)?.note}`}
+                  aria-label="Permission mode"
+                  aria-expanded={permMenu}
                 >
-                  {MODES.map(m => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={permissionMode === m.id}
-                      className={permissionMode === m.id ? "on" : ""}
-                      onClick={() => {
-                        if (permissionMode !== m.id)
-                          void switchPermissionMode(m.id);
-                        setPermMenu(false);
-                      }}
-                    >
-                      <span>{m.label}</span>
-                      <span className="cx-note">{m.note}</span>
-                    </button>
-                  ))}
-                </span>
-              )}
-            </span>
+                  {permissionMode === "edit" || permissionMode === "full" ? (
+                    <TriangleAlert size={16} strokeWidth={2} />
+                  ) : (
+                    <ShieldCheck size={16} strokeWidth={2} />
+                  )}
+                  <b>{MODES.find(m => m.id === permissionMode)?.label}</b>
+                  <ChevronDown size={14} strokeWidth={2} />
+                </button>
+                {permMenu && (
+                  <span
+                    className="cx-menu"
+                    role="menu"
+                    aria-label="Permission modes"
+                  >
+                    {MODES.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={permissionMode === m.id}
+                        className={permissionMode === m.id ? "on" : ""}
+                        onClick={() => {
+                          if (permissionMode !== m.id)
+                            void switchPermissionMode(m.id);
+                          setPermMenu(false);
+                        }}
+                      >
+                        <span>{m.label}</span>
+                        <span className="cx-note">{m.note}</span>
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </span>
+            )}
 
             <span className="cx-pop">
               <button
@@ -1088,22 +1174,39 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
               >
                 <MonitorDot size={16} strokeWidth={2} />
                 <b>Computer Use</b>
-                {/* ZCode's green activity dot — lit only while the flag is on */}
+                {/* Universe's green activity dot — lit only while the flag is on */}
                 <span className="comp-dot" aria-hidden="true" />
               </button>
             </span>
+
+            {/* the mic leads the voice channel: one click starts Meta speech
+                input (the channel self-enables on first use) */}
+            <button
+              type="button"
+              className={`icon-btn${micLive ? " mic-live" : ""}`}
+              onClick={() => void toggleVoice()}
+              title={micLive ? "Stop voice input" : "Voice input — Meta speech"}
+              aria-label={micLive ? "Stop voice input" : "Start voice input"}
+              aria-pressed={micLive}
+            >
+              {micLive ? (
+                <MicOff size={16} strokeWidth={2} />
+              ) : (
+                <Mic size={16} strokeWidth={2} />
+              )}
+            </button>
 
             <span className="flex-sp" />
 
             <ContextMeter />
 
-            {/* the model chip sits on the right, like ZCode's: provider +
+            {/* the model chip sits on the right, like Universe's: provider +
               model live in the chat surface, Settings manages keys only */}
             <ModelPicker />
 
-            {/* the model chip carries the provider+model name (ZCode right
+            {/* the model chip carries the provider+model name (Universe right
               slot); voice input lives in the [+] menu — the bar matches
-              ZCode exactly */}
+              Universe exactly */}
             {canStop && (
               <button
                 className="send-btn stop"
@@ -1140,7 +1243,7 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
           role="group"
           aria-label="Suggested prompts"
         >
-          {SUGGESTS.map(s => {
+          {SUGGESTS.filter(s => !isStudio || s.id !== "off-peak").map(s => {
             const Icon = s.icon;
             return (
               <button

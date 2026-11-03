@@ -1,8 +1,8 @@
 /**
- * components/desktop/CommandPalette.tsx — the ZCode command palette
+ * components/desktop/CommandPalette.tsx — the Universe command palette
  * (Ctrl+K, also "/" from the empty composer). Built on the installed
  * shadcn command primitive (cmdk): one input, four tabs
- * (All / Actions / Tasks / Files), and the ZCode section set — Recent
+ * (All / Actions / Tasks / Files), and the Universe section set — Recent
  * tasks · Suggested · Panels · Configure · Application.
  *
  * Every entry is a real action against the live stores or a real bridge

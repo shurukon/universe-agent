@@ -96,7 +96,16 @@ async def _execute(bot_id: str, task: str) -> None:
     error: str | None = None
     final_text = ""
     try:
-        muse_bin = shutil.which("muse")
+        muse_bin = shutil.which("muse") or next(
+            (
+                str(p)
+                for p in sorted(
+                    (Path.home() / ".local" / "bin").glob("muse-bin-*"),
+                    reverse=True,
+                )
+            ),
+            "",
+        )
         key: str | None = None
         try:
             key = await resolve_key()
@@ -256,6 +265,10 @@ async def _run_llm(bot_id: str, bot: dict[str, Any],
                        or res.get("message") or "")
         elif isinstance(res, str):
             text = res
+        else:
+            # LLMResponse and friends carry .text / .content
+            text = str(getattr(res, "text", "")
+                       or getattr(res, "content", "") or "")
         text = text.strip()
         if not text:
             return "", "the engine returned an empty reply"

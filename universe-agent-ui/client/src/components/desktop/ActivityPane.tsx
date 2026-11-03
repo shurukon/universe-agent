@@ -176,7 +176,7 @@ function AgentBlock({ agent, now }: { agent: FlowAgent; now: number }) {
 }
 
 function Recap({ model }: { model: FlowModel }) {
-  // whole seconds like ZCode's summary chips — sub-second detail lives on
+  // whole seconds like Universe's summary chips — sub-second detail lives on
   // the per-tool rows below, not in the recap line
   const durS =
     model.startedAt && model.endedAt

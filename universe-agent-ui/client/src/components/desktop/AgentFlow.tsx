@@ -1,15 +1,15 @@
 /**
  * components/desktop/AgentFlow.tsx — the agent message body, now the
- * ZCode-parity timeline (full-parity plan P1/P2). Same export signature
+ * shell-parity timeline (full-parity plan P1/P2). Same export signature
  * as the old Universe flow ({events, running, children}) so ChatMessages
- * integrations stay untouched; the INSIDE is ZCode's:
+ * integrations stay untouched; the INSIDE is Universe's:
  *
  *   reasoning rows → family-folded tool rows → SubAgent branches →
  *   compaction separators → the markdown reply → artifact chips →
  *   the trailing universe while running / the summary line when done.
  *
- * The fold is lib/flow/ztimeline.ts (ZCode state machine parity),
- * rendering lives in components/flow/ZCodeFlow.tsx + zcode-flow.css.
+ * The fold is lib/flow/ztimeline.ts (Universe state machine parity),
+ * rendering lives in components/flow/UniverseFlow.tsx + universe-flow.css.
  */
 import { useMemo } from "react";
 import { FileText, ShieldAlert } from "lucide-react";
@@ -18,8 +18,8 @@ import type { BridgeEvent } from "@/lib/api";
 import { useChat } from "@/stores/chat";
 import { useRail } from "@/lib/flow/railStore";
 import { foldZTimeline } from "@/lib/flow/ztimeline";
-import { ZTList } from "@/components/flow/ZCodeFlow";
-import "@/components/flow/zcode-flow.css";
+import { ZTList } from "@/components/flow/UniverseFlow";
+import "@/components/flow/universe-flow.css";
 
 /** unique artifact files (chip order preserved from first appearance) */
 function uniqueFiles(events: BridgeEvent[]): Map<string, number | null> {

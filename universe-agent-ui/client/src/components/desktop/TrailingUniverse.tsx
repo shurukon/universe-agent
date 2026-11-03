@@ -14,14 +14,14 @@
  */
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { buildUniverse, type UniverseData } from "@/lib/universe/generate";
-import { useUniverse } from "@/components/universe-glm/state";
+import { useUniverse } from "@/components/universe-sphere/state";
 import { agentTintDeg, tintFilter } from "@/lib/flow/agentTint";
 import type { BridgeEvent } from "@/lib/api";
 import type { FlowStatus } from "@/lib/flow/fold";
 
-// single WebGL renderer per page — shared with the universe-glm lazy chunk
+// single WebGL renderer per page — shared with the universe-sphere lazy chunk
 const UniverseCanvas = lazy(() =>
-  import("@/components/universe-glm/UniverseCanvas").then(m => ({
+  import("@/components/universe-sphere/UniverseCanvas").then(m => ({
     default: m.default,
   }))
 );

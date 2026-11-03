@@ -11,7 +11,7 @@ from typing import Any
 
 COMPACTION_TRIGGER_PCT = 0.85  # the 2026-11 migration decision: ONE compute-based pass at 85%
 
-# Round-7 CC parity: the /compact summary template (claude binary, tuo,
+# Round-7 parity: the /compact summary template (reference harness,
 # 9 sections — the "All user messages" rule keeps security-relevant
 # constraints verbatim so they outlive the summary).
 SUMMARY_TEMPLATE = """Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.

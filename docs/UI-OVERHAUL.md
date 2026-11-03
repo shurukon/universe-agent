@@ -3,7 +3,7 @@
 Authoritative spec for the desktop-UI overhaul. Every wave lists deliverables,
 exact API/component contracts, and acceptance criteria. Research sources:
 universe-glm component map, bridge map, skills catalog (OpenDesign/UIUXProMax/
-ECC), vercel-labs/ai-chatbot tool-card patterns, Claude Code status patterns.
+ECC), vercel-labs/ai-chatbot tool-card patterns, terminal-agent status patterns.
 
 Design identity stays **universe** (near-black #0b0d11, Photon Cyan #38C8FF,
 Figtree/JetBrains Mono). Professional polish rules from
@@ -182,7 +182,7 @@ Agents · Voice · MCP Servers · Memory) + right content pane.
 ## W5 — Live status & activity feed (the professionalism core)
 
 Pattern source: vercel tool.tsx (collapsible ToolHeader + status badge +
-icon pulse) + Claude Code task list (pending/in-progress/complete
+icon pulse) + terminal-agent task list (pending/in-progress/complete
 checklist, "esc to interrupt") + universe identity.
 
 ### 5.1 `components/desktop/ActivityFeed.tsx` (inside AgentMessage)
@@ -212,7 +212,7 @@ Replaces raw event spam with a structured professional feed:
 ### 5.2 Composer status strip
 While a session runs: top of composer shows `Running · Esc to interrupt ·
 step 2/5 · 12.3s` — Esc actually triggers cancelGoal (keyboard parity
-with Claude Code).
+with the reference engine).
 
 ### 5.3 Acceptance
 - llm-marked e2e: during a real session, feed shows ≥1 tool card completing,

@@ -1,5 +1,5 @@
-/* Universe Desktop — ZCode-literal identity (2026-10 restyle).
-   Neutral-gray dark canvas, measured ZCode palette (docs/zcode-tokens.md):
+/* Universe Desktop — Universe identity (2026-10 restyle).
+   Neutral-gray dark canvas, measured Universe palette (docs/shell-tokens.md):
    #161616 canvas, #2b2b2b panels, #262626 top bar, #d4d4d4 ink,
    #46bf72 green accent, #ff8a30 permission orange. design-system.css is
    the canonical token source; the values below seed the shadcn layer
@@ -21,15 +21,15 @@
 }
 
 :root {
-  /* shadcn surface tokens remapped onto the measured ZCode identity */
+  /* shadcn surface tokens remapped onto the measured Universe identity */
   --radius: 0.625rem;
-  --background: #161616;           /* ZCode canvas */
-  --foreground: #d4d4d4;           /* ZCode primary ink */
-  --card: #2b2b2b;                  /* ZCode panels/cards */
+  --background: #161616;           /* Universe canvas */
+  --foreground: #d4d4d4;           /* Universe primary ink */
+  --card: #2b2b2b;                  /* Universe panels/cards */
   --card-foreground: #d4d4d4;
   --popover: #2b2b2b;
   --popover-foreground: #d4d4d4;
-  --primary: #ffffff;               /* white primary (ZCode CTA) */
+  --primary: #ffffff;               /* white primary (Universe CTA) */
   --primary-foreground: #161616;
   --secondary: #363636;            /* selected/hover rows */
   --secondary-foreground: #d4d4d4;
@@ -39,9 +39,9 @@
   --accent-foreground: #d4d4d4;
   --destructive: #e5484d;
   --destructive-foreground: #fff;
-  --border: #414141;               /* ZCode hairline */
+  --border: #414141;               /* Universe hairline */
   --input: rgba(255,255,255,.12);
-  --ring: #46bf72;                 /* ZCode green focus ring */
+  --ring: #46bf72;                 /* Universe green focus ring */
 
   /* universe reference tokens — overridden by design-system.css; kept so the
      chat shell renders correctly before/without that file */
@@ -56,12 +56,12 @@
   --ink: #d4d4d4;
   --ink2: #d4d4d4;
   --ink3: #999999;
-  --accent-cyan: #46bf72;          /* legacy name — now the ZCode green accent */
+  --accent-cyan: #46bf72;          /* legacy name — now the Universe green accent */
   --accent2: #5bc987;
   --accent-dim: rgba(70, 191, 114, .14);
   --blue: #6cb5e8;
-  --teal: #46bf72;                  /* success = ZCode green */
-  --amber: #ff8a30;                 /* ZCode permission orange (fixes flow.css refs) */
+  --teal: #46bf72;                  /* success = Universe green */
+  --amber: #ff8a30;                 /* Universe permission orange (fixes flow.css refs) */
   --rose: #e5484d;                  /* stopped / failure */
 
   --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;

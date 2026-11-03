@@ -1,8 +1,8 @@
 /**
- * components/desktop/Sidebar.tsx — the ZCode workspace sidebar (2026-10-22
+ * components/desktop/Sidebar.tsx — the Universe workspace sidebar (2026-10-22
  * rebuild, workspaceSidebar vocabulary).
  *
- * Anatomy (ZCode 3.14.3): a "Tasks" head with search / filter-and-sort /
+ * Anatomy (Universe 3.14.3): a "Tasks" head with search / filter-and-sort /
  * add tools, a leading "New task" row, the task list (status dot + title +
  * relative age), the "Projects" section with its own add tool, the
  * "Archived · N" disclosure, and a Local footer with settings.
@@ -48,7 +48,7 @@ import {
   SearchIcon,
   SettingsIcon,
   SpinnerIcon,
-} from "./zcode-icons";
+} from "./universe-icons";
 
 interface ChatRow {
   turn_id: string;
@@ -285,7 +285,7 @@ function ChatMenu({
   );
 }
 
-/** a chat row — ZCode's exact shape (measured live 3.14.3): a 16px status
+/** a chat row — Universe's exact shape (measured live 3.14.3): a 16px status
  *  slot (spinner while running, a 6px destructive dot when failed, empty at
  *  rest), the title at 14px foreground, the age at 12px subtle, and hover
  *  swaps the age for the ⋯ actions button. Menu state is lifted so exactly
@@ -362,19 +362,27 @@ function TaskRow({
   );
 }
 
-export default function Sidebar({ open }: { open: boolean }) {
+export default function Sidebar({
+  open,
+  surface = "universe",
+}: {
+  open: boolean;
+  /** universe → rows navigate /chat; studio → the SAME rows navigate
+   *  /studio (Universe Studio is the same workspace, minus Automations) */
+  surface?: "universe" | "studio";
+}) {
   const tasks = useChat(s => s.tasks);
   const activeProject = useChat(s => s.activeProject);
   const setActiveProject = useChat(s => s.setActiveProject);
   const [, navigate] = useLocation();
-  /** ZCode's organize views: Group (every project with its chats nested),
+  /** Universe's organize views: Group (every project with its chats nested),
    *  By project (the active project scopes everything), Timeline (all
    *  chats, chronological, flat) */
   const [view, setView] = useState<"project" | "group" | "timeline">(
     "project"
   );
-  /** ZCode's task-list tree: projects open/close individually, the View
-   *  menu expands/collapses all — no extra toggles beyond what ZCode has */
+  /** Universe's task-list tree: projects open/close individually, the View
+   *  menu expands/collapses all — no extra toggles beyond what Universe has */
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set()
   );
@@ -386,14 +394,14 @@ export default function Sidebar({ open }: { open: boolean }) {
       else next.add(id);
       return next;
     });
-  /** the Tasks list pages like ZCode's: eight rows, then a disclosure */
+  /** the Tasks list pages like Universe's: eight rows, then a disclosure */
   const [showAllTasks, setShowAllTasks] = useState(false);
   /** the open ⋯ row menu (exactly one at a time) */
   const [menuFor, setMenuFor] = useState<string | null>(null);
   /** the head tools: the filter-and-sort popover (Search opens the palette) */
   const [toolsMenu, setToolsMenu] = useState(false);
   const toolsRef = useRef<HTMLSpanElement>(null);
-  /** ZCode's section headers and per-project disclosure state */
+  /** Universe's section headers and per-project disclosure state */
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const [projectMenu, setProjectMenu] = useState<string | null>(null);
@@ -427,7 +435,7 @@ export default function Sidebar({ open }: { open: boolean }) {
           // "Select project" — tasks created now are unassigned ('')
           setActiveProject("");
         }
-        // first load: ZCode opens every group by default
+        // first load: Universe opens every group by default
         if (!projectsInitRef.current) {
           projectsInitRef.current = true;
           setExpandedProjects(new Set(live.map(p => p.id)));
@@ -520,8 +528,9 @@ export default function Sidebar({ open }: { open: boolean }) {
     useChat.getState().newConversation();
     setActiveProject(projectId);
     setExpandedProjects(prev => new Set(prev).add(projectId));
-    if (window.location.pathname !== "/chat") navigate("/chat");
-    else if (window.location.search) navigate("/chat");
+    const home = surface === "studio" ? "/studio" : "/chat";
+    if (window.location.pathname !== home) navigate(home);
+    else if (window.location.search) navigate(home);
     const input = document.querySelector<HTMLTextAreaElement>(
       ".composer textarea"
     );
@@ -597,17 +606,17 @@ export default function Sidebar({ open }: { open: boolean }) {
   /** the row the user is looking at right now — carries the selected fill */
   const viewingGoalId = useChat(s => s.viewedGoalId ?? s.activeTaskId);
 
-  /** ZCode's row order: newest (created) on top */
+  /** Universe's row order: newest (created) on top */
   const orderRows = (rows: ChatRow[]) =>
     rows.slice().sort((a, b) => b.created_at - a.created_at);
 
-  /** which projects the tree renders per view — the live ZCode sidebar lists
+  /** which projects the tree renders per view — the live Universe sidebar lists
    *  EVERY project in both Group and Project views (measured 2026-10-23);
    *  ALL real projects render (there is no synthetic "general" anymore) */
   const treeProjects = projects;
 
   const TASK_PAGE = 8;
-  /** ZCode's project lists page five rows before the disclosure */
+  /** Universe's project lists page five rows before the disclosure */
   const TASK_PAGE_PROJECT = 5;
   /** timeline view flattens every project back into one list */
   const timelineAll = orderRows(
@@ -626,7 +635,7 @@ export default function Sidebar({ open }: { open: boolean }) {
   // previous-conversation view: the chat column reads ?goal= on change and
   // loads that task's thread (history + filter). Same URL twice = no-op.
   const openGoal = (turnId: string) => {
-    const url = `/chat?goal=${turnId}`;
+    const url = `${surface === "studio" ? "/studio" : "/chat"}?goal=${turnId}`;
     if (window.location.search !== `?goal=${turnId}`) navigate(url);
     else void useChat.getState().loadGoalHistory(turnId);
   };
@@ -642,8 +651,8 @@ export default function Sidebar({ open }: { open: boolean }) {
       <div className="zsb-ws-row">
         <WorkspaceSwitcher />
       </div>
-      {/* --- ZCode's three menu rows: New task / Search / Automations.
-         (Plugin Marketplace is deliberately absent — Universe has no store.) --- */}
+      {/* --- the menu rows: New task / Search / Automations. Universe
+          Studio drops the Automations row (it has no automations). --- */}
       <div className="zsb-nav">
         <div
           className="zsb-newtask"
@@ -673,17 +682,19 @@ export default function Sidebar({ open }: { open: boolean }) {
           <span className="zsb-label zsb-grow">Search</span>
           <span className="zsb-kbd">Ctrl+K</span>
         </button>
-        <button
-          type="button"
-          className="zsb-navrow"
-          onClick={() => navigate("/automations")}
-        >
-          <CalendarClock size={16} />
-          <span className="zsb-label zsb-grow">Automations</span>
-        </button>
+        {surface !== "studio" && (
+          <button
+            type="button"
+            className="zsb-navrow"
+            onClick={() => navigate("/automations")}
+          >
+            <CalendarClock size={16} />
+            <span className="zsb-label zsb-grow">Automations</span>
+          </button>
+        )}
       </div>
 
-      {/* --- scroll body: organize row + sections (ZCode geometry) --- */}
+      {/* --- scroll body: organize row + sections (Universe geometry) --- */}
       <div className="zsb-body">
         <div className="zsb-scroll">
           <div className="zsb-org">
@@ -1065,7 +1076,7 @@ export default function Sidebar({ open }: { open: boolean }) {
                 )}
               </section>
 
-              {/* ---------- Archived (Universe's own state, ZCode's rows) ---------- */}
+              {/* ---------- Archived (Universe's own state, Universe's rows) ---------- */}
               {archivedChats.length > 0 && (
                 <section className="zsb-section">
                   <div className="zsb-sechead">
@@ -1159,7 +1170,7 @@ export default function Sidebar({ open }: { open: boolean }) {
         </div>
       </div>
 
-      {/* --- footer: 32px avatar, 14px/600 name, gear (ZCode's slot) --- */}
+      {/* --- footer: 32px avatar, 14px/600 name, gear (Universe's slot) --- */}
       <footer className="zsb-foot">
         <div className="zsb-user">
           <button

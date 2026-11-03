@@ -37,7 +37,7 @@
 /* 44px touch floor on icon buttons stays; visual size tightens.       */
 /* ------------------------------------------------------------------ */
 
-/* send-btn parity: handled by zcode-parity.css (28×28 r8) — redesign glass removed */
+/* send-btn parity: handled by universe-parity.css (28×28 r8) — redesign glass removed */
 
 /* tier 2 — glass icon buttons (mic, add, topbar). Translucent, edge-lit */
 .mic-btn, .icon-btn {
@@ -136,10 +136,10 @@
 /* ------------------------------------------------------------------ */
 
 .composer {
-  position: relative; /* anchors the slash-command popup (Phase C) — surface handled by zcode-parity.css */
+  position: relative; /* anchors the slash-command popup (Phase C) — surface handled by universe-parity.css */
 }
 
-/* ---- slash-command autocomplete (Phase C, ZCode-literal) ---- */
+/* ---- slash-command autocomplete (Phase C, Universe) ---- */
 .slash-pop {
   position: absolute; left: 10px; right: 10px; bottom: calc(100% + 8px);
   max-height: 264px; overflow-y: auto;
@@ -177,8 +177,8 @@
 /* working strip above the composer while a goal runs */
 
 /* ------------------------------------------------------------------ */
-/* messages — the ZCode single bubble wins: the row carries NO card of
-   its own (zcode-flow.css owns the pill). The old glass card here was
+/* messages — the Universe single bubble wins: the row carries NO card of
+   its own (universe-flow.css owns the pill). The old glass card here was
    the SECOND bubble the user flagged (2026-10-30) — deleted.            */
 /* ------------------------------------------------------------------ */
 

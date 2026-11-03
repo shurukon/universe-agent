@@ -371,7 +371,7 @@ def main() -> int:
             assert "8b96a5" in ink3, f"AA ink3 applied, got {ink3}"
         check(page, "a11y", a11y)
 
-        # ---------- PHASE-2 SHELL (ZCode parity - provider-free) ------------
+        # ---------- PHASE-2 SHELL (shell parity - provider-free) ------------
         # The chrome states below need NO LLM: navigation and the question
         # surface are driven through window.__universeTest - the REAL store
         # ingestion path (the same ingestEvent the WS uses).
@@ -408,14 +408,14 @@ def main() -> int:
             page.wait_for_selector(".cmdk-overlay", timeout=8000)
             tabs = page.locator(".cmdk-tab").all_inner_texts()
             assert tabs == ["All", "Actions", "Tasks", "Files"], f"tabs {tabs}"
-            # the ZCode sections are all present on the All tab
+            # the Universe sections are all present on the All tab
             secs = page.locator(".cmdk-sec, [cmdk-group-heading]").all_inner_texts()
             for want in ("Recent", "Suggested", "Panels", "Configure", "Application"):
                 assert any(want.lower() in s.lower() for s in secs), \
                     f"section {want} missing ({secs})"
             page.keyboard.press("Escape")
             page.wait_for_selector(".cmdk-overlay", state="detached", timeout=8000)
-            # "/" from the EMPTY composer opens it too (ZCode behavior)
+            # "/" from the EMPTY composer opens it too (Universe behavior)
             ta = page.locator("textarea[aria-label='Goal input']")
             ta.click()
             page.keyboard.press("/")
@@ -495,7 +495,7 @@ def main() -> int:
             # the mode chip carries the live permission mode
             mode = page.locator(".cx-chip", has_text="Full access")
             assert mode.count() >= 1, "mode chip shows Full access"
-            # its menu offers the three ZCode modes
+            # its menu offers the three Universe modes
             mode.first.click()
             page.wait_for_selector(".cx-menu", timeout=8000)
             labels = page.locator(".cx-menu button").all_inner_texts()

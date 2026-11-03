@@ -5,7 +5,7 @@
  * trailing universe as the LAST live element. No MiniUniverse, no
  * ActivityFeed cards, no ThinkingSpark — all deleted.
  *
- * ZCode rows (Phase 2): every message carries a timestamp; user rows get
+ * Universe rows (Phase 2): every message carries a timestamp; user rows get
  * Edit (branch-and-resend) + Copy; assistant rows get Copy, Like/Dislike
  * (POST /api/feedback), Fork (branch), Hooks (the intercepts popover);
  * the assistant header shows the measured Working for…/Worked for… badge.
@@ -28,8 +28,8 @@ import { api } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useChat } from "@/stores/chat";
 import { useUi } from "@/stores/ui";
-import Welcome from "./Welcome";
 import AgentFlow from "./AgentFlow";
+import EmptyState from "./EmptyState";
 import AgentReply from "./AgentReply";
 
 function fmtClock(ts?: number): string | null {
@@ -95,7 +95,7 @@ export default function ChatMessages() {
     return lines.filter(Boolean).join(". ");
   });
 
-  if (messages.length === 0) return <Welcome />;
+  if (messages.length === 0) return <EmptyState />;
 
   // Filtering by turn_id isolates one legacy goal's bubbles in a shared live
   // conversation. Threaded tasks differ: loadGoalHistory replaces `messages`
@@ -134,7 +134,7 @@ export default function ChatMessages() {
 }
 
 /* ------------------------------------------------------------------ */
-/* user row — the ZCode SINGLE bubble (the old glass card around it was
+/* user row — the Universe SINGLE bubble (the old glass card around it was
    the second bubble the user flagged 2026-10-30). Hover actions: Copy +
    Edit (seed the composer — the threaded model continues the session) +
    the timestamp, exactly the measured reference crop.                    */
@@ -151,7 +151,7 @@ const UserRow = memo(function UserRow({
   const [copied, setCopied] = useState(false);
   const clock = fmtClock(ts);
 
-  // Edit = ZCode branch-and-resend mapped onto this app's threaded model:
+  // Edit = Universe branch-and-resend mapped onto this app's threaded model:
   // the message text returns to the composer AND the message turn plus
   // every later turn leave the thread (bridge truncate)
   const onEdit = async () => {
@@ -333,7 +333,7 @@ const AgentMessage = memo(function AgentMessage({
 
   return (
     <div className="msg-agent">
-      {/* ZCode: Work header sits ABOVE answer, collapsible */}
+      {/* Universe: Work header sits ABOVE answer, collapsible */}
       {span && (
         <div className="zturn-foot">
           <button

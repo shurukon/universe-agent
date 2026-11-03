@@ -1,6 +1,6 @@
 """core/agent/base_agent.py — shared agent contracts (tools, schemas, handoff).
 
-The real tool execution loop is core/agent/turn_engine.py (the ZCode turn
+The real tool execution loop is core/agent/turn_engine.py (the Universe turn
 engine, 2026-10-28): this module keeps the Tool/HandoffPackage contracts,
 the tool-schema builder, the effort/token maps and the shared engine
 helpers (timeout, token estimate)."""
@@ -152,9 +152,9 @@ class Tool:
     # archive's `source`/`target`, Stripe's token arg is NOT a path despite
     # its name). None = fall back to the gate's name heuristics.
     path_args: list[str] | None = None
-    # ZCode parity: per-tool timeout (seconds) — None = gate global fallback
+    # shell parity: per-tool timeout (seconds) — None = gate global fallback
     timeout_s: float | None = None
-    # ZCode parity: whether this tool is allowed in plan mode (read-only research)
+    # shell parity: whether this tool is allowed in plan mode (read-only research)
     allow_in_plan: bool = False
 
 

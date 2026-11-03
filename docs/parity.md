@@ -1,16 +1,16 @@
-# ZCode ↔ Universe Agent — the parity table
+# Universe ↔ Universe Agent — the parity table
 
-The single source of truth for "is Universe exactly like ZCode?" — surface
+The single source of truth for "is Universe exactly like Universe?" — surface
 by surface, with the evidence trail. Anything NOT listed here as parity
 is documented as an intentional difference or out of scope; nothing is
 silently missing.
 
 References: reports 01–04
-(`C:\Users\MKT\.zcode\workspace\default\zcode-harness-docs\`), the
-measured palette (docs/zcode-tokens.md), the frozen event contract
+(`C:\Users\MKT\.shell\workspace\default\shell-harness-docs\`), the
+measured palette (docs/shell-tokens.md), the frozen event contract
 (docs/events-v1.md), and the live-verification scripts
 (`scripts/verify_universe_live.py`, `scripts/verify_phase_c_live.py`) whose
-captures live in `docs/zcode-live-screens/`.
+captures live in `docs/shell-live-screens/`.
 
 Legend: ✅ parity · 🟡 parity with a documented difference · ⛔ deliberately
 different (a decision, not a gap) · phases reference the rebuild commits
@@ -19,7 +19,7 @@ different (a decision, not a gap) · phases reference the rebuild commits
 
 ## Shell chrome
 
-| Surface | ZCode (evidence) | Universe | Status |
+| Surface | Universe (evidence) | Universe | Status |
 |---|---|---|---|
 | Canvas | `#161616` (ref 01, live) | `--canvas #161616` | ✅ B, live-verified |
 | Panels/sidebar/cards | `#2b2b2b` | `--ds-surface-1` | ✅ B, live-verified |
@@ -32,12 +32,12 @@ different (a decision, not a gap) · phases reference the rebuild commits
 | Accent (green) | `#46bf72` status only | `--ds-accent` | ✅ B |
 | Permission chip (orange) | `#ff8a30` | Switch-mode chip | ✅ B |
 | Font | Segoe system stack | same stack | ✅ B |
-| WebGL universe in empty state | — (ZCode has none) | kept as the brand touch | ⛔ plan-approved identity |
+| WebGL universe in empty state | — (Universe has none) | kept as the brand touch | ⛔ plan-approved identity |
 | Old teal chrome | — | fully removed (0px live) | ✅ B |
 
 ## Sidebar / navigation
 
-| Surface | ZCode | Universe | Status |
+| Surface | Universe | Universe | Status |
 |---|---|---|---|
 | New task row + Ctrl+N chip | first row | first row, wired | ✅ P2/C |
 | Search row + Ctrl+K | palette | palette | ✅ P2 |
@@ -48,7 +48,7 @@ different (a decision, not a gap) · phases reference the rebuild commits
 
 ## Composer & chat
 
-| Surface | ZCode | Universe | Status |
+| Surface | Universe | Universe | Status |
 |---|---|---|---|
 | Composer card + border | `#2b2b2b`/`#4b4b4b` | same | ✅ B |
 | Send button (square, `#d4d4d4`) | ✓ | tri-state send/stop | ✅ B |
@@ -63,7 +63,7 @@ different (a decision, not a gap) · phases reference the rebuild commits
 
 ## Right rail
 
-| Surface | ZCode | Universe | Status |
+| Surface | Universe | Universe | Status |
 |---|---|---|---|
 | Preview pane | file previews | text/md/img/audio/video/PDF | ✅ (M2) |
 | Files pane | artifacts | real artifacts of finished goals | ✅ (M2) |
@@ -74,7 +74,7 @@ different (a decision, not a gap) · phases reference the rebuild commits
 
 ## Pages / Settings
 
-| Surface | ZCode | Universe | Status |
+| Surface | Universe | Universe | Status |
 |---|---|---|---|
 | Settings layout (left sections) | Linear style | `sx-*` | ✅ P3 |
 | Automations page | list + switches + form | full CRUD over real scheduler | ✅ C, live-verified |
@@ -91,11 +91,11 @@ different (a decision, not a gap) · phases reference the rebuild commits
 
 ## Harness internals (report-03/04)
 
-| Surface | ZCode | Universe | Status |
+| Surface | Universe | Universe | Status |
 |---|---|---|---|
 | Todos | TodoWrite/Read | `todo.write/read` + Progress pane | ✅ P1 |
 | Hooks (GateGuard-style) | pre/post tool | HookManager + rules | ✅ P1/P3 |
-| Permission modes | plan/build/edit/yolo | the ZCode four, alias-normalized
+| Permission modes | plan/build/edit/yolo | the Universe four, alias-normalized
 (acceptEdits→edit, bypassPermissions→yolo), enforced by the gate | ✅ P1 |
 | ask_user | structured options | question_required/decided | ✅ P1 |
 | Follow-up queue | queue | steer_queued | ✅ P1 |
@@ -125,15 +125,15 @@ different (a decision, not a gap) · phases reference the rebuild commits
    types; the v1 contract (docs/events-v1.md) stays additive-only.
 
 
-## ZCode reverse-engineering pass (2026-10-19)
+## Universe reverse-engineering pass (2026-10-19)
 
-Static RE of the installed ZCode 3.14.3 (app.asar + glm/zcode.cjs), evidence
-in docs/zcode-re-map.md:
+Static RE of the installed Universe 3.14.3 (app.asar + glm/shell.cjs), evidence
+in docs/shell-re-map.md:
 
-| Surface | ZCode | Universe | Status |
+| Surface | Universe | Universe | Status |
 |---|---|---|---|
 | Tool names | Read/Write/Edit/Bash/Grep/Glob/TodoWrite/Agent/Skill/ExitPlanMode/AskUserQuestion/Cron*/SendMessage + the CUA set | identical names in the registry (117 tools renamed), Grep/Glob/SendMessage built new | ✅ |
-| Slash commands | 20 built-ins + .md files (`$ARGUMENTS`, `:` names, `compress` reserved) | same registry over `GET /api/commands` + `/api/commands/resolve`, composer autocomplete rebuilt on it | ✅ (Universe-only entries keep their actions; ZCode-only ones are honest placeholders) |
+| Slash commands | 20 built-ins + .md files (`$ARGUMENTS`, `:` names, `compress` reserved) | same registry over `GET /api/commands` + `/api/commands/resolve`, composer autocomplete rebuilt on it | ✅ (Universe-only entries keep their actions; Universe-only ones are honest placeholders) |
 | Permission modes | plan/build/edit/yolo (+auto) | identical + alias table (full→yolo, ask→build) | ✅ |
 | Icons | lucide canonical names | renames applied (TriangleAlert, ChartColumn, Ellipsis, LoaderCircle); `funnel` needs the newer lucide the registry can't fetch — Filter alias kept | ⚠️ |
-| UI strings/labels | i18n table + harness reports | measured tokens already in docs/zcode-tokens.md; geometry fixes pending Phase-5 pixel pass | ⏳ |
+| UI strings/labels | i18n table + harness reports | measured tokens already in docs/shell-tokens.md; geometry fixes pending Phase-5 pixel pass | ⏳ |

@@ -396,8 +396,8 @@ def register(reg: ToolRegistry) -> None:
                        "Run a short Python/JS code snippet in an isolated subprocess",
                        code_execute, "per_turn", ["cwd"]))
 
-    # js twins (Round-7 ZCode parity: the node-REPL tool names in
-    # zcode.cjs's 28-name allowlist). Universe's CodeExecute already runs
+    # js twins (Round-7 shell parity: the node-REPL tool names in
+    # shell.cjs's 28-name allowlist). Universe's CodeExecute already runs
     # node in an isolated subprocess, so the verbatim names ride the same
     # runner; js_reset and js_add_node_module_dir mirror the CLI REPL's
     # context tools with honest answers.

@@ -357,11 +357,11 @@ function bootstrapDesktop(): void {
       height: 900,
       minWidth: 1024,
       minHeight: 700,
-      backgroundColor: "#161616", // ZCode canvas tone (docs/zcode-tokens.md)
+      backgroundColor: "#161616", // Universe canvas tone (docs/shell-tokens.md)
       show: false, // avoid the white flash; shown on ready-to-show
       title: "Universe Agent",
       autoHideMenuBar: true,
-      // ZCode-literal chrome (Phase 2): the app draws its own title bar
+      // Universe chrome (Phase 2): the app draws its own title bar
       // (client/src/components/desktop/TopBar.tsx — drag region + window
       // buttons through the universe:win IPC). pollHealth and the bridge
       // token are untouched by this.

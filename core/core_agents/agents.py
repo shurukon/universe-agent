@@ -181,7 +181,7 @@ async def _run_specialist_step(self: BaseAgent, *, memory, llm_client,
             s for s in context["l4_skills"]
             if s.get("id") != preflight_skill.get("skill_id")]
     messages = self.build_messages(context, goal_text, instruction)
-    # The ZCode turn engine runs every loop (2026-10-28): unbounded steps,
+    # The Universe turn engine runs every loop (2026-10-28): unbounded steps,
     # the rapid-refill breaker + the operator cap replace the complexity
     # round budgets. phase.required_tools still scopes the whitelist.
     from core.agent.base_agent import EFFORT_DEFAULT_MAX_TOKENS, EFFORT_MAX_TOKENS
@@ -308,8 +308,8 @@ class UniverseAgent(BaseAgent):
     specialty = "Universe Agent — the one agent that does the work itself"
     default_model_tier = "mid"
     system_prompt = (
-        "You are UNIVERSE AGENT — one professional agent, the Claude Code / "
-        "ZCode model: a single mind that owns every tool and skill and does "
+        "You are UNIVERSE AGENT — one professional agent, the durable-session "
+        "Universe model: a single mind that owns every tool and skill and does "
         "the work itself, end-to-end. You are not a router; you are the "
         "doer.\n\n"
         "How you work:\n"
@@ -408,6 +408,9 @@ class UniverseAgent(BaseAgent):
             "ListWindows", "ListApps", "OpenApplication",
             "SwitchDisplay", "RequestAccess", "GetAppState", "SetValue",
             "VisionAnalyze",
+            # Universe Studio — the real tool surfaces behind the Studio
+            # tool cards (AVE MCP, open-design daemon, Blender addon socket)
+            "StudioAVE", "StudioDesign", "StudioBlender",
         ]
 
     async def _execute(self, *, memory, llm_client, goal_text, classification, handoff, context, capability_gate, turn_id="", **_):

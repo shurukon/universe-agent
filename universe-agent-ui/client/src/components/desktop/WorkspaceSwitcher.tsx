@@ -3,7 +3,7 @@
  * (+ Nebula) segmented control. Lives at the TOP OF THE LEFT SIDEBAR (user
  * decision, 2026-11): the sidebar is the stable shell — it only changes
  * shape in Bots mode (the bots rail takes the same column). TopBar no
- * longer carries it. Styled on the ZCode-measured neutral tokens — no
+ * longer carries it. Styled on the Universe-measured neutral tokens — no
  * blue-tinted glass.
  */
 import { Sparkles } from "lucide-react";

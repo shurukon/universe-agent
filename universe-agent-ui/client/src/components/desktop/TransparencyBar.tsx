@@ -1,20 +1,20 @@
 /**
- * components/desktop/TransparencyBar.tsx — the ZCode-style always-on-top
+ * components/desktop/TransparencyBar.tsx — the Universe-style always-on-top
  * strip: "Universe is controlling your computer" (Phase 5 structure, built
- * with the restyle; color per docs/zcode-tokens.md).
+ * with the restyle; color per docs/shell-tokens.md).
  *
  * Shows while ANY goal has a machine-control tool call in flight —
  * browser.* today, the computer-use family (machine./computer./cua.)
  * when the Phase-6 helper lands. The latest control-family lifecycle
  * event decides: requested/running → visible; finished/failed/blocked →
  * hidden. The strip overlays the top of the window — it never pushes
- * layout, exactly like ZCode's own control banner.
+ * layout, exactly like Universe's own control banner.
  */
 import { TriangleAlert } from "lucide-react";
 import { useChat } from "@/stores/chat";
 import type { BridgeEvent } from "@/lib/api";
 
-// ZCode tool names (Phase 2 rename): the machine-control families are the
+// Universe tool names (Phase 2 rename): the machine-control families are the
 // Browser* set + the CUA set (Screenshot/LeftClick/…) + machine./cua. hooks
 const CONTROL_PREFIXES = ["Browser", "Screenshot", "LeftClick", "RightClick",
   "DoubleClick", "LongPress", "Swipe", "Scroll", "SetValue", "OpenApplication",

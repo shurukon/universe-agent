@@ -34,8 +34,8 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
 # "explicit", never silently allowed (the old fail-open behavior).
 VALID_CONSENTS = {"auto", "once", "per_turn", "explicit"}
 
-# ZCode's four permission modes (Round-7 RE: zcode.cjs ExitPlanMode enum
-# ["build","edit","yolo","auto"], docs/zcode-re-map.md §2): plan = the
+# Universe's four permission modes (Round-7 RE: shell.cjs ExitPlanMode enum
+# ["build","edit","yolo","auto"], docs/shell-re-map.md §2): plan = the
 # read-only working set; build = the per-goal consent ladder as declared by
 # each tool; edit = writes run without the per-goal gate, commands still
 # consent; auto = classifier-lean middle (everyday work flows through,
@@ -45,7 +45,7 @@ VALID_CONSENTS = {"auto", "once", "per_turn", "explicit"}
 # ask slot, full fills bypassPermissions.
 PERMISSION_MODES = ("ask", "plan", "edit", "full")
 
-# Aliases accepted by set_permission_mode (ZCode's compat table + Universe's
+# Aliases accepted by set_permission_mode (Universe's compat table + Universe's
 # retired modes so a stored "full"/"ask" keeps working after the switch).
 MODE_ALIASES = {
     # canonical → aliases that resolve to it
@@ -88,7 +88,7 @@ _PLAN_MODE_STATIC = frozenset({
     "WebSearch", "WebFetch", "WebResearch",
     "wikipedia_search", "arxiv_search",
     "Grep", "Glob",
-    "Agent",  # research sub-agents allowed in plan (ZCode parity: 84 occurrences)
+    "Agent",  # research sub-agents allowed in plan (shell parity: 84 occurrences)
 })
 
 def _is_plan_allowed(tool_name: str) -> bool:
@@ -106,7 +106,7 @@ def _is_plan_allowed(tool_name: str) -> bool:
 # Backward compat alias for tests that assert membership
 PLAN_MODE_ALLOWED_TOOLS = _PLAN_MODE_STATIC
 
-# auto mode (ZCode enum + CC classifier-lean semantics): everyday file
+# auto mode (Universe enum + CC classifier-lean semantics): everyday file
 # writes flow without the per-goal prompt — exactly CC's auto sitting
 # between acceptEdits and bypassPermissions. These capability sets express
 # the classifier in Universe terms: capability "Write" covers the file
@@ -388,7 +388,7 @@ class CapabilityGate:
         self._load_persisted_grants()
         self._auto_grant_all = False
         self._consent_handler: ConsentHandler | None = None
-        # session-level permission mode (ZCode parity): plan|build|edit|auto|yolo
+        # session-level permission mode (shell parity): plan|build|edit|auto|yolo
         self._permission_mode: str = "ask"
 
     def _load_persisted_grants(self) -> None:
@@ -448,7 +448,7 @@ class CapabilityGate:
         set — an invalid value keeps the current mode (fail-safe, no
         exception: a bad bridge payload can never crash a call). Aliases
         (acceptEdits, bypassPermissions, the retired full/ask…) normalize
-        to the five ZCode modes through MODE_ALIASES."""
+        to the five Universe modes through MODE_ALIASES."""
         canonical = normalize_permission_mode(mode)
         if canonical is None:
             return self._permission_mode
@@ -663,7 +663,7 @@ class CapabilityGate:
             return ("unknown_agent",
                     f"unknown agent {agent!r} — tool calls are "
                     f"whitelist-scoped to registered agents", {})
-        # permission modes (ZCode parity): plan = read-only working set;
+        # permission modes (shell parity): plan = read-only working set;
         # build/ask = every policy lifted to explicit is never silent
         if self._permission_mode == "plan" and not _is_plan_allowed(tool.name):
             return ("plan_mode",
@@ -741,7 +741,7 @@ class CapabilityGate:
         if blocked:
             return blocked
         # per-call watchdog: per-tool timeout wins, then config, then global.
-        # Tool.timeout_s is the ZCode timeoutMs parity (e.g. Read=30s, Bash=600s).
+        # Tool.timeout_s is the Universe timeoutMs parity (e.g. Read=30s, Bash=600s).
         timeout_s = getattr(tool, 'timeout_s', None)
         if timeout_s is None:
             timeout_s = GATE_TOOL_TIMEOUT_S

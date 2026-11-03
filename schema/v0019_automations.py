@@ -1,4 +1,4 @@
-"""v19: automations — the scheduled-goal table (ZCode Automations parity).
+"""v19: automations — the scheduled-goal table (Universe Automations parity).
 
 One row per automation: a 5-field cron schedule, the prompt it fires,
 its enabled flag, and the last/next run timestamps. The schedule/

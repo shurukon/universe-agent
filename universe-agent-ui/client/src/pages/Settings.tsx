@@ -1,10 +1,10 @@
 /**
- * pages/Settings.tsx — Phase 3: the ZCode-literal Settings page
+ * pages/Settings.tsx — Phase 3: the Universe Settings page
  * (report-02 layout) over the Linear-discipline content cards.
  *
  * Layout (report §structure): a left sections column grouped as
  *   Basics            — General · Appearance · Model settings · Browser Use
- *                       · Computer Use (+ Voice, a Universe extra ZCode has
+ *                       · Computer Use (+ Voice, a Universe extra Universe has
  *                       no equivalent for)
  *   Agent capabilities— Memory · Subagents · MCP Servers ·
  *                       Skills · Commands · Hooks
@@ -122,7 +122,7 @@ interface SectionDef {
 }
 
 /** the report-02 sections column: three groups, Model settings inside
- *  Basics. Voice is a Universe extra (ZCode has no voice channel) — kept so
+ *  Basics. Voice is a Universe extra (Universe has no voice channel) — kept so
  *  the working voice settings never lose their home. */
 const GROUPS: Array<{ label: string; items: SectionDef[] }> = [
   {
@@ -780,7 +780,7 @@ function GeneralTab() {
           }}
         />
         <p className="sx-hint" style={{ marginTop: 12 }}>
-          ZCode also offers Show reasoning / Show todos here — Universe&apos;s
+          Universe also offers Show reasoning / Show todos here — Universe&apos;s
           stream keeps both always on for now.
         </p>
       </div>
@@ -1297,6 +1297,11 @@ function ProvidersTab() {
                     >
                       <div className="sx-pname">
                         {c.name}
+                        {/* Meta is the hackathon's first-party provider: the
+                            one key powers chat, images and speech */}
+                        {c.name === "Meta" && (
+                          <span className="sx-pill serving">Recommended</span>
+                        )}
                         {isInstalled && (
                           <span className="sx-pill serving">
                             installed
@@ -1624,20 +1629,7 @@ function VoiceTab() {
   const saveSettings = useChat(s => s.saveSettings);
   const [enabled, setEnabled] = useState(false);
   const [wake, setWake] = useState("");
-  const [stt, setStt] = useState({
-    provider: "local",
-    api_key: "",
-    model: "",
-    cloud_model: "",
-    language: "",
-  });
-  const [tts, setTts] = useState({
-    provider: "edge-tts",
-    api_key: "",
-    voice: "",
-    model: "",
-  });
-  const [checking, setChecking] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [fieldErr, setFieldErr] = useState<string | null>(null);
   const loaded = settings !== null;
 
@@ -1645,127 +1637,24 @@ function VoiceTab() {
     if (!settings) return;
     setEnabled(!!settings.voice_enabled);
     setWake(settings.wake_word ?? "");
-    setStt({
-      provider: settings.stt_provider || "local",
-      api_key: "",
-      model: settings.stt_model || "",
-      cloud_model: settings.stt_cloud_model || "",
-      language: settings.stt_language ?? "",
-    });
-    setTts({
-      provider: settings.tts_provider || "edge-tts",
-      api_key: "",
-      voice: settings.tts_voice || "",
-      model: settings.tts_model || "",
-    });
   }, [settings]);
-
-  // the bridge returns keys MASKED (never plaintext over HTTP) — a masked
-  // echo on save means "unchanged". Show what is stored instead of a
-  // mysteriously empty field that made the wizard-entered keys look lost.
-  const sttKeySaved = !!settings?.stt_api_key && settings.stt_api_key !== "";
-  const ttsKeySaved = !!settings?.tts_api_key && settings.tts_api_key !== "";
-
-  // per-provider voice options (mirror voice.py's real semantics:
-  // edge = name, openai = built-in voice, elevenlabs = voice id,
-  // fish = model/reference id). Free-text stays possible via datalist.
-  const EDGE_VOICES = [
-    "en-US-AriaNeural",
-    "en-US-JennyNeural",
-    "en-US-GuyNeural",
-    "en-GB-SoniaNeural",
-    "ar-SA-ZariyahNeural",
-    "ar-SA-HamedNeural",
-    "ar-AE-FatimaNeural",
-    "fr-FR-DeniseNeural",
-    "de-DE-KatjaNeural",
-    "ja-JP-NanamiNeural",
-    "ko-KR-SunHiNeural",
-    "zh-CN-XiaoxiaoNeural",
-  ];
-  const OPENAI_VOICES = [
-    "alloy",
-    "echo",
-    "fable",
-    "onyx",
-    "nova",
-    "shimmer",
-    "sage",
-    "coral",
-  ];
-  const ELEVEN_VOICES = [
-    "21m00Tcm4TlvDq8ikWAM", // Rachel
-    "2E8WUyDxNvq16Phn5PQF", // Drew
-    "9BWtsMINqrJLrR4Cw6tP", // Ari
-    "EXAVITQu4vr4xnSDxMaL", // Sarah
-  ];
-  const STT_LOCAL_MODELS = ["tiny", "base", "small", "medium", "large-v3"];
-  const STT_CLOUD_MODELS: Record<string, string[]> = {
-    openai: ["whisper-1", "gpt-4o-mini-transcribe", "gpt-4o-transcribe"],
-    groq: [
-      "whisper-large-v3",
-      "whisper-large-v3-turbo",
-      "playai-cc/llamaguard-4-12b-audio",
-    ],
-  };
-  const STT_LANGS: Array<[string, string]> = [
-    ["", "Auto — detect"],
-    ["ar", "العربية"],
-    ["en", "English"],
-    ["fr", "Français"],
-    ["de", "Deutsch"],
-    ["es", "Español"],
-    ["tr", "Türkçe"],
-    ["ru", "Русский"],
-    ["zh", "中文"],
-    ["ja", "日本語"],
-    ["ko", "한국어"],
-  ];
 
   const save = async () => {
     setFieldErr(null);
-    if (stt.provider !== "local" && stt.api_key) {
-      setChecking(true);
-      try {
-        const r = await api.checkVoiceKey("stt", stt.provider, stt.api_key);
-        if (!r.ok) {
-          setFieldErr(`STT key rejected${r.error ? `: ${r.error}` : ""}`);
-          return;
-        }
-      } finally {
-        setChecking(false);
-      }
-    }
-    if (tts.provider !== "edge-tts" && tts.api_key) {
-      setChecking(true);
-      try {
-        const r = await api.checkVoiceKey("tts", tts.provider, tts.api_key);
-        if (!r.ok) {
-          setFieldErr(`TTS key rejected${r.error ? `: ${r.error}` : ""}`);
-          return;
-        }
-      } finally {
-        setChecking(false);
-      }
-    }
     try {
+      setSaving(true);
+      // Meta is the ONE speech provider: the same Meta API key that powers
+      // chat and images powers transcription — the model is picked
+      // automatically (muse-voice-transcribe-1.0, the only one).
       await saveSettings({
         voice_enabled: enabled,
         wake_word: wake.trim() || "wake up Universe",
-        stt_provider: stt.provider,
-        ...(stt.api_key ? { stt_api_key: stt.api_key } : {}),
-        stt_model: stt.model,
-        stt_cloud_model: stt.cloud_model,
-        stt_language: stt.language,
-        tts_provider: tts.provider,
-        ...(tts.api_key ? { tts_api_key: tts.api_key } : {}),
-        tts_voice: tts.voice,
-        tts_model: tts.model,
+        stt_provider: "meta",
       } as Partial<Settings>);
-      setStt(s => ({ ...s, api_key: "" }));
-      setTts(s => ({ ...s, api_key: "" }));
     } catch (e) {
       setFieldErr(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1773,7 +1662,9 @@ function VoiceTab() {
     <div className="sx-card">
       <h2>Voice</h2>
       <p className="sx-sub">
-        Local by default. Cloud needs your own key — checked live before saving.
+        Speech input runs on Meta — the mic button in the composer talks to
+        Meta Voice Transcribe directly. One Meta API key powers chat, images
+        and speech; add it once in Providers.
       </p>
       {!loaded && (
         <p className="sx-muted" role="status">
@@ -1803,180 +1694,20 @@ function VoiceTab() {
           disabled={!loaded}
         />
       </Field>
-      <div className="sx-grid2">
-        <div>
-          <div className="sx-gtitle">Speech to text</div>
-          <div className="sx-prow" role="group" aria-label="STT provider">
-            {STT_PROVIDERS.map(p => (
-              <button
-                key={p}
-                className={`sx-btn${stt.provider === p ? " primary" : ""}`}
-                onClick={() => setStt({ ...stt, provider: p })}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-          <Field
-            label="STT key"
-            hint={
-              stt.provider === "local"
-                ? "Local needs no key."
-                : sttKeySaved && !stt.api_key
-                  ? `Key saved (${settings?.stt_api_key}) — paste a new one to replace it.`
-                  : "Checked live before saving."
-            }
-          >
-            <input
-              type="password"
-              value={stt.api_key}
-              disabled={!loaded || stt.provider === "local"}
-              onChange={e => setStt({ ...stt, api_key: e.target.value })}
-              placeholder={sttKeySaved ? "•••••• (saved)" : "key"}
-              aria-label="STT API key"
-              autoComplete="off"
-              className="sx-input mono"
-            />
-          </Field>
-          <Field label="Local model" hint="faster-whisper model size.">
-            <input
-              list="sx-stt-local-models"
-              value={stt.model}
-              disabled={!loaded}
-              onChange={e => setStt({ ...stt, model: e.target.value })}
-              placeholder="base"
-              aria-label="STT local model"
-              className="sx-input mono"
-            />
-            <datalist id="sx-stt-local-models">
-              {STT_LOCAL_MODELS.map(m => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="Cloud model" hint="Groq / OpenAI speech model.">
-            <input
-              list="sx-stt-cloud-models"
-              value={stt.cloud_model}
-              disabled={!loaded}
-              onChange={e => setStt({ ...stt, cloud_model: e.target.value })}
-              placeholder="whisper-large-v3"
-              aria-label="STT cloud model"
-              className="sx-input mono"
-            />
-            <datalist id="sx-stt-cloud-models">
-              {(STT_CLOUD_MODELS[stt.provider] ?? []).map(m => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="Language" hint="Empty = auto.">
-            <select
-              value={stt.language}
-              disabled={!loaded}
-              onChange={e => setStt({ ...stt, language: e.target.value })}
-              aria-label="STT language"
-              className="sx-input"
-            >
-              {STT_LANGS.map(([v, l]) => (
-                <option key={v || "edit"} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <div>
-          <div className="sx-gtitle">Text to speech</div>
-          <div className="sx-prow" role="group" aria-label="TTS provider">
-            {TTS_PROVIDERS.map(p => (
-              <button
-                key={p}
-                className={`sx-btn${tts.provider === p ? " primary" : ""}`}
-                onClick={() => setTts({ ...tts, provider: p })}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-          <Field
-            label="TTS key"
-            hint={
-              tts.provider === "edge-tts"
-                ? "Free, no key."
-                : ttsKeySaved && !tts.api_key
-                  ? `Key saved (${settings?.tts_api_key}) — paste a new one to replace it.`
-                  : "Checked live before saving."
-            }
-          >
-            <input
-              type="password"
-              value={tts.api_key}
-              disabled={!loaded || tts.provider === "edge-tts"}
-              onChange={e => setTts({ ...tts, api_key: e.target.value })}
-              placeholder={ttsKeySaved ? "•••••• (saved)" : "key"}
-              aria-label="TTS API key"
-              autoComplete="off"
-              className="sx-input mono"
-            />
-          </Field>
-          <Field
-            label="Voice"
-            hint={
-              tts.provider === "elevenlabs"
-                ? "ElevenLabs voice ID."
-                : tts.provider === "fish-audio"
-                  ? "Fish Audio model/reference id."
-                  : "Pick or type a voice."
-            }
-          >
-            <input
-              list="sx-tts-voices"
-              value={tts.voice}
-              disabled={!loaded}
-              onChange={e => setTts({ ...tts, voice: e.target.value })}
-              placeholder="en-US-AriaNeural"
-              aria-label="TTS voice"
-              className="sx-input mono"
-            />
-            <datalist id="sx-tts-voices">
-              {(tts.provider === "edge-tts"
-                ? EDGE_VOICES
-                : tts.provider === "openai"
-                  ? OPENAI_VOICES
-                  : tts.provider === "elevenlabs"
-                    ? ELEVEN_VOICES
-                    : []
-              ).map(v => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="Model" hint="Cloud TTS model override.">
-            <input
-              list="sx-tts-models"
-              value={tts.model}
-              disabled={!loaded}
-              onChange={e => setTts({ ...tts, model: e.target.value })}
-              placeholder="tts-1"
-              aria-label="TTS model"
-              className="sx-input mono"
-            />
-            <datalist id="sx-tts-models">
-              {(tts.provider === "openai"
-                ? ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]
-                : tts.provider === "elevenlabs"
-                  ? ["eleven_multilingual_v2", "eleven_turbo_v2_5"]
-                  : tts.provider === "fish-audio"
-                    ? ["s2.1-pro", "s2-pro"]
-                    : []
-              ).map(m => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          </Field>
-        </div>
+      <div className="sx-row" style={{ alignItems: "center", gap: 10 }}>
+        <span className="sx-pname">
+          Speech to text
+          <span className="sx-pill">Recommended</span>
+        </span>
+        <span className="sx-rowmeta">
+          Meta · muse-voice-transcribe-1.0 — model selected automatically
+          (the only voice model).
+        </span>
       </div>
+      <p className="sx-muted">
+        Speech recognition uses the Meta Model API key from Providers. There
+        is no second key and nothing else to configure.
+      </p>
       {fieldErr && (
         <p className="sx-ferr" role="alert">
           {fieldErr}
@@ -1985,10 +1716,10 @@ function VoiceTab() {
       <div className="sx-prow">
         <button
           className="sx-btn primary"
-          disabled={!loaded || checking}
+          disabled={!loaded || saving}
           onClick={() => void save()}
         >
-          {checking ? "Checking keys…" : "Save voice settings"}
+          {saving ? "Saving…" : "Save voice settings"}
         </button>
       </div>
     </div>
@@ -3101,7 +2832,7 @@ function PlaceholderTab({ title, body }: { title: string; body: string }) {
       <h2>{title}</h2>
       <p className="sx-sub">{body}</p>
       <p className="sx-hint">
-        This section mirrors the ZCode layout — its controls arrive with the
+        This section mirrors the Universe layout — its controls arrive with the
         phase above, never as dead switches.
       </p>
     </div>

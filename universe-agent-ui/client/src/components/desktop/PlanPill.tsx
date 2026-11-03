@@ -1,7 +1,7 @@
 /**
  * components/desktop/PlanPill.tsx — the floating phase chip.
  *
- * Measured on the live ZCode 3.12.1 window (2026-10-23): while a goal runs,
+ * Measured on the live Universe 3.12.1 window (2026-10-23): while a goal runs,
  * a small pill floats over the top of the timeline — "› Phase 6 — full
  * pytest green + tsc/eslint/buil…" — carrying the CURRENT plan step. The
  * data comes from the same fold the rail's Plans section uses (the live
@@ -32,7 +32,7 @@ export default function PlanPill() {
   const running = model.panel.running;
   const plans = model.panel.plans;
   // running → the todo cursor picks the phase; finished → the last phase
-  // of the plan doc (ZCode keeps the pill on a finished task, measured)
+  // of the plan doc (Universe keeps the pill on a finished task, measured)
   const idx = running
     ? Math.min(Math.max(model.panel.todo?.idx ?? 0, 0), plans.length - 1)
     : plans.length - 1;

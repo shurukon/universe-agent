@@ -1,9 +1,9 @@
 """connectors/builtin/todos.py — the visible todo list (plan-progress tools).
 
-The ZCode TodoWrite twin: one list per goal, full-replace semantics — the
+The Universe TodoWrite twin: one list per goal, full-replace semantics — the
 model sends the WHOLE list every time and the list IS the state. The list
 lives in memory keyed by turn_id (a goal's todos die with its process
-lifetime, same as ZCode's per-task todos); the todo_updated event is
+lifetime, same as Universe's per-task todos); the todo_updated event is
 persisted through the events ring like every other event, so the UI's
 reconnect refill recovers the panel, and todo.read lets the model itself
 re-ground after compaction.
@@ -58,7 +58,7 @@ def _normalize(raw: Any) -> dict[str, Any]:
         if status not in _STATUSES:
             return {"ok": False,
                     "error": f"todo[{i}].status must be one of {', '.join(_STATUSES)}"}
-        # at most ONE in_progress at a time (ZCode semantics): the first
+        # at most ONE in_progress at a time (Universe semantics): the first
         # wins, later ones degrade to pending
         if status == "in_progress":
             if saw_in_progress:

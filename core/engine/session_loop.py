@@ -1,6 +1,6 @@
 """core/engine/session_loop.py — the session-owned turn loop.
 
-The session is the unit of work (the Claude Code / Codex / ZCode model):
+The session is the unit of work (the durable-session agent model):
 
 * every user message is a TURN inside a SESSION — no classification, no
   goal rows, no planets, no checkpoints;

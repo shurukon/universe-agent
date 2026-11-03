@@ -24,7 +24,7 @@ export default function ContextMeter() {
   const estimate = usage?.estimate ?? true;
   if (!total) {
     const l = (activeModel || "").toLowerCase();
-    if (l.includes("claude")) total = 200_000;
+    if (l.includes("claude-")) total = 200_000;
     else if (l.includes("gemini")) total = 1_000_000;
     else if (l.includes("gpt-4") || l.includes("nemotron")) total = 128_000;
     else if (l.includes("deepseek")) total = 64_000;

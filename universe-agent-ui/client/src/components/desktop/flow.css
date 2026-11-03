@@ -427,7 +427,7 @@
   min-width: 0;
   width: 576px;
 }
-.rail-resize { display: none; } /* ZCode: fixed-width rail, no resize */
+.rail-resize { display: none; } /* Universe: fixed-width rail, no resize */
 .rail-tabs {
   display: flex;
   align-items: center;

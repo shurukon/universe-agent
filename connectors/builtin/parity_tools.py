@@ -1,7 +1,7 @@
 """connectors/builtin/parity_tools.py — Round-7 verbatim-parity tools.
 
-The exact remaining tool names mined from the shipped ZCode engine
-(zcode.cjs, 28-name streaming allowlist) and the Claude Code 2.1.277
+The exact remaining tool names mined from the shipped Universe engine
+(reference shell, 28-name streaming allowlist) and the reference 2.1.277
 binary (BUILTIN_TOOL_NAMES + Ct({name:…} registration sites):
 
 - EnterPlanMode            (CC aT: empty input, output {message})
@@ -13,12 +13,12 @@ binary (BUILTIN_TOOL_NAMES + Ct({name:…} registration sites):
 - NotebookEdit             (CC): notebook_path / cell_id / new_source /
                             cell_type ["code","markdown"] /
                             edit_mode ["replace","insert","delete"]
-- GoalRead                 (ZCode allowlist: read the live goal row)
-- ReadSessionContext       (ZCode: sess_* id, strategy
+- GoalRead                 (Universe allowlist: read the live goal row)
+- ReadSessionContext       (Universe: sess_* id, strategy
                             ["relevant","handoff"], maxTokens cap 12000)
 - PowerShell               (CC registers PowerShell on Windows:
                             "execute Windows PowerShell commands")
-- ApplyPatch               (ZCode allowlist; OpenAI codex V4A patch format)
+- ApplyPatch               (Universe allowlist; OpenAI codex V4A patch format)
 
 Everything rides the SAME gate as the rest of the registry: write-shaped
 tools carry capability "Write" (per_turn consent lifted by the mode
@@ -278,7 +278,7 @@ def _powershell(command: str = "", timeout: int = 120,
 
 # -------------------------------------------------------------- applypatch
 def _apply_patch(patch: str = "", **_: Any) -> dict[str, Any]:
-    """OpenAI codex V4A patch format (the format ZCode's apply_patch tool
+    """OpenAI codex V4A patch format (the format Universe's apply_patch tool
     carries): *** Begin Patch / Update File / Add File / Delete File /
     End Patch. Anchored context apply — files not found or '^'-anchor
     misses are reported per file, honest."""

@@ -1,8 +1,8 @@
 /**
- * lib/flow/ztimeline.ts — the ZCode-parity fold (full-parity plan P1).
+ * lib/flow/ztimeline.ts — the shell-parity fold (full-parity plan P1).
  *
- * Folds Universe's raw BridgeEvent stream into the ZCode timeline model so
- * the chat surface renders EXACTLY the ZCode semantics:
+ * Folds Universe's raw BridgeEvent stream into the Universe timeline model so
+ * the chat surface renders EXACTLY the Universe semantics:
  *
  *   · reasoning rows  — "Thinking" (live, in_progress) that settle into
  *     "Thought" + duration ("a few seconds" / "{seconds} seconds"); the
@@ -12,7 +12,7 @@
  *   · tool rows — data-tool-call row semantics: in_progress → completed /
  *     failed / interrupted, family folding of CONSECUTIVE same-family
  *     calls (Explore / Terminal / Changes groups with "{count} events")
- *   · SubAgent rows — agent branches nest their own tool rows (ZCode's
+ *   · SubAgent rows — agent branches nest their own tool rows (Universe's
  *     parentToolUseId scoping; Universe scopes by ev.agent)
  *   · compaction separator — context_compaction events map to the "Context
  *     compressed …" separator row (Universe has none today — supported
@@ -22,14 +22,14 @@
  *     Commit / Push, Git tools, Workflows — labels verbatim (i18n-en.json)
  *   · stream statuses — in_progress / completed / failed / interrupted
  *
- * Pure logic. components/flow/ZCodeFlow.tsx (the message card) and
+ * Pure logic. components/flow/UniverseFlow.tsx (the message card) and
  * components/desktop/StatusStrip.tsx (the pinned panel) render this.
  */
 import type { BridgeEvent } from "@/lib/api";
 
 export type ZTStatus = "in_progress" | "completed" | "failed" | "interrupted";
 
-/** ZCode tool-family groups: consecutive calls of the same family fold
+/** Universe tool-family groups: consecutive calls of the same family fold
  *  into ONE row ("Explore · 8 events"). Matches the 3.11.x runtime and the
  *  3.14.3 strings (chat.toolCall.changesGroup.*). */
 export type ToolFamily = "explore" | "terminal" | "changes" | "other";
@@ -37,7 +37,7 @@ export type ToolFamily = "explore" | "terminal" | "changes" | "other";
 export function toolFamily(tool: string): ToolFamily {
   const lower = tool.toLowerCase();
   // explore / reads: the read-side of the registry (Read, LS, Glob, Grep,
-  // vision) — ZCode renders each as its own one-line row or the merged
+  // vision) — Universe renders each as its own one-line row or the merged
   // "Explore · N events" group, all with the lucide search glyph
   if (
     tool === "Read" ||
@@ -74,7 +74,7 @@ export function toolFamily(tool: string): ToolFamily {
   }
   // terminal / shell surface: the exact registry names the fold gets
   // (Bash, BashUnsandboxed, CodeExecute, shell.exec) plus the legacy
-  // prefixes — ZCode's "Terminal" row
+  // prefixes — Universe's "Terminal" row
   if (
     tool.startsWith("Bash") ||
     tool === "CodeExecute" ||
@@ -168,7 +168,7 @@ export interface ZTPanel {
   running: boolean;
   outcome: "completed" | "failed" | "cancelled" | null;
   goal: string | null;
-  /** the current plan doc — every turn_planned replaces it (\[ZCode Plans
+  /** the current plan doc — every turn_planned replaces it (\[Universe Plans
    *  section shows these instructions, one row each]). */
   plans: ZTPlanStep[];
   agentsRunning: string[];
@@ -179,7 +179,7 @@ export interface ZTPanel {
   changesTools: number;
   terminals: number;
   /** events never carry the branch name — the section is hidden until a
-   *  future wire field fills it (ZCode Branch section stays conditional) */
+   *  future wire field fills it (Universe Branch section stays conditional) */
   branch: string | null;
   /** true when the panel should show "Changes · Clean" */
   clean: boolean;
@@ -217,10 +217,10 @@ export interface ZTFoldOpts {
 }
 
 /* ------------------------------------------------------------------ */
-/* ZCode duration formatting (IntlProvider 3.14.3 keys, en strings)     */
+/* Universe duration formatting (IntlProvider 3.14.3 keys, en strings)     */
 /* ------------------------------------------------------------------ */
 
-export function fmtZcodeDuration(ms: number): string {
+export function fmtDurationMs(ms: number): string {
   const s = ms / 1000;
   if (s < 1) return "under a second";
   if (s < 7) return "a few seconds";
@@ -456,7 +456,7 @@ export function foldZTimeline(
       case "tool_running": {
         if (!ev.tool) break;
         closeThought(ts);
-        // ZCode starts the flow flat: the MAIN agent row ("universe" today,
+        // Universe starts the flow flat: the MAIN agent row ("universe" today,
         // legacy "general") is never rendered (deleted per user annotation
         // 2026-10-30), so its tool calls render TOP-LEVEL; only a SUBAGENT's
         // events nest under their branch row
@@ -721,7 +721,7 @@ export function foldZTimeline(
         break;
       }
       case "skill_activated": {
-        // ZCode renders skill picks inside thinking details; attach to the
+        // Universe renders skill picks inside thinking details; attach to the
         // open row instead of inventing a new one
         const name = ev.skill_name ?? ev.skill;
         if (name && openReasoning) {
@@ -738,7 +738,7 @@ export function foldZTimeline(
         break;
       }
       /* defensive: Universe's core does not emit compaction yet — if the
-       * wire gains the type the timeline renders the ZCode separator */
+       * wire gains the type the timeline renders the Universe separator */
       case "context_compaction": {
         closeThought(ts);
         const e = push("compaction", null, { family: "other" });
@@ -764,7 +764,7 @@ export function foldZTimeline(
                 ? ev.in_progress_idx
                 : null,
           };
-          // ZCode Plans section = the live TodoWrite list: a committed plan
+          // Universe Plans section = the live TodoWrite list: a committed plan
           // IS the todo list (the turn_planned universe_plan block is
           // retired); only a multi-item list renders as a plan doc
           if (panel.todo.items.length > 1) {

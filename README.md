@@ -11,7 +11,7 @@ An open-source local-first AI agent harness with a single **universe** agent tha
 
 ## What is Universe Agent?
 
-Universe Agent is a CLI-resident **AI agent harness**: one agent named `universe` owns every tool and every skill, turns plain-English messages into executed work inside durable sessions, and spawns specialist subagents (research/code/review/security/design) when a task benefits from focus. Sessions are file-backed (`sess_*`) with slash commands (`/new`, `/resume`, `/fork`, `/rewind`, `/compact`) — the full ZCode + Claude Code contract. Every
+Universe Agent is a CLI-resident **AI agent harness**: one agent named `universe` owns every tool and every skill, turns plain-English messages into executed work inside durable sessions, and spawns specialist subagents (research/code/review/security/design) when a task benefits from focus. Sessions are file-backed (`sess_*`) with slash commands (`/new`, `/resume`, `/fork`, `/rewind`, `/compact`) — the full durable-session contract. Every
 artifact, decision, and failure is written to a 5-tier memory (Working →
 Episodic → Semantic → Procedural → Meta) so the next session picks up where
 the last one left off. There is **no built-in model**: Universe answers with the
@@ -28,9 +28,9 @@ returns a clear, actionable no-provider error — never a canned answer.
   stay on your machine. No data leaves `~/.universe/` unless you explicitly add
   a remote provider.
 - **Deep, auditable security.** Every tool call passes through a capability
-  gate, the audit log is append-only, and the Windows sandbox is described in
-  `docs/WINDOWS_SANDBOX.md`. OAuth2 flows are not implemented — only
-  pre-obtained tokens are accepted.
+  gate and the audit log is append-only; the OS session is the isolation
+  boundary and every command routes through one gated dispatcher. OAuth2
+  flows are not implemented — only pre-obtained tokens are accepted.
 - **Procedural memory only.** 0 bundled skills after purge (2026-10-31) — the agent operates with tools + learned Episodic/Semantic memory, no curated skill corpus.
 
 ## Installation
@@ -83,7 +83,7 @@ memory universe:
 cd universe-agent-ui
 npm install
 npm run desktop        # dev mode: vite + electron + supervised Python bridge
-npm run dist           # or: build the Windows NSIS installer
+npm run build          # production build (Linux desktops are the target)
 ```
 
 Goals, the 3D memory universe (11 solar systems, live skill-star counts), consent
@@ -160,7 +160,7 @@ Use `/memory` to inspect every tier at once. Sessions persist on disk — `/resu
 | `/import`       | Restore from a previous export.                             |
 | `/forget-all`   | Wipe memory (double confirmation required).                 |
 
-Run `/help` or `/help <command>` for the full reference. Custom commands in `~/.zcode/commands` and workspace `.zcode/commands` are also listed.
+Run `/help` or `/help <command>` for the full reference. Custom commands in `~/.shell/commands` and workspace `.shell/commands` are also listed.
 
 ## Documentation
 
@@ -172,8 +172,6 @@ Run `/help` or `/help <command>` for the full reference. Custom commands in `~/.
   license verification for the 18 trusted skill sources.
 - [`docs/MCP_CLIENT_REWRITE.md`](docs/MCP_CLIENT_REWRITE.md) — Design and
   implementation of the in-process MCP client.
-- [`docs/WINDOWS_SANDBOX.md`](docs/WINDOWS_SANDBOX.md) — Windows-specific
-  process isolation story.
 - [`docs/THIRDPARTY_CONNECTORS_BATCH1.md`](docs/THIRDPARTY_CONNECTORS_BATCH1.md) —
   Third-party connector audit (Composio, etc.).
 - [`SOURCES.md`](SOURCES.md) — Full per-source attribution and license
@@ -182,10 +180,10 @@ Run `/help` or `/help <command>` for the full reference. Custom commands in `~/.
 ## Acknowledgments
 
 Universe Agent is built on the work of 18 open-source projects, including
-(but not limited to) Everything Claude Code, Anthropic's official skills,
+(but not limited to) open skill registries,
 Open Design, Browserbase, DuckDB, ClickHouse, Apollo GraphQL, Auth0, Sentry,
 Brave Search, UnitOne Security, BagelHole DevOps Security, Alireza Rezvani's
-Claude Skills, Google Workspace CLI, Corey Haines Marketing Skills, and
+productivity skill packs, Google Workspace CLI, marketing skill packs, and
 UI UX Pro Max. Each source was verified directly against its upstream
 LICENSE; see `SOURCES.md` for the full list, deliberate exclusions, and
 licensing rationale.

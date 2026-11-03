@@ -1,5 +1,5 @@
 /*
- * shell.css — the ZCode-literal chrome (Phase 2): TopBar, command
+ * shell.css — the Universe chrome (Phase 2): TopBar, command
  * palette, composer chips (mode / max / context usage / attachments),
  * the Progress pane, and the message action rows — plus the shell token
  * layer they read from.
@@ -24,7 +24,7 @@
   --sp-6: 24px;
 
   /* ---- chrome heights ------------------------------------------------- */
-  --tb-h: 56px;           /* single strip chrome (ZCode 3.12.1, measured) */
+  --tb-h: 56px;           /* single strip chrome (Universe 3.12.1, measured) */
   --sb-w: var(--ds-sidebar-w, 264px); /* matches the sidebar sheet */
 
   /* ---- overlay layers (palette above everything in-app) ---------------- */
@@ -32,15 +32,15 @@
   --z-palette: 90;
   --z-toast: 100;        /* sonner stays above the palette */
 
-  /* ---- shell surfaces (ZCode-measured — docs/zcode-tokens.md) ---------- */
-  /* ZCode's top bar is a distinct #262626 strip; the segment over the
+  /* ---- shell surfaces (Universe-measured — docs/shell-tokens.md) ---------- */
+  /* Universe's top bar is a distinct #262626 strip; the segment over the
      sidebar shares the panel tone. No bottom hairline — a pure color step. */
   --tb-bg: #262626;
   --tb-line: transparent;
-  --tb-ink: #f5f5f5;             /* ZCode's bright window-control glyphs */
+  --tb-ink: #f5f5f5;             /* Universe's bright window-control glyphs */
   --tb-ink-strong: var(--ink, #d4d4d4);
 
-  /* chips (mode / max / context) are text-level in ZCode: transparent
+  /* chips (mode / max / context) are text-level in Universe: transparent
      until hovered — --chip-bg is the shared hover surface */
   --chip-bg: var(--ds-surface-2, #363636);
   --chip-line: var(--ds-line, #414141);
@@ -262,7 +262,7 @@
   flex-shrink: 0;
   font-size: 10px;
   color: #d4d4d4;
-  background: #404040;           /* ZCode kbd chip */
+  background: #404040;           /* Universe kbd chip */
   border-radius: 4px;
   padding: 1px 6px;
   font-family: var(--mono, monospace);
@@ -583,7 +583,7 @@
 }
 .q-free input:focus { outline: none; border-color: var(--accent-cyan, #46bf72); }
 
-/* ---- tool-row additions (ZCode rows: hooks badge + events counter) --------- */
+/* ---- tool-row additions (Universe rows: hooks badge + events counter) --------- */
 
 .fl-hook-badge {
   flex-shrink: 0;
@@ -617,7 +617,7 @@
   position: relative;
 }
 
-/* ---- sidebar nav row + view chips (ZCode Phase 2) --------------------------- */
+/* ---- sidebar nav row + view chips (Universe Phase 2) --------------------------- */
 
 .side-nav {
   display: flex;
@@ -647,7 +647,7 @@
   margin-left: auto;
   font-size: 9.5px;
   color: #d4d4d4;
-  background: #404040;           /* ZCode kbd chip */
+  background: #404040;           /* Universe kbd chip */
   border-radius: 4px;
   padding: 1px 6px;
   font-family: var(--mono, monospace);
@@ -675,7 +675,7 @@
   background: var(--chip-bg);
 }
 
-/* ---- two-tone top bar (ZCode) ------------------------------------------------ */
+/* ---- two-tone top bar (Universe) ------------------------------------------------ */
 
 /* the leading segment (over the sidebar column) shares the panel tone;
    the rest of the strip is the darker --tb-bg — a pure color step */
@@ -689,7 +689,7 @@
   background: var(--ds-surface-1, #2b2b2b);
 }
 
-/* ---- transparency bar (ZCode-style control strip) ---------------------------- */
+/* ---- transparency bar (Universe-style control strip) ---------------------------- */
 
 /* the always-on-top yellow strip: shown only while a machine-control tool
    (browser / computer-use) is in flight — overlays, never pushes layout */
@@ -701,7 +701,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  background: #f5c518;              /* ZCode yellow (docs/zcode-tokens.md) */
+  background: #f5c518;              /* Universe yellow (docs/shell-tokens.md) */
   color: #161616;
   font-size: 11.5px;
   font-weight: 600;

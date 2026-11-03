@@ -3,7 +3,7 @@
 with REAL content transformed from trusted upstream repositories, verified
 license by verified license, into Universe's skill schema (§18).
 
-Sources (cloned shallow at /home/claude/repo_check/ or --repo-root):
+Sources (cloned shallow checkout or --repo-root):
   ECC            <- github.com/affaan-m/ECC                       (MIT)
   UIUXProMax     <- github.com/nextlevelbuilder/ui-ux-pro-max-skill (MIT)
   OpenDesign     <- github.com/nexu-io/open-design                (Apache-2.0)
@@ -309,7 +309,7 @@ def extract_opendesign() -> None:
 
 APACHE_VERIFIED_SKILLS = {
     "algorithmic-art": "design", "brand-guidelines": "design",
-    "canvas-design": "design", "claude-api": "api",
+    "canvas-design": "design", "model-context": "api",
     "frontend-design": "design", "internal-comms": "write",
     "mcp-builder": "api", "skill-creator": "",
     "slack-gif-creator": "design", "theme-factory": "design",
@@ -514,7 +514,7 @@ def extract_alirezarezvani() -> None:
     research-ops/skills/). Two target agents from three distinct locations."""
     root = REPO_ROOT / "alirezarezvani"
     if not root.exists():
-        print("alirezarezvani/claude-skills: not found, skipping")
+        print("alirezarezvani pm-skills: not found, skipping")
         return
 
     def _walk(base: Path, source: str, agent: str, category: str, tag: str) -> None:
@@ -573,7 +573,7 @@ def main() -> None:
             f"  git clone --depth 1 https://github.com/brave/brave-search-skills.git {REPO_ROOT}/brave\n"
             f"  git clone --depth 1 https://github.com/UnitOneAI/SecuritySkills.git {REPO_ROOT}/unitone\n"
             f"  git clone --depth 1 https://github.com/BagelHole/DevOps-Security-Agent-Skills.git {REPO_ROOT}/bagelhole\n"
-            f"  git clone --depth 1 https://github.com/alirezarezvani/claude-skills.git {REPO_ROOT}/alirezarezvani"
+            f"  git clone --depth 1 https://github.com/alirezarezvani/pm-skills.git {REPO_ROOT}/alirezarezvani"
         )
 
     if OUT_ROOT.exists():

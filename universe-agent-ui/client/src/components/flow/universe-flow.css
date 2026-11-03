@@ -1,0 +1,493 @@
+/*
+ * components/flow/universe-flow.css — the Universe-timeline styling, rebuilt
+ * from the LIVE DOM probe (2026-10-25, Universe 3.14.3, cdp 9223):
+ *
+ *   · every row = [16px lucide icon, stroke 1.5, 30% ink][kind label
+ *     font-medium, 30% ink][content 30% ink][explicit ChevronRight 16px]
+ *   · status receipts are TEXT tags, not dots: "Failed" = dotted
+ *     underline, same 30% ink — the timeline is near-monochrome
+ *   · collapsibles: Radix semantics — collapsed trigger = flex w-full
+ *     (chevron pushed to the row end, hidden until hover), open trigger
+ *     = inline-flex self-start (chevron right after the label, rotated
+ *     90°) with the pt-2 panel below: rounded-xl border-border bg-panel
+ *     px-4 py-3 card holding "$ + command (full ink, sans, max-h-15)"
+ *     and "output (mono 60% ink, max-h-25 scroll)"
+ *   · timeline rhythm: turns pt-14/pb-5 with gap-20px blocks; user
+ *     bubbles rounded-xl rounded-tr-xs bg 5%-white border 10%-white
+ *     px-4 py-3, hover actions below-right; the assistant turn closes
+ *     with the "Worked for …" hairline (border-b 50%)
+ *   · canvas #161616, panels #2b2b2b, hairlines rgba(255,255,255,.1),
+ *     ink 14px/21px ui-sans-serif. StatusStrip (.zsp) keeps its section.
+ */
+
+.zt {
+  --zt-ink: #d4d4d4;
+  --zt-mut: #8a8a8a;
+  --zt-faint: #5e5e5e;
+  --zt-line: rgba(255, 255, 255, 0.1);
+  --zt-panel: #2b2b2b;
+  --zt-warn: #ff8a30;
+  --zt-rail: rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  row-gap: 20px;
+  font-size: 14px;
+  line-height: 21px; /* Universe text-ui-base */
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: var(--zt-ink);
+  padding: 2px 0 8px 0;
+}
+
+/* ---- rows: the Universe collapsible trigger --------------------------- */
+.ztr { display: flex; flex-direction: column; }
+
+.ztr-trig,
+.ztr-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  line-height: 21px;
+  transition: color 0.15s ease;
+}
+.ztr-trig.full,
+.ztr-btn.full { width: 100%; }
+.ztr-trig.self-start,
+.ztr-btn.self-start { align-self: flex-start; }
+.ztr-btn { cursor: pointer; }
+.ztr-btn:hover .ztr-kind { color: color-mix(in srgb, var(--zt-ink) 60%, transparent); }
+
+.ztr-ico {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--zt-faint);
+}
+.ztr-kind {
+  color: var(--zt-faint);
+  font-weight: 500;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ztr-dur {
+  color: var(--zt-faint);
+  font-weight: 400;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ztr-spin { animation: zt-spin 1.4s linear infinite; color: var(--zt-faint); }
+
+/* args — 30% ink, truncate at the row end (flex-1 grows) */
+.ztr-args {
+  color: var(--zt-faint);
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* collapsed trigger: chevron rides the row END and only shows on hover */
+.ztr-chev {
+  color: var(--zt-faint);
+  flex: 0 0 auto;
+  transition: transform 0.3s ease, opacity 0.15s ease;
+}
+.ztr-chev.end { opacity: 0; }
+.ztr:hover .ztr-chev.end,
+.ztr-trig:focus-visible .ztr-chev.end,
+.ztr-btn:focus-visible .ztr-chev.end { opacity: 1; }
+/* open trigger: chevron follows the label, rotated to point down */
+.ztr-trig.open .ztr-chev,
+.ztr-btn.open .ztr-chev { transform: rotate(90deg); }
+
+/* receipts — Universe is monochrome: dotted-underline text, 30% ink */
+.ztr-tag {
+  color: var(--zt-faint);
+  font-size: 14px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--zt-faint);
+  text-underline-offset: 3px;
+}
+.ztr-tag.warn {
+  color: var(--zt-warn);
+  text-decoration-color: color-mix(in srgb, var(--zt-warn) 55%, transparent);
+}
+
+/* inline error text for rows that cannot expand */
+.ztr-error {
+  color: var(--zt-faint);
+  font-size: 12.5px;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+  padding-left: 24px;
+  flex: 0 1 auto;
+}
+
+/* expanded command card (probe: rounded-xl border-border bg-panel px-4 py-3) */
+.ztr-panel { padding-top: 8px; margin-bottom: 8px; }
+.ztr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--zt-line);
+  background: var(--zt-panel);
+  border-radius: 12px;
+  padding: 12px 16px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.ztr-cmdwrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--zt-ink);
+}
+.ztr-ps {
+  color: var(--zt-mut);
+  flex: 0 0 auto;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ztr-cmd {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--zt-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60px; /* max-h-15 */
+  overflow: auto;
+}
+.ztr-out {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--zt-mut);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 100px; /* max-h-25 */
+  overflow: auto;
+}
+.ztr-footline {
+  color: var(--zt-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* thought body — the left-bordered grey block */
+.ztr-thought {
+  margin: 6px 0 2px 24px;
+  padding-left: 12px;
+  border-left: 1px solid var(--zt-line);
+  color: var(--zt-mut);
+  font-size: 13.5px;
+  line-height: 1.55;
+  max-width: 70ch;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* file chips inside rows */
+.ztr-files {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.ztr-file {
+  color: var(--zt-faint);
+  font-size: 12px;
+  border: 1px solid var(--zt-line);
+  border-radius: 4px;
+  padding: 0 6px;
+  line-height: 18px;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* SubAgent branch */
+.ztr-agpill {
+  color: var(--zt-faint);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  border: 1px solid var(--zt-line);
+  border-radius: 9999px;
+  padding: 0 7px;
+  line-height: 17px;
+  flex: 0 0 auto;
+}
+.ztr-children {
+  margin-top: 2px;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  row-gap: 8px;
+}
+
+/* compaction separator */
+.ztr-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--zt-faint);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.ztr-compact .zc-line {
+  flex: 1;
+  height: 1px;
+  background: var(--zt-rail);
+}
+.ztr-compact .zc-label { flex: 0 0 auto; color: var(--zt-faint); }
+
+@keyframes zt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- user row: Universe bubble + hover actions ------------------------ */
+.msg-user {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: min(576px, 85%);
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  animation: none;
+}
+.msg-user .m-bubble {
+  border: 1px solid var(--zt-line, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.05);
+  /* ONE bubble (user annotation 2026-10-30) — the tail follows the TEXT
+     direction via the logical corner + dir="auto" on the element:
+     LTR → top-right (measured Universe), RTL Arabic → top-left (reference). */
+  border-radius: 12px;
+  border-start-end-radius: 2px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--zt-ink, #d4d4d4);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-user .m-actions {
+  position: absolute; /* keep the legacy anchor harmless */
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.msg-user {
+  position: relative;
+}
+.msg-user .m-actions {
+  position: static;
+  width: auto;
+  height: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.msg-user:hover .m-actions,
+.msg-user:has(:focus-visible) .m-actions { opacity: 1; }
+.msg-user .m-act {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #a0a0a0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.msg-user .m-act:hover { background: rgba(255, 255, 255, 0.06); color: #e6e6e6; }
+.msg-user .m-ts { color: var(--zt-faint, #505050); font-size: 11px; }
+.msg-user .m-steered { color: var(--zt-faint, #505050); font-size: 11px; }
+
+/* ---- the assistant turn footer: "Worked for …" hairline ------------- */
+.zturn-foot {
+  display: flex;
+  width: 100%;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 8px;
+  margin-top: 20px;
+}
+.zhist {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: default;
+  color: var(--zt-mut, #8a8a8a);
+  font-size: 14px;
+  line-height: 21px;
+  min-width: 0;
+  max-width: 100%;
+}
+.zhist > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zhist .ztr-chev {
+  color: var(--zt-faint);
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
+.zhist { cursor: pointer; }
+.zhist:hover { color: var(--zt-ink, #e8e8e8); }
+.zhist-panel {
+  margin-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+  width: 100%;
+}
+.zhist-hint {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--zt-faint);
+}
+.zturn-foot { flex-direction: column; }
+
+/* assistant hover actions — under the flow, appear on hover */
+.zacts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.msg-agent:hover .zacts,
+.msg-agent:has(:focus-visible) .zacts { opacity: 1; }
+.m-act2 {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #a0a0a0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.m-act2:hover { background: rgba(255, 255, 255, 0.06); color: #e6e6e6; }
+.m-act2.on { color: #d4d4d4; background: rgba(255, 255, 255, 0.05); }
+.m-hooks-wrap { position: relative; display: inline-flex; }
+.m-hooks-card {
+  position: absolute;
+  bottom: 32px;
+  left: 0;
+  z-index: 30;
+  background: var(--zt-panel, #2b2b2b);
+  border: 1px solid var(--zt-line, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: var(--zt-mut, #8a8a8a);
+  width: 340px;
+  max-height: 200px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.m-hooks-card b { color: var(--zt-ink); font-weight: 600; font-size: 12px; }
+.m-hooks-card .hk-row { color: var(--zt-mut); line-height: 1.5; }
+
+/* the legacy header ("universe" + flags) is retired in markup; neutralize
+   any stale references so the flow keeps only Universe's own furniture */
+.agent-flow { min-width: 0; }
+
+/* the turn outcome state next to the actions, Universe subtlety */
+.zturn-state {
+  color: var(--zt-faint, #505050);
+  font-size: 11px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+/* ---- status: kept for the StatusStrip ------------------------------- */
+.zsp {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  color: var(--zt-ink, #d4d4d4);
+  overflow: hidden;
+}
+.zsp-sec {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  color: inherit;
+  min-width: 0;
+}
+.zsp-sec b { color: #f0f0f0; font-weight: 600; }
+.zsp-sec .zt-dot,
+.zt-dot {
+  flex: 0 0 16px;
+  height: 16px;
+  margin: 0;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #a0a0a0;
+  background: transparent;
+}
+.zt-dot.st-in_progress.spin svg { animation: zt-spin 1s linear infinite; }
+.zt-dot.st-in_progress.spin { color: #d4d4d4; border-color: #4b4b4b; }
+.zt-dot.st-completed { color: #8a8a8a; }
+.zt-dot.st-failed {
+  color: #ff6b5e;
+  border-color: rgba(255, 107, 94, 0.55);
+}
+.zt-dot.st-interrupted { color: #a0a0a0; border-style: dashed; }
+.zsp-sp { flex: 1 1 auto; }
+.zsp-stop {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  color: #d4d4d4;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.zsp-stop:hover { background: #2e2e2e; color: #f0f0f0; }
+.zsp-hint { flex: 0 0 auto; color: #4f4f4f; font-size: 11px; }
+.zsp-hint b { color: #6e6e6e; font-weight: 600; }

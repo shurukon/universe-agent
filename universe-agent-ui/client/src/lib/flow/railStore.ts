@@ -13,16 +13,16 @@ export type RailTab =
   | "progress"
   | "terminal"
   | "activity"
-  /** ZCode side-pane tabs */
+  /** Universe side-pane tabs */
   | "selectionchat"
   | "review"
-  /** the ZCode "Open tab" picker — cards to choose which pane to show */
+  /** the Universe "Open tab" picker — cards to choose which pane to show */
   | "open";
 
 interface RailState {
   open: boolean;
   tab: RailTab;
-  /** collapsed-to-capsule mode (ZCode Progress pane): the rail hides,
+  /** collapsed-to-capsule mode (Universe Progress pane): the rail hides,
    *  a small capsule with the todo score stays; one click restores */
   capsule: boolean;
   strip: boolean;

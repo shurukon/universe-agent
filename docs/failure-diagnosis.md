@@ -138,7 +138,7 @@ single-instance) اسحب **كل** صفوف running بغضّ النظر عن ص�
   الحتمية (test_desktop_bridge: consent flow عبر الgate). عندما يعمل
   الموفر ستُختبر الموافقة الحية.
 
-الأدلة: docs/zcode-live-screens/failure-fixes-e2e-*.png
+الأدلة: docs/shell-live-screens/failure-fixes-e2e-*.png
 
 **الخلاصة العملية**: أسطح الحالة + الإصلاحات تجعل كل فشل مرئياً ومفهوماً
 فوراً؛ الجذر المتبقي الوحيد خارج سيطرة الكود هو موثوقية الموفر المجاني

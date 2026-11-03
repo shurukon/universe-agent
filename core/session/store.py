@@ -1,4 +1,4 @@
-"""core/session/store.py — ZCode file-backed SessionStore."""
+"""core/session/store.py — Universe file-backed SessionStore."""
 from __future__ import annotations
 import json, time, uuid
 from pathlib import Path

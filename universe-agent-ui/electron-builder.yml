@@ -1,4 +1,4 @@
-# electron-builder — Universe Agent v1 (NSIS, Windows x64)
+# electron-builder — Universe Agent v1 (AppImage + deb, Linux x64)
 #
 # v1 contract (plan §5): the installer ships the desktop shell; the Universe
 # backend stays a source checkout driven by the user's Python (dev-first).
@@ -24,18 +24,15 @@ asar: true
 
 compression: maximum
 
-win:
+linux:
   target:
-    - target: nsis
+    - target: AppImage
       arch:
         - x64
-  icon: build/icon.ico
+    - target: deb
+      arch:
+        - x64
+  category: Utility
   # the backend needs Python anyway — don't ship a bundled runtime in v1
-  artifactName: UniverseComputer-Setup-${version}-x64.${ext}
-
-nsis:
-  oneClick: true
-  perMachine: false
-  allowToChangeInstallationDirectory: false
-  deleteAppDataOnUninstall: false
+  artifactName: UniverseComputer-${version}-x64.${ext}
   shortcutName: Universe Agent

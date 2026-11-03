@@ -1,6 +1,6 @@
 """tests/test_harness_foundations.py — Phase 1 harness systems.
 
-Covers the ZCode-parity foundations: todo tools, the hook layer at the
+Covers the shell-parity foundations: todo tools, the hook layer at the
 registry chokepoint, the permission-mode matrix (plan blocks / ask asks /
 full passes), the per-round context meter, and the ask_user round-trip.
 Automations live in tests/test_automations.py.
@@ -158,7 +158,7 @@ def test_plan_mode_blocks_write_allows_read(fresh_home):
 
 
 def test_edit_mode_lifts_per_goal_to_auto(fresh_home):
-    """The ZCode ladder: edit lifts per_turn tools (Write) to auto, while
+    """The Universe ladder: edit lifts per_turn tools (Write) to auto, while
     explicit tools still require the consent path."""
     from connectors.builtin import get_registry
     from security.capability import get_gate
@@ -194,7 +194,7 @@ def test_plan_submit_flips_plan_to_full(fresh_home):
     gate.set_permission_mode("plan")
     r = _enforce("ExitPlanMode", "universe", "gs", {}, gate, reg)
     assert r["ok"] is True
-    # ZCode ladder: approving a plan lands in ask (the default working mode)
+    # Universe ladder: approving a plan lands in ask (the default working mode)
     assert gate.get_permission_mode() == "ask"
 
 

@@ -16,6 +16,7 @@ is "running" only when the port actually answers.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import socket
 import subprocess  # noqa: S404 — local, user-initiated service launch
 import time
@@ -33,10 +34,14 @@ SERVICES: dict[str, dict[str, Any]] = {
         "description": "Timeline editing, montage and effects — driven by "
                        "Universe through AVE's MCP server (41 tools).",
         "repo": "https://github.com/shurukon/AVE",
-        "port": 3000,
-        "url": "http://127.0.0.1:3000",
-        "install": ["npm", "install"],
-        "run": ["npm", "run", "dev"],
+        # 3011, NOT AVE's default 3000 — the Universe UI itself owns 3000.
+        # AVE ships two processes: the editor (Next.js) and its MCP server.
+        "port": 3011,
+        "url": "http://127.0.0.1:3011",
+        "install": ["npm", "install", "--no-audit", "--no-fund",
+                    "--cache", "/tmp/universe-npm-cache"],
+        "run": [["node", "mcp-server/server.js"],
+                ["npx", "next", "dev", "-p", "3011"]],
     },
     "opendesign": {
         "name": "Open Design",
@@ -46,7 +51,7 @@ SERVICES: dict[str, dict[str, Any]] = {
         "port": 7456,
         "url": "http://127.0.0.1:7456",
         "install": ["pnpm", "install"],
-        "run": ["pnpm", "--filter", "@open-design/daemon", "dev"],
+        "run": [["pnpm", "--filter", "@open-design/daemon", "dev"]],
     },
     "blender": {
         "name": "Blender 3D",
@@ -61,10 +66,18 @@ SERVICES: dict[str, dict[str, Any]] = {
     },
 }
 
-_procs: dict[str, subprocess.Popen[Any]] = {}
+_procs: dict[str, list[subprocess.Popen[Any]]] = {}
 _starting: dict[str, float] = {}
 _last_probe: dict[str, tuple[float, str]] = {}
 _PROBE_TTL = 6.0
+
+
+def _resolve_cmd(argv: list[str]) -> list[str]:
+    """Map a launch command onto what this machine actually has. pnpm is
+    optional — npx can fetch it on demand; npm/node are assumed present."""
+    if argv and argv[0] == "pnpm" and shutil.which("pnpm") is None:
+        return ["npx", "--yes", "pnpm", *argv[1:]]
+    return argv
 
 
 def _services_dir() -> Path:
@@ -106,7 +119,8 @@ async def _status(sid: str) -> str:
         return "running"
     if sid in _starting and time.time() - _starting[sid] < 600:
         return "starting"
-    if sid in _procs and _procs[sid].poll() is None:
+    procs = _procs.get(sid) or []
+    if procs and any(p.poll() is None for p in procs):
         return "starting"
     return "stopped"
 
@@ -154,13 +168,18 @@ async def start_service(sid: str) -> dict[str, Any]:
                            stdout=log_fh, stderr=log_fh, timeout=600)
         if cfg.get("install"):
             log_fh.write(f"[universe] installing ({sid})...\n".encode())
-            subprocess.run(cfg["install"], cwd=str(svc_dir), check=True,
+            subprocess.run(_resolve_cmd(list(cfg["install"])),
+                           cwd=str(svc_dir), check=True,
                            stdout=log_fh, stderr=log_fh, timeout=1800)
         log_fh.write(f"[universe] launching ({sid})...\n".encode())
-        proc = subprocess.Popen(  # noqa: S603 — fixed argv from our own catalog
-            cfg["run"], cwd=str(svc_dir), stdout=log_fh, stderr=log_fh,
-            start_new_session=True)
-        _procs[sid] = proc
+        # `run` is a list of launch commands (a service may own several
+        # processes, e.g. AVE = MCP server + editor). Spawn each detached.
+        procs: list[subprocess.Popen[Any]] = []
+        for argv in cfg["run"]:
+            procs.append(subprocess.Popen(  # noqa: S603 — fixed argv from our own catalog
+                _resolve_cmd(list(argv)), cwd=str(svc_dir),
+                stdout=log_fh, stderr=log_fh, start_new_session=True))
+        _procs[sid] = procs
         return 0
 
     _starting[sid] = time.time()
@@ -179,13 +198,14 @@ async def stop_service(sid: str) -> dict[str, Any]:
     if sid == "blender":
         return {"ok": True, "status": await _status(sid),
                 "detail": "Blender is external — close it from Blender itself."}
-    proc = _procs.pop(sid, None)
-    if proc is not None and proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except Exception:
-            proc.kill()
+    procs = _procs.pop(sid, None) or []
+    for proc in procs:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                proc.kill()
     _starting.pop(sid, None)
     return {"ok": True, "status": "stopped", "detail": ""}
 

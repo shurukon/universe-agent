@@ -1,774 +1,384 @@
 /**
- * pages/Studio.tsx — Universe Studio, the one workspace to design, edit
- * and model — driven by Universe.
+ * pages/Studio.tsx — Universe Studio: the SAME workspace as Universe
+ * (stable sidebar with tasks + projects, the same chat column, the same
+ * composer) with exactly two differences: no Automations row and no
+ * permission modes. The three tool cards live here and ONLY here:
  *
- * Structure (Manus-2.0-inspired, Universe-styled):
- *   • mode === null  → centered hero with the three tool cards
- *   • a mode chosen  → workspace panel (h-[52vh]) docked above the fixed
- *     bottom composer. Design/Video embed the tool service once it is
- *     running (iframe ?embed=1) and offer a launch card otherwise; 3D is
- *     a Blender MCP connection card (addon instructions + bridge mode).
- *   • Design additionally carries the compact Muse Image card, wired to
- *     the bridge's /api/meta/image endpoint.
+ *   Studio — the video editor powered by Universe (AVE embedded full)
+ *   Design — websites, pages and presentations (open-design embedded)
+ *   3D     — Blender; "Connect Blender" while the addon is unreachable
  *
- * The service list is polled every 8s (every 3s while something is
- * "starting") so the status chips stay fresh. All state is local — this
- * page is a control surface, not a store.
+ * Picking a tool is MANDATORY before the composer unlocks. The send goes
+ * to the same agent engine (studio_tool rides the goal); the workspace
+ * dock then opens over the chat:
+ *   · design/video → the tool's real interface embedded (left sidebar never
+ *     hides; the Universe timeline keeps streaming in the chat + Activity)
+ *   · 3D → after send, when Blender is connected, a chooser: Background
+ *     (headless work; tools + timeline here, result images at the end) or
+ *     Live (the real Blender viewport pulled through the addon + timeline).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowUp,
-  Box,
-  Cable,
-  ChevronRight,
-  Clapperboard,
+  Check,
   ExternalLink,
-  Image as ImageIcon,
-  LayoutGrid,
   Loader2,
-  Orbit,
-  Palette,
+  MonitorDot,
   Play,
+  Presentation,
   RefreshCw,
   Square,
-  Wand2,
-  type LucideIcon,
+  Film,
+  Cable,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { useUi } from "@/stores/ui";
 import Sidebar from "@/components/desktop/Sidebar";
+import ChatMessages from "@/components/desktop/ChatMessages";
+import Composer, { type StudioTool } from "@/components/desktop/Composer";
+import ConsentBanner from "@/components/desktop/ConsentBanner";
+import QuestionBanner from "@/components/desktop/QuestionBanner";
+import OfflineBanner from "@/components/desktop/OfflineBanner";
+import PlanPill from "@/components/desktop/PlanPill";
+import { api } from "@/lib/api";
+import { useChat } from "@/stores/chat";
+import { useUi } from "@/stores/ui";
+import { useRail } from "@/lib/flow/railStore";
+import Rail from "@/components/desktop/Rail";
+import DesignWorkspace from "@/components/desktop/DesignWorkspace";
 import "../components/desktop/design-system.css";
 import "../components/desktop/desktop.css";
 import "../components/desktop/redesign.css";
+import "../components/desktop/settings-linear.css";
+import "../components/desktop/flow.css";
+import "../components/desktop/studio.css";
 import {
-  driveAve,
-  generateImage,
   listServices,
   startService,
-  stopService,
-  type AveDriveResult,
-  type ImageResult,
   type StudioService,
   type StudioServiceId,
-  type StudioServiceStatus,
 } from "@/lib/studioApi";
 
-/* ---- static tool + status metadata -------------------------------------- */
+/* ---- the three tool cards (Studio-only, Manus-language on Universe
+        tokens) -------------------------------------------------------------- */
 
-type Mode = "design" | "video" | "3d";
-type BlenderBridgeMode = "preview" | "background";
-
-interface ToolMeta {
-  id: Mode;
+interface ToolCard {
+  id: StudioTool;
   serviceId: StudioServiceId;
   name: string;
-  tagline: string;
-  hint: string;
-  icon: LucideIcon;
+  sub: string;
+  powered: string;
+  icon: typeof Film;
 }
 
-const TOOLS: readonly ToolMeta[] = [
+const CARDS: readonly ToolCard[] = [
+  {
+    id: "video",
+    serviceId: "ave",
+    name: "Studio",
+    sub: "Video editor powered by Universe",
+    powered: "AVE · MCP",
+    icon: Film,
+  },
   {
     id: "design",
     serviceId: "opendesign",
     name: "Design",
-    tagline: "Websites & presentations",
-    hint: "powered by open-design",
-    icon: Palette,
-  },
-  {
-    id: "video",
-    serviceId: "ave",
-    name: "Video",
-    tagline: "Edit, montage & effects",
-    hint: "powered by AVE",
-    icon: Clapperboard,
+    sub: "Websites, pages and presentations",
+    powered: "open-design",
+    icon: Presentation,
   },
   {
     id: "3d",
     serviceId: "blender",
     name: "3D",
-    tagline: "Models & renders",
-    hint: "powered by Blender MCP",
-    icon: Box,
+    sub: "Model and render with Blender",
+    powered: "blender-mcp",
+    icon: MonitorDot,
   },
 ];
 
-const BRIDGE_MODES: readonly {
-  id: BlenderBridgeMode;
-  name: string;
-  description: string;
-}[] = [
-  {
-    id: "preview",
-    name: "Preview",
-    description: "watch Blender live while Universe works",
-  },
-  {
-    id: "background",
-    name: "Background",
-    description: "headless, results delivered to Studio",
-  },
-];
+/* ---- status chip ----------------------------------------------------------- */
 
-const STATUS_META: Record<
-  StudioServiceStatus,
-  { label: string; dot: string; chip: string }
-> = {
-  running: {
-    label: "Running",
-    dot: "bg-[#46bf72]",
-    chip:
-      "border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]",
-  },
-  starting: {
-    label: "Starting",
-    dot: "animate-pulse bg-[#ff8a30]",
-    chip:
-      "border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.1)] text-[#ffb37a]",
-  },
-  stopped: {
-    label: "Stopped",
-    dot: "bg-[#5e5e5e]",
-    chip: "border-[var(--ds-line)] bg-white/[0.03] text-[var(--ds-ink-3)]",
-  },
-  unreachable: {
-    label: "Unreachable",
-    dot: "bg-[#e5484d]",
-    chip:
-      "border-[rgba(229,72,77,0.3)] bg-[rgba(229,72,77,0.1)] text-[#ff8589]",
-  },
-  unconfigured: {
-    label: "Not configured",
-    dot: "bg-[#5e5e5e]",
-    chip:
-      "border-dashed border-[var(--ds-line)] bg-transparent text-[var(--ds-ink-3)]",
-  },
-};
-
-/** Palette tokens for the Universe dark theme (design-system.css — the
- *  measured ZCode neutrals; the blue-tinted palette is retired). */
-const PANEL = "border-[var(--ds-line)] bg-[var(--ds-surface-1)]";
-/* ZCode primary: the light square button (send-btn.ready language) */
-const ACCENT_BTN = "bg-[#d4d4d4] text-[#161616] hover:bg-white";
-
-/* ---- helpers -------------------------------------------------------------- */
-
-function errMessage(e: unknown): string {
-  return e instanceof Error && e.message
-    ? e.message
-    : "Universe bridge is not responding";
+function StatusChip({ status }: { status: StudioService["status"] }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    running: { label: "Running", cls: "st-running" },
+    starting: { label: "Starting", cls: "st-starting" },
+    stopped: { label: "Stopped", cls: "st-stopped" },
+    unreachable: { label: "Unreachable", cls: "st-stopped" },
+    unconfigured: { label: "Not configured", cls: "st-stopped" },
+  };
+  const meta = map[status] ?? map.stopped;
+  return <span className={`studio-chip ${meta.cls}`}>{meta.label}</span>;
 }
 
-/** service.url with the embed flag appended (? or & as needed). */
-function embedUrl(base: string): string {
-  return `${base}${base.includes("?") ? "&" : "?"}embed=1`;
-}
+/* ---- the workspace dock ----------------------------------------------------- */
 
-function imageSrc(image: ImageResult): string | null {
-  if (image.b64) return `data:image/webp;base64,${image.b64}`;
-  return image.url ?? null;
-}
-
-/* ---- small shared pieces -------------------------------------------------- */
-
-function StatusChip({ status }: { status: StudioServiceStatus }) {
-  const meta = STATUS_META[status];
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
-        meta.chip
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", meta.dot)} />
-      {meta.label}
-    </Badge>
+function WorkspaceDock({
+  tool,
+  services,
+  busyId,
+  onStart,
+  onSwitch,
+}: {
+  tool: StudioTool;
+  services: StudioService[] | null;
+  busyId: StudioServiceId | null;
+  onStart: (svc: StudioService) => void;
+  onSwitch: () => void;
+}) {
+  const card = CARDS.find(c => c.id === tool)!;
+  const service =
+    services?.find(s => s.id === card.serviceId) ?? null;
+  const [viewport, setViewport] = useState<string | null>(null);
+  const [viewportErr, setViewportErr] = useState("");
+  const [viewportBusy, setViewportBusy] = useState(false);
+  const [mode3d, setMode3d] = useState<"choose" | "background" | "live">(
+    "choose"
   );
-}
 
-/* ---- hero (mode === null) ------------------------------------------------- */
+  const refreshViewport = useCallback(async () => {
+    setViewportBusy(true);
+    setViewportErr("");
+    try {
+      const r = await api.blenderViewport();
+      setViewport(`data:image/png;base64,${r.b64}`);
+    } catch (e) {
+      setViewport(null);
+      setViewportErr(
+        e instanceof Error && e.message
+          ? e.message
+          : "Blender viewport is unreachable"
+      );
+    } finally {
+      setViewportBusy(false);
+    }
+  }, []);
 
-function Hero({ onPick }: { onPick: (mode: Mode) => void }) {
-  return (
-    <section className="flex w-full flex-col items-center text-center">
-      <div
-        className={cn(
-          "mb-6 flex size-16 items-center justify-center rounded-2xl text-[var(--ds-ink)]",
-          PANEL
-        )}
-      >
-        <Orbit className="size-8" />
-      </div>
-      <h1 className="text-3xl font-semibold tracking-tight text-[var(--ds-ink)]">
-        Universe Studio
-      </h1>
-      <p className="mt-2.5 max-w-xl text-sm leading-relaxed text-[var(--ds-ink-3)]">
-        One workspace to design, edit and model — driven by Universe.
-      </p>
+  // live 3D pulls one real viewport frame every 5s
+  useEffect(() => {
+    if (tool !== "3d" || mode3d !== "live") return;
+    void refreshViewport();
+    const id = window.setInterval(() => void refreshViewport(), 5000);
+    return () => window.clearInterval(id);
+  }, [tool, mode3d, refreshViewport]);
 
-      <div className="mt-9 grid w-full max-w-3xl gap-3 sm:grid-cols-3">
-        {TOOLS.map(tool => {
-          const Icon = tool.icon;
-          return (
-            <button
-              key={tool.id}
-              type="button"
-              onClick={() => onPick(tool.id)}
-              className={cn(
-                "group relative flex h-full min-h-[132px] flex-col rounded-[14px] p-4 text-left outline-none transition-colors hover:border-[var(--ds-ink-4)] hover:bg-[var(--ds-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--ds-ink-4)]",
-                PANEL
-              )}
-            >
-              <span
-                className={cn(
-                  "mb-4 flex size-10 items-center justify-center rounded-xl",
-                  tool.id === "video"
-                    ? "bg-[rgba(255,138,48,0.14)] text-[#ff8a30]"
-                    : tool.id === "design"
-                      ? "bg-[rgba(70,191,114,0.14)] text-[var(--ds-accent)]"
-                      : "bg-white/[0.045] text-[var(--ds-ink)]"
-                )}
+  const embed = (() => {
+    if (!service) {
+      return (
+        <div className="studio-dock-pending">
+          <Loader2 className="size-4 animate-spin" /> Reaching the bridge…
+        </div>
+      );
+    }
+    if (tool === "3d") {
+      if (mode3d === "choose") {
+        return (
+          <div className="studio-dock-pending studio-3d-choose">
+            <p className="studio-3d-q">
+              How should Universe run this 3D task?
+            </p>
+            <div className="studio-3d-opts">
+              <button
+                type="button"
+                className="studio-3d-opt"
+                onClick={() => setMode3d("background")}
               >
-                <Icon className="size-5" />
-              </span>
-              <span className="text-[15px] font-semibold text-[var(--ds-ink)]">
-                {tool.name}
-              </span>
-              <span className="mt-1 text-[12.5px] text-[var(--ds-ink-3)]">
-                {tool.tagline}
-              </span>
-              <span className="mt-auto flex items-center justify-between pt-5">
-                <span className="text-[10.5px] uppercase tracking-widest text-[var(--ds-ink-4)]">
-                  {tool.hint}
+                <b>Background</b>
+                <span>
+                  Headless — tools + timeline stream here; the finished
+                  renders appear when the task ends.
                 </span>
-                <ChevronRight className="size-4 -translate-x-1 text-[var(--ds-ink-3)] opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-              </span>
+              </button>
+              <button
+                type="button"
+                className="studio-3d-opt"
+                onClick={() => setMode3d("live")}
+              >
+                <b>Live</b>
+                <span>
+                  Watch the real Blender viewport while Universe drives it —
+                  tool calls and the timeline side by side.
+                </span>
+              </button>
+            </div>
+          </div>
+        );
+      }
+      if (mode3d === "live") {
+        return (
+          <div className="studio-viewport">
+            {viewport ? (
+              <img src={viewport} alt="Blender viewport (live)" />
+            ) : viewportBusy ? (
+              <div className="studio-dock-pending">
+                <Loader2 className="size-4 animate-spin" /> Reading the
+                Blender viewport…
+              </div>
+            ) : (
+              <div className="studio-dock-pending studio-viewport-err">
+                {viewportErr || "Blender viewport is unreachable"}
+                <button
+                  type="button"
+                  className="studio-dock-open"
+                  onClick={() => void refreshViewport()}
+                >
+                  <RefreshCw className="size-3.5" /> Retry
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              className="studio-dock-open"
+              onClick={() => void refreshViewport()}
+              disabled={viewportBusy}
+            >
+              <RefreshCw className={viewportBusy ? "size-3.5 spin" : "size-3.5"} />
+              Refresh viewport
             </button>
-          );
-        })}
+          </div>
+        );
+      }
+      return (
+        <div className="studio-dock-pending">
+          <Loader2 className="size-4 animate-spin" /> Working in the
+          background — tool calls and the timeline stream in the chat; the
+          finished renders appear here.
+        </div>
+      );
+    }
+    if (service.status === "running") {
+      // Design gets its REAL workspace (Universe design system over the
+      // daemon's live data); AVE embeds its own editor UI.
+      if (tool === "design") return <DesignWorkspace />;
+      return (
+        <iframe
+          key={service.url}
+          src={`${service.url}${service.url.includes("?") ? "&" : "?"}embed=1`}
+          title={card.name}
+          className="studio-embed"
+        />
+      );
+    }
+    if (service.status === "starting") {
+      return (
+        <div className="studio-dock-pending">
+          <Loader2 className="size-4 animate-spin" /> Starting {service.name}…
+        </div>
+      );
+    }
+    return (
+      <div className="studio-dock-pending">
+        {service.name} is not running.
+        <button
+          type="button"
+          className="studio-dock-open"
+          disabled={busyId === service.id}
+          onClick={() => onStart(service)}
+        >
+          <Play className="size-3.5" /> Start {service.name}
+        </button>
       </div>
+    );
+  })();
+
+  return (
+    <section className="studio-dock">
+      <header className="studio-dock-head">
+        <card.icon className="size-4" />
+        <h2>{card.name}</h2>
+        {service && <StatusChip status={service.status} />}
+        <span className="studio-dock-sp" />
+        {service?.status === "running" && tool !== "3d" && (
+          <button
+            type="button"
+            className="studio-dock-open"
+            onClick={() => window.open(service.url, "_blank", "noopener")}
+            title="Open in a new window"
+          >
+            <ExternalLink className="size-3.5" /> Open
+          </button>
+        )}
+        {tool === "3d" && mode3d !== "choose" && (
+          <button
+            type="button"
+            className="studio-dock-open"
+            onClick={() => setMode3d("choose")}
+          >
+            Switch run mode
+          </button>
+        )}
+        {service && tool !== "3d" && service.status === "running" && (
+          <button
+            type="button"
+            className="studio-dock-open"
+            disabled={busyId === service.id}
+            onClick={() => {
+              void import("@/lib/studioApi").then(m =>
+                m.stopService(service.id).then(() =>
+                  toast.success(`${service.name} stopped`)
+                )
+              );
+            }}
+          >
+            <Square className="size-3" /> Stop
+          </button>
+        )}
+        <button
+          type="button"
+          className="studio-dock-open"
+          onClick={onSwitch}
+          title="Back to the tool cards"
+        >
+          <X className="size-3.5" /> Switch tool
+        </button>
+      </header>
+      <div className="studio-dock-body">{embed}</div>
     </section>
   );
 }
 
-/* ---- workspace body cards ------------------------------------------------- */
-
-function PendingBody() {
-  return (
-    <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--ds-ink-3)]">
-      <Loader2 className="size-4 animate-spin" />
-      Reaching the bridge…
-    </div>
-  );
-}
-
-function BridgeDownBody({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <Card
-        className={cn("w-full max-w-md text-center shadow-none", PANEL)}
-      >
-        <CardHeader>
-          <CardTitle className="text-base text-[var(--ds-ink)]">
-            Universe bridge is not responding
-          </CardTitle>
-          <CardDescription>
-            Studio services are managed by the local bridge. Make sure the
-            Universe backend is running, then retry.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onRetry}
-            className="gap-2 border-white/10 bg-white/[0.03] text-[var(--ds-ink-2)] hover:bg-white/[0.06] hover:text-[var(--ds-ink)]"
-          >
-            <RefreshCw className="size-4" />
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function LaunchBody({
-  service,
-  icon,
-  busy,
-  onStart,
-}: {
-  service: StudioService;
-  icon: LucideIcon;
-  busy: boolean;
-  onStart: () => void;
-}) {
-  const Icon = icon;
-  return (
-    <div className="flex h-full items-center justify-center">
-      <Card className={cn("w-full max-w-md text-center shadow-none", PANEL)}>
-        <CardHeader>
-          <div className="mx-auto mb-1 flex size-11 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
-            <Icon className="size-5" />
-          </div>
-          <CardTitle className="text-base text-[var(--ds-ink)]">
-            {service.name}
-          </CardTitle>
-          <CardDescription>{service.description}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center gap-3">
-          {service.detail ? (
-            <p className="text-xs leading-relaxed text-[var(--ds-ink-3)]">
-              {service.detail}
-            </p>
-          ) : null}
-          {service.status === "starting" ? (
-            <span className="inline-flex items-center gap-2 text-sm text-[#ffb37a]">
-              <Loader2 className="size-4 animate-spin" />
-              Starting {service.name}…
-            </span>
-          ) : (
-            <Button
-              type="button"
-              size="lg"
-              disabled={busy}
-              onClick={onStart}
-              className={cn("gap-2", ACCENT_BTN)}
-            >
-              <Play className="size-4" />
-              Start {service.name}
-            </Button>
-          )}
-          <p className="text-[11px] uppercase tracking-widest text-[var(--ds-ink-4)]">
-            {STATUS_META[service.status].label}
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function BlenderBody({
-  service,
-  bridgeMode,
-  onBridgeMode,
-}: {
-  service: StudioService;
-  bridgeMode: BlenderBridgeMode;
-  onBridgeMode: (mode: BlenderBridgeMode) => void;
-}) {
-  return (
-    <ScrollArea className="h-full">
-      <Card
-        className={cn("mx-auto max-w-lg shadow-none", PANEL)}
-      >
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
-              <Cable className="size-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <CardTitle className="text-base text-[var(--ds-ink)]">
-                Blender MCP
-              </CardTitle>
-              <CardDescription className="truncate">
-                {service.description}
-              </CardDescription>
-            </div>
-            <StatusChip status={service.status} />
-          </div>
-          {service.detail ? (
-            <p className="text-xs leading-relaxed text-[var(--ds-ink-3)]">
-              {service.detail}
-            </p>
-          ) : null}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <ol className="flex flex-col gap-2.5">
-            {[
-              "Open Blender on this machine.",
-              "Enable the Universe Bridge addon (Edit → Preferences → Add-ons).",
-              "Choose how Universe should connect:",
-            ].map((step, i) => (
-              <li key={step} className="flex items-start gap-3 text-sm">
-                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-[var(--ds-line)] bg-white/[0.03] text-[11px] font-medium text-[var(--ds-accent)]">
-                  {i + 1}
-                </span>
-                <span className="text-[var(--ds-ink-2)]">{step}</span>
-              </li>
-            ))}
-          </ol>
-
-          <div
-            role="radiogroup"
-            aria-label="Universe Bridge mode"
-            className="grid gap-2 sm:grid-cols-2"
-          >
-            {BRIDGE_MODES.map(option => {
-              const selected = bridgeMode === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => onBridgeMode(option.id)}
-                  className={cn(
-                    "flex items-start gap-3 rounded-xl border p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ds-ink-4)]",
-                    selected
-                      ? "border-[var(--ds-ink-3)] bg-white/[0.05]"
-                      : "border-[var(--ds-line)] bg-white/[0.02] hover:border-[var(--ds-ink-4)] hover:bg-white/[0.04]"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                      selected ? "border-[var(--ds-ink-2)]" : "border-[var(--ds-line)]"
-                    )}
-                  >
-                    {selected ? (
-                      <span className="size-2 rounded-full bg-[var(--ds-accent)]" />
-                    ) : null}
-                  </span>
-                  <span>
-                    <span className="block text-sm font-medium text-[var(--ds-ink)]">
-                      {option.name}
-                    </span>
-                    <span className="mt-0.5 block text-xs leading-snug text-[var(--ds-ink-3)]">
-                      {option.description}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <p className="text-xs leading-relaxed text-[var(--ds-ink-3)]">
-            Modeling requests are sent from the chat once Blender is
-            connected.
-          </p>
-        </CardContent>
-      </Card>
-    </ScrollArea>
-  );
-}
-
-/* ---- Muse Image card (Design mode) ---------------------------------------- */
-
-function MuseCard({
-  prompt,
-  onPrompt,
-  busy,
-  image,
-  onGenerate,
-}: {
-  prompt: string;
-  onPrompt: (value: string) => void;
-  busy: boolean;
-  image: ImageResult | null;
-  onGenerate: () => void;
-}) {
-  const src = image ? imageSrc(image) : null;
-  return (
-    <div className="shrink-0 px-3 pb-3">
-      <div className="flex items-center gap-3 rounded-xl border border-[var(--ds-line)] bg-white/[0.02] p-2.5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
-          <Wand2 className="size-4" />
-        </span>
-        <div className="w-28 shrink-0">
-          <p className="text-xs font-medium text-[var(--ds-ink)]">Muse Image</p>
-          <p className="text-[11px] leading-snug text-[var(--ds-ink-3)]">
-            Render an image for your design
-          </p>
-        </div>
-        <Input
-          value={prompt}
-          onChange={e => onPrompt(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter" && prompt.trim() && !busy) onGenerate();
-          }}
-          disabled={busy}
-          placeholder="A lone lighthouse under a nebula sky…"
-          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-[var(--ds-ink)] placeholder:text-[var(--ds-ink-4)]"
-        />
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy || !prompt.trim()}
-          onClick={onGenerate}
-          className={cn("h-9 shrink-0 gap-1.5", ACCENT_BTN)}
-        >
-          {busy ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Wand2 className="size-3.5" />
-          )}
-          Generate
-        </Button>
-        {src ? (
-          <img
-            src={src}
-            alt="Muse image result"
-            className="size-14 shrink-0 rounded-lg border border-[var(--ds-line)] object-cover"
-          />
-        ) : (
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/10 text-slate-700">
-            <ImageIcon className="size-4" />
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ---- AVE drive bar (Video mode): Universe edits the timeline from chat --- */
-
-function AveDriveBar({
-  instruction,
-  onInstruction,
-  busy,
-  result,
-  onDrive,
-}: {
-  instruction: string;
-  onInstruction: (value: string) => void;
-  busy: boolean;
-  result: AveDriveResult | null;
-  onDrive: () => void;
-}) {
-  return (
-    <div className="shrink-0 px-3 pb-3">
-      <div className="flex items-center gap-3 rounded-xl border border-[var(--ds-line)] bg-white/[0.02] p-2.5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
-          <Clapperboard className="size-4" />
-        </span>
-        <div className="w-28 shrink-0">
-          <p className="text-xs font-medium text-[var(--ds-ink)]">Universe drives AVE</p>
-          <p className="text-[11px] leading-snug text-[var(--ds-ink-3)]">
-            Edit the timeline from chat via MCP
-          </p>
-        </div>
-        <Input
-          value={instruction}
-          onChange={e => onInstruction(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter" && instruction.trim() && !busy) onDrive();
-          }}
-          disabled={busy}
-          placeholder="Split the first clip and add a fade…"
-          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-[var(--ds-ink)] placeholder:text-[var(--ds-ink-4)]"
-        />
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy || !instruction.trim()}
-          onClick={onDrive}
-          className={cn("h-9 shrink-0 gap-1.5", ACCENT_BTN)}
-        >
-          {busy ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Clapperboard className="size-3.5" />
-          )}
-          Drive
-        </Button>
-      </div>
-      {result ? (
-        <p className="mt-1.5 px-1 text-[11px] leading-snug text-[var(--ds-ink-3)]">
-          {result.tool ? (
-            <>
-              Tool <span className="text-[var(--ds-accent)]">{result.tool}</span> executed
-              {result.result?.isError
-                ? " — AVE reported an error"
-                : " ✓ — watch the embedded editor update"}
-            </>
-          ) : (
-            result.reason
-          )}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/* ---- composer (fixed bottom) ---------------------------------------------- */
-
-function Composer({
-  mode,
-  onMode,
-  prompt,
-  onPrompt,
-  onSend,
-}: {
-  mode: Mode | null;
-  onMode: (mode: Mode) => void;
-  prompt: string;
-  onPrompt: (value: string) => void;
-  onSend: () => void;
-}) {
-  const canSend = mode !== null && prompt.trim().length > 0;
-  const tooltip =
-    mode === null
-      ? "Choose a tool first — Design, Video or 3D"
-      : "Describe what to build first";
-
-  return (
-    <div
-      className={cn(
-        "rounded-xl p-3 shadow-[0_0_40px_rgba(3,5,10,0.55)]",
-        PANEL
-      )}
-    >
-      <Textarea
-        value={prompt}
-        onChange={e => onPrompt(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === "Enter" && !e.shiftKey && canSend) {
-            e.preventDefault();
-            onSend();
-          }
-        }}
-        placeholder="Describe what to build…"
-        className="max-h-40 min-h-10 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 md:text-sm dark:bg-transparent"
-      />
-      <div className="mt-2 flex items-center gap-1.5">
-        {TOOLS.map(tool => {
-          const Icon = tool.icon;
-          const active = mode === tool.id;
-          return (
-            <Tooltip key={tool.id}>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-pressed={active}
-                  aria-label={tool.name}
-                  onClick={() => onMode(tool.id)}
-                  className={cn(
-                    "size-9 rounded-lg",
-                    active
-                      ? "bg-white/[0.07] text-[var(--ds-ink)]"
-                      : "text-[var(--ds-ink-3)] hover:bg-white/[0.05] hover:text-[var(--ds-ink-2)]"
-                  )}
-                >
-                  <Icon className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {tool.name} — {tool.tagline}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-        <div className="flex-1" />
-        {canSend ? (
-          <Button
-            type="button"
-            size="icon"
-            aria-label="Send"
-            onClick={onSend}
-            className={cn("size-9 rounded-full", ACCENT_BTN)}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* span wrapper: disabled buttons swallow pointer events, so
-                  the tooltip must live on the still-alive parent */}
-              <span className="inline-flex">
-                <Button
-                  type="button"
-                  size="icon"
-                  aria-label="Send"
-                  disabled
-                  className={cn("size-9 rounded-full", ACCENT_BTN)}
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{tooltip}</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ---- the page -------------------------------------------------------------- */
+/* ---- the page ---------------------------------------------------------------- */
 
 export default function Studio() {
-  const [services, setServices] = useState<StudioService[] | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [mode, setMode] = useState<Mode | null>(null);
-  // the shell sidebar is shared chrome (same store as Chat / Bots)
   const sidebarOpen = useUi(s => s.sidebarOpen);
-  const [prompt, setPrompt] = useState("");
+  const railOpen = useRail(s => s.open);
+  const openRail = useRail(s => s.openRail);
+  const closeRail = useRail(s => s.closeRail);
+  // the picked tool card — MANDATORY before the composer unlocks
+  const [tool, setTool] = useState<StudioTool | null>(null);
+  const [services, setServices] = useState<StudioService[] | null>(null);
   const [busyId, setBusyId] = useState<StudioServiceId | null>(null);
-  const [bridgeMode, setBridgeMode] = useState<BlenderBridgeMode>("preview");
-  // Muse state lives here so the composer can hand its prompt straight in
-  const [musePrompt, setMusePrompt] = useState("");
-  const [museImage, setMuseImage] = useState<ImageResult | null>(null);
-  const [museBusy, setMuseBusy] = useState(false);
-  // AVE driving state (Video mode): NL instruction → one MCP tool call
-  const [aveInstruction, setAveInstruction] = useState("");
-  const [aveResult, setAveResult] = useState<AveDriveResult | null>(null);
-  const [aveBusy, setAveBusy] = useState(false);
+  const tasks = useChat(s => s.tasks);
+  const isEmpty = useChat(s => s.messages.length === 0);
+  const isExpanded = useChat(s => s.messages.length > 0);
   const fetchingRef = useRef(false);
 
-  const runAve = async () => {
-    const instruction = aveInstruction.trim();
-    if (!instruction || aveBusy) return;
-    setAveBusy(true);
-    try {
-      const res = await driveAve(instruction);
-      setAveResult(res);
-      if (res.tool) toast.success(`AVE: ${res.tool}`);
-      else toast.info(res.reason ?? "No suitable AVE tool for that");
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "AVE is not reachable",
-      );
-    } finally {
-      setAveBusy(false);
-    }
-  };
+  const running = tasks.find(t => t.status === "running") ?? null;
+  const runningGoalId = running?.turn_id ?? null;
 
-  /* polling: 8s heartbeat, tightened to 3s while anything is "starting" */
+  // activity auto-open (the Universe timeline in the rail)
+  const hasRealWork = useChat(s => {
+    if (!runningGoalId) return false;
+    const evs = s.eventsByGoal[runningGoalId];
+    if (!evs) return false;
+    return evs.some(
+      e =>
+        e.type === "tool_running" ||
+        e.type === "tool_finished" ||
+        e.type === "tool_failed"
+    );
+  });
+  useEffect(() => {
+    if (hasRealWork && runningGoalId) openRail("activity");
+  }, [hasRealWork, runningGoalId, openRail]);
+
   const refresh = useCallback(async () => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
     try {
-      const list = await listServices();
-      setServices(list);
-      setLoadFailed(false);
+      setServices(await listServices());
     } catch {
-      // keep the last known statuses on the chips; only the very first
-      // load failure gets its own card
-      setLoadFailed(true);
+      /* keep the last known statuses */
     } finally {
       fetchingRef.current = false;
     }
@@ -777,7 +387,6 @@ export default function Studio() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
   const anyStarting = services?.some(s => s.status === "starting") ?? false;
   useEffect(() => {
     const id = window.setInterval(
@@ -787,35 +396,28 @@ export default function Studio() {
     return () => window.clearInterval(id);
   }, [anyStarting, refresh]);
 
-  const activeTool = mode === null ? null : TOOLS.find(t => t.id === mode) ?? null;
-  const service = activeTool
-    ? (services?.find(s => s.id === activeTool.serviceId) ?? null)
-    : null;
-  const bridgeDown = loadFailed && services === null;
-
-  /* ---- actions ---- */
-
-  const toggleService = useCallback(
-    async (svc: StudioService, action: "start" | "stop") => {
-      if (busyId) return; // one service operation at a time
+  const startSvc = useCallback(
+    async (svc: StudioService) => {
+      if (busyId) return;
       setBusyId(svc.id);
       try {
-        const updated =
-          action === "start"
-            ? await startService(svc.id)
-            : await stopService(svc.id);
+        const updated = await startService(svc.id);
         setServices(prev =>
           prev ? prev.map(s => (s.id === updated.id ? updated : s)) : prev
         );
         toast.success(
-          action === "start"
-            ? `${svc.name} ${updated.status === "running" ? "is running" : "is starting"}`
-            : `${svc.name} stopped`
+          updated.status === "running"
+            ? `${svc.name} is running`
+            : `${svc.name} is starting`
         );
       } catch (e) {
-        toast.error(`Could not ${action} ${svc.name}`, {
-          description: errMessage(e),
-        });
+        toast.error(
+          `Could not start ${svc.name}`,
+          {
+            description:
+              e instanceof Error && e.message ? e.message : "bridge unreachable",
+          }
+        );
       } finally {
         setBusyId(null);
       }
@@ -823,275 +425,156 @@ export default function Studio() {
     [busyId]
   );
 
-  const runMuse = useCallback(
-    async (raw: string) => {
-      const text = raw.trim();
-      if (!text) return;
-      if (museBusy) {
-        toast.info("Muse is already rendering", {
-          description: "One image at a time — your prompt is waiting in the card.",
-        });
-        return;
-      }
-      setMuseBusy(true);
-      try {
-        const image = await generateImage(text);
-        setMuseImage(image);
-        toast.success("Muse delivered a new image");
-      } catch (e) {
-        // missing provider key etc. — the server's own message reads through
-        toast.error("Muse could not generate the image", {
-          description: errMessage(e),
-        });
-      } finally {
-        setMuseBusy(false);
-      }
-    },
-    [museBusy]
-  );
-
-  const send = () => {
-    if (mode === null) return;
-    const text = prompt.trim();
-
-    // Design: the brief becomes the Muse prompt and renders immediately —
-    // /api/meta/image rides the bridge, not the tool service.
-    if (mode === "design") {
-      if (!text) return;
-      setMusePrompt(text);
-      setPrompt("");
-      void runMuse(text);
-      return;
-    }
-
-    if (!service) {
-      toast.info("Still reaching the bridge", {
-        description: "Give the service list a second, then try again.",
-      });
-      return;
-    }
-    if (service.status === "starting") {
-      toast.info(`${service.name} is starting`, {
-        description: "The workspace opens as soon as it is running.",
-      });
-      return;
-    }
-    if (service.status === "running") {
-      toast.info(
-        mode === "video" ? "AVE is live in the workspace" : "Blender is connected",
-        {
-          description:
-            mode === "video"
-              ? "Edit inside the embedded studio — ask Universe in the chat to drive it."
-              : "Describe the model in the chat and Universe sends it to Blender.",
-        }
-      );
-      return;
-    }
-    // stopped / unreachable / unconfigured — bring the service up first
-    void toggleService(service, "start");
-  };
-
-  /* ---- render ---- */
-
-  const body = (() => {
-    if (bridgeDown) return <BridgeDownBody onRetry={() => void refresh()} />;
-    if (!service) return <PendingBody />;
-    if (mode === "3d") {
-      return (
-        <BlenderBody
-          service={service}
-          bridgeMode={bridgeMode}
-          onBridgeMode={setBridgeMode}
-        />
-      );
-    }
-    if (service.status === "running") {
-      return (
-        <iframe
-          key={service.url}
-          src={embedUrl(service.url)}
-          title={service.name}
-          className="h-full w-full rounded-lg border border-[var(--ds-line)] bg-[var(--canvas)]"
-        />
-      );
-    }
-    return (
-      <LaunchBody
-        service={service}
-        icon={activeTool?.icon ?? Palette}
-        busy={busyId === service.id}
-        onStart={() => void toggleService(service, "start")}
-      />
-    );
-  })();
-
   return (
     <div className="app-root">
+      <OfflineBanner />
       <div className={`app${sidebarOpen ? "" : " sb-closed"}`}>
-        <Sidebar open={sidebarOpen} />
-        <main className="relative min-w-0 flex-1 overflow-hidden bg-[var(--canvas)] text-[var(--ds-ink)]">
-          <div className="h-full overflow-y-auto">
-            <div
-              style={{ marginInline: "auto" }}
-              className={cn(
-                "relative w-full max-w-3xl px-4",
-                mode === null
-                  ? "flex min-h-full items-center justify-center pb-56 pt-16"
-                  : "pb-[calc(52vh+10.5rem)] pt-6"
-              )}
-            >
-              {mode === null ? <Hero onPick={setMode} /> : null}
-            </div>
-          </div>
-
-  {/* fixed dock: workspace panel above the composer — offset by the
-      sidebar column so it hugs the work surface, not the window edge */}
-  <div
-    className="fixed bottom-0 z-40 px-4 pb-4"
-    style={{ left: sidebarOpen ? 264 : 0, right: 0 }}
-  >
-        <div
-          style={{ marginInline: "auto" }}
-          className="flex w-full max-w-3xl flex-col gap-3"
+        {/* the left sidebar NEVER hides in Studio — same tasks, same
+            projects, same tokens; only the Automations row is absent */}
+        <Sidebar open={sidebarOpen} surface="studio" />
+        <main
+          className={`main studio-main${isEmpty ? " empty" : ""}${isExpanded ? " main--expanded" : ""}`}
         >
-          {mode !== null && activeTool ? (
-            <section
-              className={cn(
-                "flex h-[52vh] flex-col overflow-hidden rounded-xl shadow-[0_0_40px_rgba(3,5,10,0.55)]",
-                PANEL
-              )}
-            >
-              <header className="flex shrink-0 items-center gap-3 border-b border-[var(--ds-line)] py-2 pl-4 pr-2.5">
-                <h2 className="text-sm font-semibold text-[var(--ds-ink)]">
-                  {activeTool.name}
-                </h2>
-                {service ? (
-                  <StatusChip status={service.status} />
-                ) : (
-                  <Badge
-                    variant="outline"
-                    className="gap-1.5 rounded-full border-white/10 bg-white/[0.03] px-2 py-0.5 text-[11px] text-[var(--ds-ink-3)]"
-                  >
-                    <Loader2 className="size-3 animate-spin" />
-                    Checking
-                  </Badge>
-                )}
-                <div className="ml-auto flex items-center gap-1.5">
-                  {service ? (
-                    service.status === "running" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busyId === service.id}
-                        onClick={() => void toggleService(service, "stop")}
-                        className="h-8 gap-1.5 border-white/10 bg-white/[0.03] text-[var(--ds-ink-2)] hover:bg-white/[0.06] hover:text-[var(--ds-ink)]"
-                      >
-                        <Square className="size-3.5" />
-                        Stop
-                      </Button>
-                    ) : service.status === "starting" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled
-                        className="h-8 gap-1.5 border-white/10 bg-white/[0.03] text-[var(--ds-ink-3)]"
-                      >
-                        <Loader2 className="size-3.5 animate-spin" />
-                        Starting…
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busyId === service.id}
-                        onClick={() => void toggleService(service, "start")}
-                        className="h-8 gap-1.5 border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.1)] text-[var(--ds-accent)] hover:bg-[rgba(70,191,114,0.2)] hover:text-[var(--ds-accent)]"
-                      >
-                        <Play className="size-3.5" />
-                        Start
-                      </Button>
-                    )
-                  ) : null}
-                  {service?.status === "running" ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Open in new window"
-                          onClick={() =>
-                            window.open(service.url, "_blank", "noopener")
-                          }
-                          className="text-[var(--ds-ink-3)] hover:bg-white/[0.05] hover:text-[var(--ds-ink)]"
-                        >
-                          <ExternalLink className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        Open in new window
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                  <span className="mx-1 h-5 w-px bg-[var(--ds-line)]" />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setMode(null)}
-                    className="h-8 gap-1.5 text-[var(--ds-ink-3)] hover:bg-white/[0.05] hover:text-[var(--ds-ink)]"
-                  >
-                    <LayoutGrid className="size-3.5" />
-                    Switch tool
-                  </Button>
-                </div>
-              </header>
-
-              <div className="min-h-0 flex-1">
-                {mode === "design" ? (
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="min-h-0 flex-1 p-3 pb-2">{body}</div>
-                    <MuseCard
-                      prompt={musePrompt}
-                      onPrompt={setMusePrompt}
-                      busy={museBusy}
-                      image={museImage}
-                      onGenerate={() => void runMuse(musePrompt)}
-                    />
-                  </div>
-                ) : mode === "video" ? (
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="min-h-0 flex-1 p-3 pb-2">{body}</div>
-                    <AveDriveBar
-                      instruction={aveInstruction}
-                      onInstruction={setAveInstruction}
-                      busy={aveBusy}
-                      result={aveResult}
-                      onDrive={() => void runAve()}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-full p-3">{body}</div>
-                )}
-              </div>
-            </section>
-          ) : null}
-
+          <PlanPill />
+          <ChatMessages />
+          <ConsentBanner />
+          <QuestionBanner />
+          {tool !== null && (
+            <WorkspaceDock
+              tool={tool}
+              services={services}
+              busyId={busyId}
+              onStart={svc => void startSvc(svc)}
+              onSwitch={() => setTool(null)}
+            />
+          )}
           <Composer
-            mode={mode}
-            onMode={setMode}
-            prompt={prompt}
-            onPrompt={setPrompt}
-            onSend={send}
+            centered={isEmpty}
+            variant="studio"
+            studioTool={tool}
+            onStudioTool={setTool}
           />
-        </div>
-  </div>
         </main>
+        {/* the right rail MAY hide — it auto-opens with the timeline while
+            a task runs and closes like in Universe */}
+        {railOpen && (
+          <Rail
+            browserActive={false}
+            onClose={closeRail}
+          />
+        )}
       </div>
+
+      {/* the empty-state tool cards — the mandatory picker */}
+      {isEmpty && (
+        <div
+          className="studio-cards-holder"
+          style={{ left: sidebarOpen ? 264 : 0 }}
+          aria-hidden={tool !== null}
+        >
+          <div className="studio-cards" role="group" aria-label="Pick a tool">
+            <div className="studio-cards-col">
+              {CARDS.filter(c => c.id !== "3d").map(card => {
+                const Icon = card.icon;
+                const active = tool === card.id;
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    className={`studio-card${active ? " picked" : ""}`}
+                    onClick={() => setTool(card.id)}
+                    aria-pressed={active}
+                  >
+                    <span className="studio-card-icon">
+                      <Icon size={16} strokeWidth={1.9} />
+                    </span>
+                    <span className="studio-card-body">
+                      <span className="studio-card-title">
+                        {card.name}
+                        {active && (
+                          <Check size={13} strokeWidth={2.4} aria-hidden="true" />
+                        )}
+                      </span>
+                      <span className="studio-card-sub">{card.sub}</span>
+                      <span className="studio-card-powered">
+                        powered by {card.powered}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <BlenderCard
+              service={services?.find(s => s.id === "blender") ?? null}
+              active={tool === "3d"}
+              busy={busyId === "blender"}
+              onPick={() => {
+                setTool("3d");
+                const svc = services?.find(s => s.id === "blender");
+                if (svc && svc.status !== "running") {
+                  toast.info("Connect Blender", {
+                    description:
+                      "Open Blender and enable the blender-mcp addon " +
+                      "(Edit → Preferences → Add-ons) — Universe connects " +
+                      "to it on port 9876.",
+                  });
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ---- the square 3D card (right) ------------------------------------------------ */
+
+function BlenderCard({
+  service,
+  active,
+  busy,
+  onPick,
+}: {
+  service: StudioService | null;
+  active: boolean;
+  busy: boolean;
+  onPick: () => void;
+}) {
+  const connected = service?.status === "running";
+  return (
+    <button
+      type="button"
+      className={`studio-card studio-card-tall${active ? " picked" : ""}`}
+      onClick={onPick}
+      aria-pressed={active}
+    >
+      <span className="studio-card-eyebrow">
+        {connected ? (
+          <>
+            <Cable size={11} strokeWidth={2} /> Blender connected
+          </>
+        ) : (
+          <>
+            <Cable size={11} strokeWidth={2} /> Connect Blender
+          </>
+        )}
+      </span>
+      <span className="studio-card-art">
+        <MonitorDot size={26} strokeWidth={1.5} />
+      </span>
+      <span className="studio-card-title-c">3D</span>
+      <span className="studio-card-sub-c">
+        {connected
+          ? "Addon reachable on port 9876 — model and render"
+          : "Open Blender with the blender-mcp addon to connect"}
+      </span>
+      {service?.status === "starting" && (
+        <span className="studio-card-note">
+          <Loader2 className="size-3 animate-spin" /> waiting for the addon…
+        </span>
+      )}
+      {busy && <span className="sr-only">starting</span>}
+    </button>
   );
 }

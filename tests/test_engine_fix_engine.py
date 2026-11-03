@@ -56,7 +56,7 @@ def _register_tool(name: str, handler, capability: str = "test:fix") -> None:
 
 
 # ---------------------------------------------------------------------------
-# turn engine (fix 3 — now the ZCode turn engine)
+# turn engine (fix 3 — now the Universe turn engine)
 # ---------------------------------------------------------------------------
 
 async def test_tool_call_has_hard_timeout(fresh_home, monkeypatch):

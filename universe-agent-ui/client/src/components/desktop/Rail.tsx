@@ -788,7 +788,7 @@ const TABS: Array<{
   desc: string;
   chip?: "main" | "extra";
 }> = [
-  // the ZCode side-pane tabs first — pick order matches its empty state
+  // the Universe side-pane tabs first — pick order matches its empty state
   {
     id: "selectionchat",
     label: "Side conversation",
@@ -817,7 +817,7 @@ const TABS: Array<{
     desc: "The browser agent's Chromium, live",
     chip: "main",
   },
-  // Universe workspace tools — same panes, grouped below the ZCode four
+  // Universe workspace tools — same panes, grouped below the Universe four
   {
     id: "activity",
     label: "Activity",
@@ -864,11 +864,11 @@ export default function Rail({
   const capsule = useRail(s => s.capsule);
   const toggleCapsule = useRail(s => s.toggleCapsule);
   // drag-resize width (320 → 560), pointer-events only on the handle
-  // ZCode parity: fixed-width rail (336px via CSS), no drag-resize
+  // shell parity: fixed-width rail (336px via CSS), no drag-resize
 
-  // drag-resize removed: ZCode uses a fixed-width rail
+  // drag-resize removed: Universe uses a fixed-width rail
 
-  // collapse-to-capsule (ZCode Progress): the rail becomes a small pill
+  // collapse-to-capsule (Universe Progress): the rail becomes a small pill
   // with the live todo score; one click brings the full pane back
   if (capsule) {
     return (
@@ -887,7 +887,7 @@ export default function Rail({
     );
   }
 
-  // ZCode bar anatomy: icon pills — every tab is an icon; the ACTIVE one
+  // Universe bar anatomy: icon pills — every tab is an icon; the ACTIVE one
   // expands to its label. Five pills + the capsule/close pair never
   // overflow the 336px rail.
   const renderTabs = () => (
@@ -952,7 +952,7 @@ export default function Rail({
               </button>
             ))}
           </div>
-          {/* Universe-only panes — ZCode's 3.12.1 picker shows just the four
+          {/* Universe-only panes — Universe's 3.12.1 picker shows just the four
               main tabs, so the extras stay reachable as one quiet chip row */}
           <div className="rail-open-more" role="list">
             {EXTRA_TABS.map(t => (

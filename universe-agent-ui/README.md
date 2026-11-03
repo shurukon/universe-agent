@@ -175,13 +175,10 @@ Everything below runs against the real stack (no mocks of the orchestrator):
 
 - `pytest tests/` — run in groups: bridge, voice, MCP, events, integration,
   wake+memory+skills, security+whitelist+acceptance, tools+repairs+eval,
-  browser+web+thirdparty, windows-sandbox, plus `test_ui_overhaul.py`
+  browser+web+thirdparty, plus `test_ui_overhaul.py`
   (projects, chat lifecycle, MCP stdio/HTTP/SSE against a real local server,
   setup gate, agents endpoint)
 - `client/tests/e2e/` — the live UI suites (Playwright; vite dev + bridge up):
-  - `onboarding_flow.py` — the mandatory `/welcome` gate end-to-end (custom
-    provider verified against a real local OpenAI-compatible mock, voice
-    step, naming, persistence)
   - `settings_sections.py` — all six settings sections incl. a REAL stdio
     MCP handshake through the form (`mock_mcp_stdio.py`) and the live memory
     browser (11 systems, 245-skill orbit)

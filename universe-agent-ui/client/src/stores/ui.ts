@@ -1,5 +1,5 @@
 /**
- * stores/ui.ts — shell chrome state (ZCode Phase 2): sidebar visibility,
+ * stores/ui.ts — shell chrome state (Universe Phase 2): sidebar visibility,
  * the command palette, and the session navigation history the TopBar's
  * back/forward buttons drive.
  *
@@ -22,7 +22,7 @@ interface UiStore {
   sidebarOpen: boolean;
   toggleSidebar: (force?: boolean) => void;
 
-  /** Computer Use chip (ZCode parity): a real local toggle — the flag is
+  /** Computer Use chip (shell parity): a real local toggle — the flag is
    *  part of this build's state ("dev sim ignores it") and shown pressed */
   computerUse: boolean;
   toggleComputerUse: () => void;
@@ -33,7 +33,7 @@ interface UiStore {
   closePalette: () => void;
   setPaletteTab: (t: PaletteTab) => void;
 
-  // ---- open task tabs (ZCode's tab strip) ----
+  // ---- open task tabs (Universe's tab strip) ----
   /** goal ids dismissed from the strip — the tasks themselves survive in
    *  the sidebar and in chat state; opening one re-adds its tab */
   closedTabs: string[];
@@ -41,7 +41,7 @@ interface UiStore {
   reopenTab: (turnId: string) => void;
 
   // ---- composer seed (Edit on a sent message: prefill + focus) ----
-  /** the threaded model continues the session, so ZCode's Edit-and-resend
+  /** the threaded model continues the session, so Universe's Edit-and-resend
    *  maps to seeding the composer with the message text and focusing it */
   composerSeed: { text: string; seq: number } | null;
   seedComposer: (text: string) => void;

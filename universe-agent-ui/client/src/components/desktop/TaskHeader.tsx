@@ -1,7 +1,7 @@
 /**
  * components/desktop/TaskHeader.tsx — the chat column's task title row.
  *
- * Measured from the live ZCode 3.12.1 window (2026-10-23): the title row
+ * Measured from the live Universe 3.12.1 window (2026-10-23): the title row
  * sits at the top of the CHAT COLUMN, not in the window chrome —
  *   [folder icon] Task title [⋯]   ......   [utility icons]
  * The folder icon reveals the task's workspace in Explorer; "⋯" carries

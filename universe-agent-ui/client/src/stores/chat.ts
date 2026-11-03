@@ -19,7 +19,7 @@ export interface Task {
   text: string;
   status: TaskStatus;
   created_at: number;
-  /** the task's own title (rename); ZCode rows + the TopBar show it */
+  /** the task's own title (rename); Universe rows + the TopBar show it */
   title?: string;
   summary?: string;
   success?: boolean;
@@ -36,7 +36,7 @@ export interface ChatMessage {
   streaming?: boolean;
   /** set when this user message course-corrected a RUNNING goal (M3) */
   steered?: boolean;
-  /** unix seconds — message timestamps (ZCode rows); absent on legacy
+  /** unix seconds — message timestamps (Universe rows); absent on legacy
    *  threads the server never dated */
   ts?: number;
 }
@@ -51,7 +51,7 @@ export interface PendingQuestion {
   ts: number;
 }
 
-/** ZCode permission modes — see security/capability.py PERMISSION_MODES. */
+/** Universe permission modes — see security/capability.py PERMISSION_MODES. */
 export type PermissionMode = "plan" | "edit" | "ask" | "full";
 
 interface ChatStore {
@@ -123,12 +123,18 @@ interface ChatStore {
   clearGoalView: () => void;
   /** turn_id currently pinned in the ?goal= previous-conversation view */
   viewedGoalId: string | null;
-  /** ZCode input bar: the send may carry text-file context paths (v1
+  /** Universe input bar: the send may carry text-file context paths (v1
    *  attachments) and the Max chip's thinking level. Both are optional —
-   *  every existing call site is unaffected. */
+   *  every existing call site is unaffected. Studio sends add the picked
+   *  tool card (design | video | 3d) — the same engine, anchored tool. */
   sendGoal: (
     text: string,
-    opts?: { attachments?: string[]; effort?: string; freshTask?: boolean }
+    opts?: {
+      attachments?: string[];
+      effort?: string;
+      freshTask?: boolean;
+      studioTool?: "design" | "video" | "3d";
+    }
   ) => Promise<string | null>;
   /** M3: course-correct a RUNNING goal — routed to the orchestrator's
    *  steer queue (applied at the next step boundary + replan). Returns
@@ -800,6 +806,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         clientMsgId: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         effort,
         attachments: opts?.attachments,
+        studioTool: opts?.studioTool,
       });
       // interaction_behavior="queue": the bridge buffered this follow-up
       // behind the running goal (turn_id null). No bubble yet — it renders

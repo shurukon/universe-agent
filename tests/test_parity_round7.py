@@ -1,6 +1,6 @@
 """tests/test_parity_round7.py — Round-7 verbatim parity contract.
 
-Pins what the RE of ZCode (zcode.cjs) + Claude Code (2.1.277 binary) put on
+Pins what the round-7 reverse-engineering pass put on
 Universe: the five permission modes with the auto ladder, the Task family,
 TodoWrite activeForm, the new parity tools (their exact names), the
 plan-mode annex injection, the CC compaction fallback, and the slash
@@ -72,7 +72,7 @@ async def test_edit_mode_ladder(monkeypatch, tmp_path):
 
     # relative target: the gate scopes it against the project root (cwd),
     # the handler writes through files._project_root → tmp work dir (same
-    # pattern as the existing zcode-parity tests)
+    # pattern as the existing universe-parity tests)
     monkeypatch.setattr("connectors.builtin.files._project_root",
                         lambda: work)
     target = work / "auto_parity7.txt"
@@ -406,6 +406,6 @@ def test_parity_doc_records_evidence_paths():
     base = pathlib.Path(r"D:\ClaudeDesktop\Temp\opencode\re7")
     if not base.is_dir():
         pytest.skip(f"RE evidence dir is machine-local and absent: {base}")
-    for f in ("zcode_findings.md", "claude_findings.md", "parity_spec.md",
-              "zcode_prompts.txt", "claude_prompts.txt"):
+    for f in ("shell_findings.md", "parity_findings.md", "parity_spec.md",
+              "shell_prompts.txt", "engine_prompts.txt"):
         assert (base / f).exists(), f"missing RE evidence: {f}"

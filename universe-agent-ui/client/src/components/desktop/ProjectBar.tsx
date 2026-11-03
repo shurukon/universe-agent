@@ -2,15 +2,15 @@
  * components/desktop/ProjectBar.tsx — the workspace scope control.
  *
  * Two surfaces (2026-10-24 user pass — the composer must be an EXACT
- * ZCode chat card):
+ * Universe chat card):
  *   `inCard`  → the head row INSIDE the composer card: [folder] Project ⌄
- *               [branch], the crumbs ZCode shows on top of its input.
+ *               [branch], the crumbs Universe shows on top of its input.
  *               No machine slot, no inline add — "Add project" lives in
  *               the dropdown.
  *   default   → the old standalone strip (kept for callers outside the
  *               chat card).
  *
- * ZCode parity: with no project selected the crumb reads "Select project";
+ * shell parity: with no project selected the crumb reads "Select project";
  * the dropdown lists existing projects (name · git branch · check on the
  * active one) plus an "Add project" action that opens the OS folder picker.
  * Picking a project scopes the conversation to it. Unselected sends create
@@ -131,7 +131,7 @@ export default function ProjectBar({ inCard = false }: { inCard?: boolean }) {
     </div>
   ) : null;
 
-  // inCard: the ZCode composer head row — [folder] Project ⌄ [branch]
+  // inCard: the Universe composer head row — [folder] Project ⌄ [branch]
   if (inCard) {
     return (
       <div className="zc-c-head" ref={rootRef}>
@@ -208,7 +208,7 @@ export default function ProjectBar({ inCard = false }: { inCard?: boolean }) {
           className={`pb-chev${open ? " open" : ""}`}
         />
       </button>
-      {/* ZCode's machine slot: Local with the connected dot (always local
+      {/* Universe's machine slot: Local with the connected dot (always local
           today; SSH targets land here when the bridge gains remote roots) */}
       <span className="pb-machine" title="Local machine">
         <span className="pb-machine-dot" aria-hidden="true" />

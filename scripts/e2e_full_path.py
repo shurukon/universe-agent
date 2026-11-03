@@ -8,7 +8,7 @@ keyboard filter), then babysits the run to verify the whole chain:
   goal completes → the file exists on disk
 
 Every observation is printed with timestamps; screenshots land in
-docs/zcode-live-screens/e2e-full-*.png (override: UNIVERSE_E2E_SCREENSHOT_DIR).
+docs/shell-live-screens/e2e-full-*.png (override: UNIVERSE_E2E_SCREENSHOT_DIR).
 Exit 0 only if every step of the chain is proven live.
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ from pywinauto.keyboard import send_keys
 # the old absolute D:\Universecomputer\... path broke on every other checkout;
 # default to THIS repo's docs dir, overridable from the environment
 OUT = os.environ.get("UNIVERSE_E2E_SCREENSHOT_DIR") or str(
-    Path(__file__).resolve().parent.parent / "docs" / "zcode-live-screens")
+    Path(__file__).resolve().parent.parent / "docs" / "shell-live-screens")
 TURN = ("Create a file named e2e_check2.txt containing exactly this text: "
         "the live full-path e2e works")
 

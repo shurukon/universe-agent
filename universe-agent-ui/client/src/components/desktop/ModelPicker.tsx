@@ -78,7 +78,7 @@ export default function ModelPicker() {
     <div className="mp-root" ref={rootRef}>
       {/* The trigger shows the CURRENT model once one is picked — the
           user must read it at a glance, not hover for it. Before any
-          pick it reads exactly like ZCode's idle slot ("Manage models").
+          pick it reads exactly like Universe's idle slot ("Manage models").
           Long ids truncate; the full id + provider stay in the tooltip. */}
       <button
         className="mp-chip"
@@ -153,7 +153,7 @@ export default function ModelPicker() {
                 </button>
               )}
           </div>
-          {/* ZCode's model menu ends with a manage-models row — the
+          {/* Universe's model menu ends with a manage-models row — the
               provider/keys page in Universe's settings */}
           <button
             type="button"

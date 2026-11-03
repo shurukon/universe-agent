@@ -1,10 +1,10 @@
 /*
  * design-system.css — Universe Agent unified design tokens.
- * ZCode-literal identity (2026-10 restyle) — every value below is measured
- * from the actual ZCode UI (docs/zcode-tokens.md: pixel samples of the 8
+ * Universe identity (2026-10 restyle) — every value below is measured
+ * from the actual Universe UI (docs/shell-tokens.md: pixel samples of the 8
  * reference screenshots + a live window probe, palette stable).
  *
- * ZCode is near-monochrome: neutral-gray canvas and panels, #d4d4d4 ink,
+ * Universe is near-monochrome: neutral-gray canvas and panels, #d4d4d4 ink,
  * green #46BF72 for positive/status accents only, orange #FF8A30 for the
  * permission chip, white primary buttons. No colored side bars, no glass.
  *
@@ -14,19 +14,19 @@
  */
 
 :root {
-  /* -- ZCode: structure (measured) --------------------------------------- */
-  --canvas: #161616;            /* app canvas (ZCode chat background) */
+  /* -- Universe: structure (measured) --------------------------------------- */
+  --canvas: #161616;            /* app canvas (Universe chat background) */
   --ds-surface-1: #2b2b2b;      /* panels: sidebar, cards, composer, menus */
   --ds-surface-2: #363636;      /* raised: hover lifts, selected rows */
   --ds-surface-3: #414141;      /* highest: active pills, active menu items */
   --ds-line: #414141;           /* hairline borders */
   --ds-line-strong: #4b4b4b;    /* emphasized borders (composer card) */
   --ds-ink: #d4d4d4;            /* primary text */
-  --ds-ink-2: #d4d4d4;          /* secondary — ZCode renders it equally bright */
+  --ds-ink-2: #d4d4d4;          /* secondary — Universe renders it equally bright */
   --ds-ink-3: #999999;          /* muted: ages, counters, icons */
   --ds-ink-4: #5e5e5e;          /* faint: section headers, placeholders */
 
-  /* -- ZCode: accents ----------------------------------------------------- */
+  /* -- Universe: accents ----------------------------------------------------- */
   --ds-accent: #46bf72;         /* the green accent: positive/status, focus */
   --ds-accent-hover: #5bc987;
   --ds-accent-dim: rgba(70, 191, 114, 0.14);
@@ -45,11 +45,11 @@
   --ink: var(--ds-ink);
   --ink2: var(--ds-ink-2);
   --ink3: var(--ds-ink-3);
-  --accent-cyan: var(--ds-accent);        /* legacy name -> ZCode green */
+  --accent-cyan: var(--ds-accent);        /* legacy name -> Universe green */
   --accent2: var(--ds-accent-hover);
   --accent-dim: var(--ds-accent-dim);
-  --success: #46bf72;                     /* ZCode green */
-  --warning: #ff8a30;                     /* ZCode permission orange */
+  --success: #46bf72;                     /* Universe green */
+  --warning: #ff8a30;                     /* Universe permission orange */
   --amber: #ff8a30;                       /* fixes dangling flow.css refs */
   --rose: #e5484d;
   --teal: var(--success);                 /* legacy success-teal */
@@ -67,7 +67,7 @@
 }
 
 /* the glass/blur language is retired: flat surfaces, hairlines only.
-   ZCode separates sidebar and chat with a pure color step — no border. */
+   Universe separates sidebar and chat with a pure color step — no border. */
 .sidebar {
   background: var(--ds-surface-1);
   backdrop-filter: none;
@@ -90,7 +90,7 @@
   margin-bottom: 1px;
 }
 .sidebar .task-item:hover { background: rgba(255, 255, 255, 0.045); }
-/* ZCode's active task is a plain gray pill — no colored side bar */
+/* Universe's active task is a plain gray pill — no colored side bar */
 .sidebar .task-item.active { background: var(--ds-surface-3); border-color: transparent; }
 .sidebar .t-title {
   font-size: var(--ds-ui-fs);
@@ -104,7 +104,7 @@
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
 .sidebar .t-dot[data-status="running"] {
-  background: var(--ds-ink-3);   /* ZCode marks a running task with a neutral spinner */
+  background: var(--ds-ink-3);   /* Universe marks a running task with a neutral spinner */
 }
 .sidebar .t-dot[data-status="completed"] { background: var(--success); }
 .sidebar .t-dot[data-status="failed"] { background: var(--rose); }
@@ -116,10 +116,10 @@
 }
 .sidebar .t-time {
   font-size: 10px;
-  color: var(--ds-ink-3);   /* ZCode task ages are #999999 */
+  color: var(--ds-ink-3);   /* Universe task ages are #999999 */
 }
 
-/* New task lives in the side-nav stack now (ZCode order: New task →
+/* New task lives in the side-nav stack now (Universe order: New task →
    Search → Automations → Marketplace) — see .side-nav-btn in shell.css. */
 
 /* New project ghost + inline form */
@@ -150,7 +150,7 @@
 }
 .composer textarea::placeholder { color: var(--ds-ink-4); }
 .send-btn.ready {
-  background: #d4d4d4;   /* ZCode's square composer button */
+  background: #d4d4d4;   /* Universe's square composer button */
   color: #161616;
 }
 .send-btn.stop {

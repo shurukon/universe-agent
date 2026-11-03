@@ -53,7 +53,7 @@ def _load_all() -> None:
                         v0023_hot_path_indexes,  # noqa: F401
                         v0024_agent_universe_rename,  # noqa: F401
                         v0025_retire_goal_mode,  # noqa: F401
-                        v0026_zcode_happy_path,  # noqa: F401
+                        v0026_task_views,  # noqa: F401
                         v0027_sessions,  # noqa: F401
                         v0028_single_universe,  # noqa: F401
                         v0029_session_authority,  # noqa: F401

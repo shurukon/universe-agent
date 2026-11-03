@@ -1,9 +1,9 @@
-"""v20: goal feedback — the Like/Dislike row (ZCode chat message parity).
+"""v20: goal feedback — the Like/Dislike row (Universe chat message parity).
 
 One row per rating a user files on a finished goal's reply. The desktop
 message buttons (Like / Dislike) write here; nothing else reads it yet —
 it is the dataset a later quality/eval pass can mine, exactly like the
-LLM labelling flows ZCode exposes on its chat rows.
+LLM labelling flows Universe exposes on its chat rows.
 
 Ratings are restricted at the API layer to 'like' | 'dislike'; the column
 is TEXT so future kinds (e.g. 'report') stay additive.

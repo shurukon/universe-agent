@@ -1,5 +1,5 @@
 /**
- * components/desktop/ProgressPane.tsx — the Rail's fourth tab (ZCode
+ * components/desktop/ProgressPane.tsx — the Rail's fourth tab (Universe
  * Progress pane, Phase 2 item 6). Consumes the goal's live todo_updated
  * events (Phase 1's todo.write/todo.read feed), renders the list with
  * done/in-progress/pending marks, folds not-yet-started items behind an

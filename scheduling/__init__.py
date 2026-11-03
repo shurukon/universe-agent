@@ -1,4 +1,4 @@
-"""schedule/ — automations: cron-scheduled goal runs (ZCode parity).
+"""schedule/ — automations: cron-scheduled goal runs (shell parity).
 
 A scheduler task ticks every TICK_SECONDS (30 s) and fires every
 automation whose next_run_at has passed. Firing = running the prompt as

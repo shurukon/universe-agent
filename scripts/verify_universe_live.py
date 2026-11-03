@@ -1,8 +1,8 @@
 """Live pixel verification of the Universe desktop window (numeric, no eyes).
 
 Brings the "Universe Agent" Electron window to the foreground, confirms
-via GetForegroundWindow() that THE GRAB IS OF UNIVERSE (not ZCode or anything
-else), then samples the ZCode-literal palette per docs/zcode-tokens.md:
+via GetForegroundWindow() that THE GRAB IS OF UNIVERSE (not Universe or anything
+else), then samples the Universe palette per docs/shell-tokens.md:
 
   sidebar / panels / composer card   #2b2b2b
   topbar over chat                   #262626
@@ -16,8 +16,8 @@ else), then samples the ZCode-literal palette per docs/zcode-tokens.md:
 and asserts the restyle really happened: no teal rgb(20,184,166)/#14b8a6
 family in the UI chrome histogram.
 
-Standalone, like extract_zcode_palette.py: `python scripts/verify_universe_live.py`.
-Writes docs/zcode-live-screens/live-universe-window.png (image only).
+Standalone: `python scripts/verify_universe_live.py`.
+Writes docs/shell-live-screens/live-universe-window.png (image only).
 Exit code 0 = all checks passed. Prints a numeric report.
 """
 from __future__ import annotations
@@ -98,7 +98,7 @@ def main() -> int:
     print(f"[ok] window rect ({left},{top})..({right},{bottom})  {w}x{h}")
 
     img = ImageGrab.grab(bbox=(left, top, right, bottom))
-    out = r"D:\Universecomputer\Universe-compter\docs\zcode-live-screens"
+    out = r"D:\Universecomputer\Universe-compter\docs\shell-live-screens"
     img.save(out + r"\live-universe-window.png")
     print(f"[ok] capture saved: {out}\\live-universe-window.png")
 
@@ -156,7 +156,7 @@ def main() -> int:
     if failures:
         print("RESULT: FAIL - " + "; ".join(failures))
         return 1
-    print("RESULT: PASS - Universe renders the ZCode-literal palette")
+    print("RESULT: PASS - Universe renders the Universe palette")
     return 0
 
 

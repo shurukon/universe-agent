@@ -8,7 +8,7 @@ trusted sources in total (see README and `docs/SKILLS_EXPANSION.md`). This
 file exists to satisfy the attribution terms of their licenses and to
 document exactly what was included, what was deliberately excluded, and why.
 
-## ECC — Everything Claude Code
+## Community skill registries
 - **Repository:** https://github.com/affaan-m/ECC
 - **License:** MIT — Copyright (c) 2026 Affaan Mustafa
 - **Included:** all 271 `skills/*/SKILL.md` entries, verbatim body content,

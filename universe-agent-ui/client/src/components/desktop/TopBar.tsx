@@ -1,5 +1,5 @@
 /**
- * components/desktop/TopBar.tsx — ZCode-literal chrome (2026-10-23 pass).
+ * components/desktop/TopBar.tsx — Universe chrome (2026-10-23 pass).
  *
  * The LIVE 3.12.1 window measured today shows ONE strip across the window:
  *   [sidebar toggle][back][forward] ......... [side-panel toggle][min][max][close]
@@ -10,7 +10,7 @@ import { Minus, PanelRight, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { useUi } from "@/stores/ui";
 import { useRail } from "@/lib/flow/railStore";
-import { ArrowLeftIcon, ArrowRightIcon, PanelLeftIcon, UniverseMark } from "./zcode-icons";
+import { ArrowLeftIcon, ArrowRightIcon, PanelLeftIcon, UniverseMark } from "./universe-icons";
 
 type UniverseWin = {
   win?: (action: "minimize" | "maximize" | "close") => Promise<boolean>;
@@ -46,7 +46,7 @@ export default function TopBar() {
           tone); with the sidebar collapsed the whole strip falls back to
           canvas so no darker block floats over the chat column */}
       <header className={`zt-strip${sidebarOpen ? "" : " sb-off"}`}>
-        {/* ZCode's window cluster: the app tile doubles as the sidebar
+        {/* Universe's window cluster: the app tile doubles as the sidebar
             toggle (hover swaps the mark for a panel glyph), then the two
             history arrows at 50% while disabled. Update pill omitted —
             Universe has no updater to report. */}

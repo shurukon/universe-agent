@@ -3,7 +3,7 @@
 The user's standing orders (2026-09 + 2026-10-28): Universe is ONE agent
 named "universe" (never "general"); the goal era is OVER — not every task
 is a goal, the /goal long-horizon mode is deleted, and ONE turn engine
-(core/agent/turn_engine.py, the ZCode loop) runs every task. This file
+(core/agent/turn_engine.py, the Universe loop) runs every task. This file
 covers the v22/v25 contract:
 
 - the registry rename (universe in, general gone, model rows migrated),

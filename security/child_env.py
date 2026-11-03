@@ -55,7 +55,7 @@ def sanitize_env(env: dict[str, str] | None) -> dict[str, str]:
     """Sanitize an explicit env dict, then layer it on the sanitized parent.
 
     Used at spawn sites that accept caller-supplied env additions (shell._run,
-    windows_sandbox, MCP servers): additions survive unless they themselves
+    MCP servers): additions survive unless they themselves
     carry a denied name, in which case they are dropped — the deny rule always
     wins over caller overrides.
     """
