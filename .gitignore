@@ -56,3 +56,13 @@ dist-electron/main.js
 universe-memory.json
 
 test_file.txt
+
+# local captures & one-off artifacts (never publish)
+*.png
+!universe-agent-ui/client/public/*.png
+!universe-agent-ui/build/*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.webm
