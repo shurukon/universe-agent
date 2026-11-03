@@ -19,7 +19,10 @@ def test_registry_uses_zcode_names():
         assert retired not in names, f"{retired} should be gone"
 
 
-async def test_new_tools_run(tmp_path, monkeypatch):
+async def test_new_tools_run(fresh_home, tmp_path, monkeypatch):
+    # fresh_home: this test touches storage-backed singletons (hooks read the
+    # rules table) — without an isolated migrated home the file only passes
+    # when some earlier suite file happens to leave a migrated DB behind.
     from connectors.builtin import get_registry
     reg = get_registry()
     work = tmp_path / "proj"
@@ -94,11 +97,17 @@ def test_slash_registry_matches_zcode():
     for zcode_name in ("help", "login", "logout", "compact", "init", "expert",
                        "effort", "workflow", "workflows", "fork", "locale",
                        "mcp", "plugins", "mode", "model", "new", "resume",
-                       "rewind", "skill"):
+                       "sessions", "rewind", "skill"):
         # /goal deliberately absent — the goal era is over (2026-10-28)
         assert zcode_name in by_name, f"/{zcode_name} missing from BUILTINS"
     assert by_name["mode"].usage == "/mode [ask|plan|edit|full]"
     assert resolve("/continue")["command"]["name"] == "resume"
+    # /sessions — the fourth session command (new/fork/compact/sessions),
+    # parity with the CLI registry (cli/slash_commands.py §Sessions)
+    sessions = resolve("/sessions")
+    assert sessions is not None and sessions["kind"] == "builtin"
+    assert sessions["command"]["action"] == "sessions"
+    assert sessions["command"]["supported"] is True
     assert resolve("/settings") is not None
     assert resolve("C:/some/path") is None
     assert resolve("/definitely-not-a-command") is None

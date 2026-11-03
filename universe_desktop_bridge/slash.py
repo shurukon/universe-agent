@@ -58,6 +58,7 @@ BUILTINS: tuple[SlashCommand, ...] = (
     SlashCommand("model", "Show or switch the current session model.", "/model [list|main|lite|provider/model]", "model"),
     SlashCommand("new", "Start a fresh session.", "/new", "new"),
     SlashCommand("resume", "Resume a saved session.", "/resume [sessionId]", "resume", aliases=("continue",)),
+    SlashCommand("sessions", "List sessions (pass an id to switch).", "/sessions [sessionId]", "sessions"),
     SlashCommand("rewind", "Inspect or restore workspace checkpoints.", "/rewind [latest|checkpointId]", "rewind"),
     SlashCommand("skill", "List skills, or force the next prompt to load one.", "/skill [<skill-name> [task]]", "settings:skills"),
     # /goal is DELETED (2026-10-28): one turn engine runs every task —

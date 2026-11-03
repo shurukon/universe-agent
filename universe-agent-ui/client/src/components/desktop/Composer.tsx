@@ -383,6 +383,21 @@ export default function Composer({ centered = false }: { centered?: boolean }) {
       // /resume — pick a previous conversation from the sidebar
       void useChat.getState().refreshTasks();
       toast("Pick a previous chat in the sidebar to resume it");
+    } else if (action === "sessions") {
+      // /sessions — count the sessions behind the sidebar and surface it
+      void (async () => {
+        try {
+          void useChat.getState().refreshTasks();
+          const t = await api.goals(50);
+          toast(
+            t.goals.length
+              ? `${t.goals.length} session(s) — pick one in the sidebar to resume it`
+              : "No sessions yet — start a chat to create one"
+          );
+        } catch {
+          toast("Could not list sessions — is the bridge running?");
+        }
+      })();
     } else if (action === "model" || action === "effort") {
       taRef.current?.focus();
     }
