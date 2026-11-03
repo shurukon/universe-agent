@@ -6,11 +6,11 @@
  * The session title + its "…" menu live INSIDE the chat column's task
  * header (TaskHeader.tsx) — not in the window strip.
  */
-import { Minus, PanelRight, X } from "lucide-react";
+import { Minus, PanelRight, Sparkles, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { useUi } from "@/stores/ui";
 import { useRail } from "@/lib/flow/railStore";
-import { ArrowLeftIcon, ArrowRightIcon, PanelLeftIcon, ZCodeMark } from "./zcode-icons";
+import { ArrowLeftIcon, ArrowRightIcon, PanelLeftIcon, UniverseMark } from "./zcode-icons";
 
 type UniverseWin = {
   win?: (action: "minimize" | "maximize" | "close") => Promise<boolean>;
@@ -22,7 +22,7 @@ function preload(): UniverseWin | null {
 }
 
 export default function TopBar() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const toggleSidebar = useUi(s => s.toggleSidebar);
   const sidebarOpen = useUi(s => s.sidebarOpen);
   const canBack = useUi(s => s.canBack());
@@ -63,7 +63,7 @@ export default function TopBar() {
             aria-label="Toggle sidebar"
             aria-pressed={sidebarOpen}
           >
-            <ZCodeMark size={20} />
+            <UniverseMark size={20} />
             <span className="zsb-tb-logo-alt" aria-hidden="true">
               <PanelLeftIcon size={16} />
             </span>
@@ -89,6 +89,41 @@ export default function TopBar() {
             <ArrowRightIcon size={16} />
           </button>
         </span>
+
+        {/* Universe workspace toggle: Universe | Studio | Bots (+ Nebula).
+            Three separated work surfaces sharing one shell. */}
+        <nav className="zsb-ws-toggle" aria-label="Workspace switcher">
+          <button
+            type="button"
+            data-active={location === "/chat" || location === "/"}
+            onClick={() => navigate("/chat")}
+          >
+            Universe
+          </button>
+          <button
+            type="button"
+            data-active={location.startsWith("/studio")}
+            onClick={() => navigate("/studio")}
+          >
+            Studio
+          </button>
+          <button
+            type="button"
+            data-active={location.startsWith("/bots")}
+            onClick={() => navigate("/bots")}
+          >
+            Bots
+          </button>
+          <button
+            type="button"
+            data-active={location.startsWith("/nebula")}
+            onClick={() => navigate("/nebula")}
+            title="Nebula — memory"
+            aria-label="Nebula memory"
+          >
+            <Sparkles size={12} strokeWidth={1.8} />
+          </button>
+        </nav>
 
         <span className="zt-strip-flex" aria-hidden="true" />
 

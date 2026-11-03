@@ -241,7 +241,7 @@ body.side-off .sidebar {
             overflow-y: auto
 }
 .chat-inner {
-  max-width: 900px;
+  max-width: 990px;
             margin: 0 auto;
             padding: 14px 26px 24px;
             display: flex;
@@ -292,7 +292,7 @@ body.side-off .sidebar {
             padding: 4px 26px 14px
 }
 .composer {
-  max-width: 900px;
+  max-width: 990px;
             margin: 0 auto;
             transition: border-color .2s
 }
@@ -378,7 +378,7 @@ body.side-off .sidebar {
             animation: blink 1.7s ease infinite
 }
 .composer-hint {
-  max-width: 900px;
+  max-width: 990px;
             margin: 9px auto 0;
             text-align: center;
             font-size: 10.5px;
@@ -786,7 +786,7 @@ body.side-off .sidebar {
 .project-bar {
   display: flex; align-items: center; gap: 8px;
   min-height: 40px; padding: 0 6px 0 4px;
-  max-width: 900px; width: calc(100% - 52px); /* match .chat-inner padding */
+  max-width: 990px; width: calc(100% - 52px); /* match .chat-inner padding */
   margin: 0 auto;
   background: #232323;
   border-radius: 10px;

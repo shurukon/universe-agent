@@ -102,7 +102,26 @@ class VoiceEngine:
             return await self._transcribe_openai(pcm16, cfg)
         if provider == "groq":
             return await self._transcribe_groq(pcm16, cfg)
+        if provider == "meta":
+            return await self._transcribe_meta(pcm16, cfg)
         return await self._transcribe_local(pcm16, cfg)
+
+    async def _transcribe_meta(self, pcm16: bytes, cfg: dict[str, Any]) -> str:
+        """Meta Voice Transcribe — the REAL Meta Model API endpoint
+        (POST /asr/transcribe, model muse-voice-transcribe-1.0). The key
+        comes from Settings, MODEL_API_KEY, or the stored Meta provider key —
+        whichever resolves first."""
+        from providers.meta_media import resolve_key
+        from providers.meta_media import transcribe as _meta_transcribe
+        try:
+            key = await resolve_key(str(cfg.get("stt_api_key", "")) or None)
+        except Exception as exc:
+            raise RuntimeError(f"Meta STT unavailable: {exc}")
+        wav = _wav_bytes(pcm16)
+        text = await _meta_transcribe(key, wav, filename="audio.wav")
+        if not text:
+            raise RuntimeError("Meta STT returned an empty transcript")
+        return text
 
     async def _transcribe_local(self, pcm16: bytes, cfg: dict[str, Any]) -> str:
         # STT language follows Settings (Arabic installs transcribe Arabic):

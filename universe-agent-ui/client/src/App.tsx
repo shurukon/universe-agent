@@ -19,6 +19,9 @@ const LazyChat = lazy(() => import("./pages/Chat"));
 const LazySettings = lazy(() => import("./pages/Settings"));
 const LazyWelcome = lazy(() => import("./pages/Welcome"));
 const LazyAutomations = lazy(() => import("./pages/Automations"));
+const LazyBots = lazy(() => import("./pages/Bots"));
+const LazyStudio = lazy(() => import("./pages/Studio"));
+const LazyNebula = lazy(() => import("./pages/Nebula"));
 
 /**
  * First-run gate (W3): until the bridge reports setup_complete, the only
@@ -89,6 +92,30 @@ function Router() {
           component={() => (
             <Suspense fallback={<div className="page-loading" />}>
               <LazyChat />
+            </Suspense>
+          )}
+        />
+        <Route
+          path={"/bots"}
+          component={() => (
+            <Suspense fallback={<div className="page-loading" />}>
+              <LazyBots />
+            </Suspense>
+          )}
+        />
+        <Route
+          path={"/studio"}
+          component={() => (
+            <Suspense fallback={<div className="page-loading" />}>
+              <LazyStudio />
+            </Suspense>
+          )}
+        />
+        <Route
+          path={"/nebula"}
+          component={() => (
+            <Suspense fallback={<div className="page-loading" />}>
+              <LazyNebula />
             </Suspense>
           )}
         />

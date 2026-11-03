@@ -265,7 +265,7 @@ const SECTION_ALIAS: Record<string, TabId> = {
   indexing: "indexing",
 };
 
-const STT_PROVIDERS = ["local", "openai", "groq"];
+const STT_PROVIDERS = ["local", "openai", "groq", "meta"];
 const TTS_PROVIDERS = ["edge-tts", "openai", "fish-audio", "elevenlabs"];
 
 function Field({

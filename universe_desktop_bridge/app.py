@@ -38,7 +38,7 @@ import httpx  # noqa: F401  (used by _probe_provider / voice_check via local imp
 
 from loguru import logger
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -295,7 +295,15 @@ def reset_runtime_for_tests() -> Runtime:
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     _runtime.init()
+    # Universe Bots: the ROUTINE scheduler ticks bots.json every 30s and
+    # fires due daily/interval/cron schedules (TASK→SKILL→ROUTINE).
+    from bots.scheduler import get_scheduler
+    get_scheduler().start()
     yield
+    try:
+        await get_scheduler().stop()
+    except Exception:
+        pass
     # release pooled provider sockets (AsyncOpenAI connection pools) —
     # without this every restart leaks half-open TLS connections until
     # the OS reaps them
@@ -3127,3 +3135,427 @@ async def terminal_ws(ws: WebSocket) -> None:
             await ws.close()
         except Exception:
             pass
+
+
+# ==== Universe Bots · Studio · Nebula · Meta media (P0 2026-11) ==============
+
+class BotCreate(BaseModel):
+    name: str
+    description: str
+
+
+class BotRunReq(BaseModel):
+    task: str
+
+
+class SkillReq(BaseModel):
+    name: str
+
+
+class ScheduleReq(BaseModel):
+    kind: str = Field(pattern="^(none|daily|interval|cron)$")
+    time: str | None = None
+    expr: str | None = None
+    tz: str | None = None
+
+
+class ApprovalDecisionReq(BaseModel):
+    decision: str = Field(pattern="^(allow_once|always_allow|deny)$")
+
+
+class ImageReq(BaseModel):
+    prompt: str
+    size: str | None = None
+
+
+class NoteCreate(BaseModel):
+    title: str
+    content: str = ""
+
+
+class NoteUpdate(BaseModel):
+    content: str
+
+
+class DistillReq(BaseModel):
+    session_id: str | None = None
+
+
+class MetaTestReq(BaseModel):
+    key: str | None = None
+
+
+@app.get("/api/bots")
+async def bots_list() -> dict[str, Any]:
+    from bots import store
+    return {"bots": store.list_bots()}
+
+
+@app.post("/api/bots")
+async def bots_create(req: BotCreate) -> dict[str, Any]:
+    from bots import store
+    if not req.name.strip():
+        raise HTTPException(400, {"code": "bad_bot", "message": "name required"})
+    return {"bot": store.create_bot(req.name, req.description)}
+
+
+@app.get("/api/bots/{bot_id}")
+async def bots_get(bot_id: str) -> dict[str, Any]:
+    from bots import store
+    bot = store.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    return {**bot, "transcript": bot.get("transcript", [])}
+
+
+@app.delete("/api/bots/{bot_id}")
+async def bots_delete(bot_id: str) -> dict[str, Any]:
+    from bots import store
+    if not store.delete_bot(bot_id):
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    return {"ok": True}
+
+
+@app.post("/api/bots/{bot_id}/run")
+async def bots_run(bot_id: str, req: BotRunReq) -> dict[str, Any]:
+    from bots import runtime, store
+    if store.get_bot(bot_id) is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    if not req.task.strip():
+        raise HTTPException(400, {"code": "bad_task",
+                                  "message": "task text required"})
+    result = await runtime.request_run(bot_id, req.task.strip())
+    return {"ok": True, **result}
+
+
+@app.post("/api/bots/{bot_id}/stop")
+async def bots_stop(bot_id: str) -> dict[str, Any]:
+    from bots import runtime, store
+    if store.get_bot(bot_id) is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    stopped = runtime.stop_run(bot_id)
+    if stopped:
+        return {"ok": True}
+    raise HTTPException(409, {"code": "not_running",
+                              "message": "bot has no active run"})
+
+
+@app.post("/api/bots/{bot_id}/skill")
+async def bots_save_skill(bot_id: str, req: SkillReq) -> dict[str, Any]:
+    """TASK→SKILL: capture the last run's task + outcome as a method."""
+    from bots import store
+    bot = store.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    last_user = next((e["text"] for e in reversed(bot.get("transcript", []))
+                      if e.get("role") == "user"), "")
+    last_bot = next((e["text"] for e in reversed(bot.get("transcript", []))
+                     if e.get("role") == "bot"), "")
+    method = (f"# {req.name.strip().lstrip('/')}\n\n"
+              f"Job: {bot['description']}\n\n"
+              f"## Task\n{last_user}\n\n"
+              f"## Method / outcome\n{last_bot or '(no recorded output yet)'}\n")
+    skill = store.add_skill(bot_id, req.name, method)
+    store.append_event(bot_id, "system",
+                       f"Method saved as skill {skill} (run it on a schedule "
+                       "to complete TASK → SKILL → ROUTINE).")
+    return {"ok": True, "skill": skill}
+
+
+@app.post("/api/bots/{bot_id}/schedule")
+async def bots_schedule(bot_id: str, req: ScheduleReq) -> dict[str, Any]:
+    from bots import store
+    bot = store.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    sched: dict[str, Any] = {"kind": req.kind}
+    if req.kind == "daily":
+        if not req.time:
+            raise HTTPException(400, {"code": "bad_schedule",
+                                      "message": "daily needs a time (HH:MM)"})
+        sched["time"] = req.time
+        sched["tz"] = req.tz or "UTC"
+    elif req.kind == "interval":
+        if not req.expr:
+            raise HTTPException(400, {"code": "bad_schedule",
+                                      "message": "interval needs minutes"})
+        sched["expr"] = req.expr
+    elif req.kind == "cron":
+        if not req.expr:
+            raise HTTPException(400, {"code": "bad_schedule",
+                                      "message": "cron needs an expression"})
+        from scheduling.cron import CronSchedule
+        try:
+            CronSchedule(req.expr)
+        except Exception as exc:
+            raise HTTPException(400, {"code": "bad_cron",
+                                      "message": f"invalid cron: {exc}"})
+        sched["expr"] = req.expr
+    bot = store.update_bot(bot_id, schedule=sched)
+    assert bot is not None
+    return {"bot": bot}
+
+
+@app.post("/api/bots/{bot_id}/schedule/clear")
+async def bots_schedule_clear(bot_id: str) -> dict[str, Any]:
+    from bots import store
+    bot = store.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    bot = store.update_bot(bot_id, schedule={"kind": "none"})
+    assert bot is not None
+    return {"bot": bot}
+
+
+@app.get("/api/bots/{bot_id}/approvals")
+async def bots_approvals(bot_id: str) -> dict[str, Any]:
+    from bots import store
+    if store.get_bot(bot_id) is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    return {"approvals": store.list_approvals(bot_id)}
+
+
+@app.post("/api/bots/{bot_id}/approvals/{approval_id}")
+async def bots_approve(bot_id: str, approval_id: str,
+                       req: ApprovalDecisionReq) -> dict[str, Any]:
+    from bots import store
+    if store.get_bot(bot_id) is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    res = store.resolve_approval(bot_id, approval_id, req.decision)
+    if res is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    store.append_event(bot_id, "system",
+                       f"Approval {req.decision.replace('_', ' ')}.")
+    return {"ok": True}
+
+
+@app.get("/api/bots/{bot_id}/screen")
+async def bots_screen(bot_id: str) -> Response:
+    """The bot's screen panel: a live, honest view of the bot's machine —
+    status, latest transcript and the workspace file tree. Rendered for the
+    iframe (GET + ?token= auth is enforced by the bridge middleware)."""
+    import html as _html
+    from bots import store
+    bot = store.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(404, {"code": "bot_not_found",
+                                  "message": f"bot {bot_id!r} unknown"})
+    events = bot.get("transcript", [])[-14:]
+    rows = "".join(
+        f"<div class='ev {e.get('role')}'><span class='role'>"
+        f"{_html.escape(str(e.get('role')))}</span>"
+        f"<span class='txt'>{_html.escape(str(e.get('text'))[:300])}</span></div>"
+        for e in events)
+    ws_files = 0
+    try:
+        root = Path(bot.get("workspace") or "/nonexistent")
+        ws_files = sum(1 for p in root.rglob("*") if p.is_file())
+    except Exception:
+        ws_files = 0
+    doc = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="5">
+<title>{_html.escape(bot['name'])} — screen</title>
+<style>
+ body{{background:#05070d;color:#dbe6ff;font:13px/1.5 ui-monospace,monospace;margin:0;padding:14px}}
+ h1{{font-size:15px;color:#7db3ff;margin:0 0 4px}}
+ .sub{{color:#64748b;margin-bottom:10px}}
+ .ev{{display:flex;gap:8px;padding:5px 8px;margin:3px 0;border:1px solid rgba(125,160,255,.14);border-radius:8px;background:rgba(255,255,255,.03)}}
+ .ev.user{{border-color:rgba(91,157,255,.45)}}
+ .role{{color:#5b9dff;min-width:52px;text-transform:uppercase;font-size:10px;padding-top:2px}}
+ .txt{{flex:1;word-break:break-word}}
+ .badge{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(125,160,255,.3);margin-right:6px}}
+</style></head><body>
+<h1>{_html.escape(bot['name'])} <span class="badge">{bot['status']}</span>
+<span class="badge">workspace: {ws_files} files</span></h1>
+<div class="sub">{_html.escape(bot['description'][:200])}</div>
+{rows}
+</body></html>"""
+    return Response(content=doc, media_type="text/html")
+
+
+# ---- Meta media (real Meta Model API endpoints) -----------------------------
+
+@app.post("/api/meta/test")
+async def meta_test(req: MetaTestReq) -> dict[str, Any]:
+    """Real key test: GET https://api.meta.ai/v1/models with the key."""
+    from providers import meta_media
+    try:
+        key = await meta_media.resolve_key(req.key)
+        models = await meta_media.list_models(key)
+        return {"ok": True, "models": models}
+    except meta_media.MetaAPIError as exc:
+        raise HTTPException(exc.status if exc.status >= 400 else 502,
+                            {"code": "meta_error", "message": exc.message})
+
+
+@app.get("/api/meta/models")
+async def meta_models() -> dict[str, Any]:
+    from providers import meta_media
+    try:
+        key = await meta_media.resolve_key()
+        return {"models": await meta_media.list_models(key)}
+    except meta_media.MetaAPIError as exc:
+        raise HTTPException(exc.status if exc.status >= 400 else 502,
+                            {"code": "meta_error", "message": exc.message})
+
+
+@app.post("/api/meta/image")
+async def meta_image(req: ImageReq) -> dict[str, Any]:
+    """Muse Image — POST /v1/images/generations (model muse-image-1.0)."""
+    from providers import meta_media
+    try:
+        key = await meta_media.resolve_key()
+        return await meta_media.generate_image(key, req.prompt, req.size)
+    except meta_media.MetaAPIError as exc:
+        raise HTTPException(exc.status if exc.status >= 400 else 502,
+                            {"code": "meta_error", "message": exc.message})
+
+
+@app.post("/api/meta/transcribe")
+async def meta_transcribe(audio: "UploadFile" = None) -> dict[str, Any]:  # type: ignore[assignment]
+    """Muse Voice Transcribe — POST /asr/transcribe (one-shot). Non-WAV
+    uploads are converted to 16k mono WAV with the local ffmpeg first."""
+    import tempfile
+    from providers import meta_media
+    data = await audio.read()  # type: ignore[union-attr]
+    if not data:
+        raise HTTPException(400, {"code": "bad_audio",
+                                  "message": "empty audio upload"})
+    name = audio.filename or "audio.wav"  # type: ignore[union-attr]
+    encoding = "WAV"
+    if not name.lower().endswith(".wav"):
+        # browser MediaRecorder produces webm/opus — convert to WAV
+        try:
+            with tempfile.NamedTemporaryFile(suffix=Path(name).suffix or ".webm",
+                                             delete=False) as src:
+                src.write(data)
+                src_path = src.name
+            dst_path = src_path + ".wav"
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-y", "-v", "error", "-i", src_path,
+                "-ac", "1", "-ar", "16000", dst_path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE)
+            _, err = await proc.communicate()
+            if proc.returncode != 0:
+                raise RuntimeError(err.decode()[:200] or "ffmpeg failed")
+            data = Path(dst_path).read_bytes()
+            Path(src_path).unlink(missing_ok=True)
+            Path(dst_path).unlink(missing_ok=True)
+        except FileNotFoundError:
+            raise HTTPException(500, {"code": "ffmpeg_missing",
+                                      "message": "ffmpeg is required to "
+                                                 "convert microphone audio"})
+        except Exception as exc:
+            raise HTTPException(500, {"code": "audio_convert_failed",
+                                      "message": f"audio conversion failed: {exc}"})
+    try:
+        key = await meta_media.resolve_key()
+        text = await meta_media.transcribe(key, data, filename="audio.wav",
+                                           encoding=encoding)
+        return {"text": text}
+    except meta_media.MetaAPIError as exc:
+        raise HTTPException(exc.status if exc.status >= 400 else 502,
+                            {"code": "meta_error", "message": exc.message})
+
+
+# ---- Studio services (AVE · open-design · Blender MCP) ----------------------
+
+@app.get("/api/studio/services")
+async def studio_services() -> dict[str, Any]:
+    from universe_desktop_bridge import studio
+    return {"services": await studio.list_services()}
+
+
+@app.post("/api/studio/services/{sid}/start")
+async def studio_start(sid: str) -> dict[str, Any]:
+    from universe_desktop_bridge import studio
+    if sid not in studio.SERVICES:
+        raise HTTPException(404, {"code": "service_unknown",
+                                  "message": f"studio service {sid!r} unknown"})
+    return await studio.start_service(sid)
+
+
+@app.post("/api/studio/services/{sid}/stop")
+async def studio_stop(sid: str) -> dict[str, Any]:
+    from universe_desktop_bridge import studio
+    if sid not in studio.SERVICES:
+        raise HTTPException(404, {"code": "service_unknown",
+                                  "message": f"studio service {sid!r} unknown"})
+    return await studio.stop_service(sid)
+
+
+# ---- Nebula (Memory — Obsidian-like vault) ----------------------------------
+
+@app.get("/api/nebula/notes")
+async def nebula_notes() -> dict[str, Any]:
+    from nebula import vault
+    return {"notes": vault.list_notes()}
+
+
+@app.post("/api/nebula/notes")
+async def nebula_create(req: NoteCreate) -> dict[str, Any]:
+    from nebula import vault
+    if not req.title.strip():
+        raise HTTPException(400, {"code": "bad_note",
+                                  "message": "title required"})
+    note = vault.create_note(req.title, req.content)
+    note.pop("content", None)
+    return {"note": note}
+
+
+@app.get("/api/nebula/notes/{note_id}")
+async def nebula_get(note_id: str) -> dict[str, Any]:
+    from nebula import vault
+    note = vault.get_note(note_id)
+    if note is None:
+        raise HTTPException(404, {"code": "note_not_found",
+                                  "message": f"note {note_id!r} unknown"})
+    return {"note": note}
+
+
+@app.put("/api/nebula/notes/{note_id}")
+async def nebula_update(note_id: str, req: NoteUpdate) -> dict[str, Any]:
+    from nebula import vault
+    note = vault.update_note(note_id, req.content)
+    if note is None:
+        raise HTTPException(404, {"code": "note_not_found",
+                                  "message": f"note {note_id!r} unknown"})
+    note.pop("content", None)
+    return {"note": note}
+
+
+@app.delete("/api/nebula/notes/{note_id}")
+async def nebula_delete(note_id: str) -> dict[str, Any]:
+    from nebula import vault
+    if not vault.delete_note(note_id):
+        raise HTTPException(404, {"code": "note_not_found",
+                                  "message": f"note {note_id!r} unknown"})
+    return {"ok": True}
+
+
+@app.get("/api/nebula/graph")
+async def nebula_graph() -> dict[str, Any]:
+    from nebula import vault
+    return vault.graph()
+
+
+@app.post("/api/nebula/distill")
+async def nebula_distill(req: DistillReq) -> dict[str, Any]:
+    """Dust → Stars: condense a session transcript into a linked note."""
+    from nebula import vault
+    try:
+        return await vault.distill(req.session_id)
+    except ValueError as exc:
+        raise HTTPException(400, {"code": "distill_failed",
+                                  "message": str(exc)})

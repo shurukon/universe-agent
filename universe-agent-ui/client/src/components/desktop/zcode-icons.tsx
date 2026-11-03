@@ -201,6 +201,64 @@ export function EllipsisIcon(props: ZcIconProps) {
   );
 }
 
+/** Universe brand mark: a glowing galaxy core with the 8-symbol ring
+ *  (Stars · Blackholes · Orbits · Galaxies · Nebula · Dust · Probes ·
+ *  Planet around the Universe center). Vector twin of the approved logo. */
+export function UniverseMark({ size = 20 }: { size?: number }) {
+  const ring = [0, 45, 90, 135, 180, 225, 270, 315];
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <radialGradient id="uv-mark-core" cx="50%" cy="45%" r="60%">
+          <stop offset="0%" stopColor="#dcebff" />
+          <stop offset="55%" stopColor="#5b9dff" />
+          <stop offset="100%" stopColor="#17458f" />
+        </radialGradient>
+      </defs>
+      <circle
+        cx="12"
+        cy="12"
+        r="9.2"
+        stroke="rgba(125,160,255,0.35)"
+        strokeWidth="0.8"
+      />
+      {ring.map(a => (
+        <circle
+          key={a}
+          cx={12 + 9.2 * Math.cos((a * Math.PI) / 180)}
+          cy={12 + 9.2 * Math.sin((a * Math.PI) / 180)}
+          r={1.15}
+          fill="#7db3ff"
+          opacity={0.9}
+        />
+      ))}
+      <circle cx="12" cy="12" r="3.4" fill="url(#uv-mark-core)" />
+      <path
+        d="M12 12 C 14.8 10.1, 16.6 12.7, 14.3 14.7"
+        stroke="#8fc0ff"
+        strokeWidth="1.15"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M12 12 C 9.2 13.9, 7.4 11.3, 9.7 9.3"
+        stroke="#5b9dff"
+        strokeWidth="1.15"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 /** The app mark the reference window shows in the top-left tile. */
 export function ZCodeMark({ size = 20 }: { size?: number }) {
   return (

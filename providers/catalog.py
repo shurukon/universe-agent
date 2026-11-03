@@ -155,6 +155,19 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
     ),
     # ---- paid cloud --------------------------------------------------------
     ProviderPreset(
+        name="Meta",
+        base_url="https://api.meta.ai/v1",
+        category="paid",
+        # muse-wonder-1.0 is Meta's frontier model (1M ctx); muse-spark-1.3
+        # is the fast/cheap tier. Media models (Muse Image, Muse Voice
+        # Transcribe, SAM 3.1) are served by providers/meta_media.py, not
+        # by chat routing.
+        models=["muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.2"],
+        key_url="https://dev.meta.ai/",
+        note="Meta Model API — OpenAI-compatible. Also powers Muse Code "
+             "(bots runtime), Muse Image and Voice Transcribe.",
+    ),
+    ProviderPreset(
         name="OpenAI",
         base_url="https://api.openai.com/v1",
         category="paid",

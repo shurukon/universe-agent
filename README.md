@@ -193,3 +193,18 @@ licensing rationale.
 ## License
 
 MIT © 2026 Universe Agent
+
+---
+
+## What's new — Nov 2026 (Meta Global AI Developer Hackathon)
+
+Universe now integrates Meta's models **for real, end to end**: the **Meta**
+provider (OpenAI-compatible `api.meta.ai/v1`) with `muse-wonder-1.0` /
+`muse-spark-1.3` for reasoning, **Muse Image**, **Muse Voice Transcribe**
+(including the voice channel's STT), and **Muse Code as the bots runtime**.
+Three work surfaces share one shell toggle — **Universe · Studio · Bots** —
+plus **Nebula**, an Obsidian-like memory vault with `[[wikilinks]]`,
+backlinks, a constellation graph and session distillation (Dust → Stars).
+Bots follow *one bot, one job* with the TASK → SKILL → ROUTINE lifecycle and
+an approvals queue for risky steps. Details and the demo script:
+[docs/SUBMISSION_META_HACKATHON.md](docs/SUBMISSION_META_HACKATHON.md).

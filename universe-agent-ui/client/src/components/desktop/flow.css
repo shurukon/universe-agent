@@ -39,7 +39,7 @@
 
 /* ---- composer running tag + bridge connection dot ---- */
 .steer-tag {
-  max-width: 900px;
+  max-width: 990px;
   width: calc(100% - 52px);
   margin: 0 auto 6px;
   font-size: 11px;
@@ -362,7 +362,7 @@
 
 /* ---- the inline consent banner (docked above the composer) ---- */
 .consent-banner {
-  max-width: 900px;
+  max-width: 990px;
   width: calc(100% - 52px);
   margin: 0 auto 8px;
   display: flex;
