@@ -54,10 +54,12 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
+  driveAve,
   generateImage,
   listServices,
   startService,
   stopService,
+  type AveDriveResult,
   type ImageResult,
   type StudioService,
   type StudioServiceId,
@@ -523,6 +525,76 @@ function MuseCard({
   );
 }
 
+/* ---- AVE drive bar (Video mode): Universe edits the timeline from chat --- */
+
+function AveDriveBar({
+  instruction,
+  onInstruction,
+  busy,
+  result,
+  onDrive,
+}: {
+  instruction: string;
+  onInstruction: (value: string) => void;
+  busy: boolean;
+  result: AveDriveResult | null;
+  onDrive: () => void;
+}) {
+  return (
+    <div className="shrink-0 px-3 pb-3">
+      <div className="flex items-center gap-3 rounded-xl border border-[#7da0ff]/[0.14] bg-white/[0.02] p-2.5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#5b9dff]/10 text-[#5b9dff]">
+          <Clapperboard className="size-4" />
+        </span>
+        <div className="w-28 shrink-0">
+          <p className="text-xs font-medium text-slate-200">Universe drives AVE</p>
+          <p className="text-[11px] leading-snug text-slate-500">
+            Edit the timeline from chat via MCP
+          </p>
+        </div>
+        <Input
+          value={instruction}
+          onChange={e => onInstruction(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter" && instruction.trim() && !busy) onDrive();
+          }}
+          disabled={busy}
+          placeholder="Split the first clip and add a fade…"
+          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-slate-200 placeholder:text-slate-600"
+        />
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy || !instruction.trim()}
+          onClick={onDrive}
+          className={cn("h-9 shrink-0 gap-1.5", ACCENT_BTN)}
+        >
+          {busy ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Clapperboard className="size-3.5" />
+          )}
+          Drive
+        </Button>
+      </div>
+      {result ? (
+        <p className="mt-1.5 px-1 text-[11px] leading-snug text-slate-500">
+          {result.tool ? (
+            <>
+              Tool <span className="text-[#7db3ff]">{result.tool}</span> executed
+              {result.result?.isError
+                ? " — AVE reported an error"
+                : " ✓ — watch the embedded editor update"}
+            </>
+          ) : (
+            result.reason
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /* ---- composer (fixed bottom) ---------------------------------------------- */
 
 function Composer({
@@ -642,7 +714,29 @@ export default function Studio() {
   const [musePrompt, setMusePrompt] = useState("");
   const [museImage, setMuseImage] = useState<ImageResult | null>(null);
   const [museBusy, setMuseBusy] = useState(false);
+  // AVE driving state (Video mode): NL instruction → one MCP tool call
+  const [aveInstruction, setAveInstruction] = useState("");
+  const [aveResult, setAveResult] = useState<AveDriveResult | null>(null);
+  const [aveBusy, setAveBusy] = useState(false);
   const fetchingRef = useRef(false);
+
+  const runAve = async () => {
+    const instruction = aveInstruction.trim();
+    if (!instruction || aveBusy) return;
+    setAveBusy(true);
+    try {
+      const res = await driveAve(instruction);
+      setAveResult(res);
+      if (res.tool) toast.success(`AVE: ${res.tool}`);
+      else toast.info(res.reason ?? "No suitable AVE tool for that");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "AVE is not reachable",
+      );
+    } finally {
+      setAveBusy(false);
+    }
+  };
 
   /* polling: 8s heartbeat, tightened to 3s while anything is "starting" */
   const refresh = useCallback(async () => {
@@ -941,6 +1035,17 @@ export default function Studio() {
                       busy={museBusy}
                       image={museImage}
                       onGenerate={() => void runMuse(musePrompt)}
+                    />
+                  </div>
+                ) : mode === "video" ? (
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="min-h-0 flex-1 p-3 pb-2">{body}</div>
+                    <AveDriveBar
+                      instruction={aveInstruction}
+                      onInstruction={setAveInstruction}
+                      busy={aveBusy}
+                      result={aveResult}
+                      onDrive={() => void runAve()}
                     />
                   </div>
                 ) : (

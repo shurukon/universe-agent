@@ -193,3 +193,47 @@ export async function generateImage(
     })
   );
 }
+
+/* ---- AVE MCP driving (Universe edits the timeline from chat) --------------- */
+
+export interface AveTool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+export interface AveDriveResult {
+  tool: string | null;
+  arguments?: Record<string, unknown>;
+  result?: { isError?: boolean; data?: unknown; structured?: unknown };
+  reason?: string;
+  raw?: string;
+}
+
+export async function listAveTools(): Promise<{
+  ok: boolean;
+  reachable: boolean;
+  tools: AveTool[];
+  message?: string;
+}> {
+  return studioRequest("/api/studio/ave/tools");
+}
+
+export async function driveAve(instruction: string): Promise<AveDriveResult> {
+  return studioRequest("/api/studio/ave/act", {
+    method: "POST",
+    body: JSON.stringify({ instruction }),
+  });
+}
+
+/* ---- SAM 3.1 segmentation (Meta Model API /v1/responses) ------------------ */
+
+export async function segmentImage(
+  prompt: string,
+  imageUrl: string,
+): Promise<{ output: string }> {
+  return studioRequest("/api/meta/segment", {
+    method: "POST",
+    body: JSON.stringify({ prompt, image_url: imageUrl }),
+  });
+}

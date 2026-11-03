@@ -146,6 +146,9 @@ async def _run_muse(bot_id: str, bot: dict[str, Any], task: str,
     prompt = task if not skill else (
         f"Run the saved routine {skill}. Job definition: {bot['description']}\n\n"
         f"Current task: {task}")
+    prompt += ("\n\nShared computer: all Universe bots can read and write "
+               f"files under {store.shared_dir()} — write your outputs there "
+               "and read other bots' outputs from there.")
     prompt_file.write_text(prompt, encoding="utf-8")
     cmd = [muse_bin, "exec", "--json", "--provider", "meta",
            "--prompt-file", str(prompt_file)]
@@ -241,7 +244,9 @@ async def _run_llm(bot_id: str, bot: dict[str, Any],
                          f"{bot['description']} Complete the task and report "
                          "the outcome concisely. If the task requires an "
                          "action you cannot take (sending email, purchasing, "
-                         "publishing), say exactly what you would do and stop.")},
+                         "publishing), say exactly what you would do and stop. "
+                         f"Shared computer: write outputs under "
+                         f"{store.shared_dir()} so other bots can read them.")},
             {"role": "user", "content": task},
         ]
         res = await client.complete(agent="bots", messages=messages)

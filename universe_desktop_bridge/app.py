@@ -3362,6 +3362,12 @@ async def bots_screen(bot_id: str) -> Response:
         ws_files = sum(1 for p in root.rglob("*") if p.is_file())
     except Exception:
         ws_files = 0
+    shared = store.shared_files()
+    shared_rows = "".join(
+        f"<div class='file'>{_html.escape(f['name'])}" 
+        f"<span class='sz'>{f['size']}B</span></div>"
+        for f in shared[:12]) or \
+        "<div class='file'>(shared computer is empty — bots write here)</div>"
     doc = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="5">
 <title>{_html.escape(bot['name'])} — screen</title>
@@ -3374,13 +3380,77 @@ async def bots_screen(bot_id: str) -> Response:
  .role{{color:#5b9dff;min-width:52px;text-transform:uppercase;font-size:10px;padding-top:2px}}
  .txt{{flex:1;word-break:break-word}}
  .badge{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(125,160,255,.3);margin-right:6px}}
+ h2{{font-size:11px;color:#7db3ff;text-transform:uppercase;letter-spacing:.12em;margin:14px 0 4px}}
+ .file{{display:flex;justify-content:space-between;gap:8px;padding:3px 8px;margin:2px 0;border-radius:6px;background:rgba(255,255,255,.02)}}
+ .sz{{color:#64748b}}
 </style></head><body>
 <h1>{_html.escape(bot['name'])} <span class="badge">{bot['status']}</span>
 <span class="badge">workspace: {ws_files} files</span></h1>
 <div class="sub">{_html.escape(bot['description'][:200])}</div>
 {rows}
+<h2>Shared computer</h2>
+{shared_rows}
 </body></html>"""
     return Response(content=doc, media_type="text/html")
+
+
+# ---- Bots shared computer + Studio MCP driving + SAM 3.1 --------------------
+
+@app.get("/api/bots/shared/files")
+async def bots_shared_files() -> dict[str, Any]:
+    """The bots' shared computer: one directory every bot reads/writes —
+    the files substrate bot collaboration flows through."""
+    from bots import store
+    return {"path": str(store.shared_dir()), "files": store.shared_files()}
+
+
+class AveActReq(BaseModel):
+    instruction: str
+
+
+class SegmentReq(BaseModel):
+    prompt: str
+    image_url: str
+
+
+@app.get("/api/studio/ave/tools")
+async def studio_ave_tools() -> dict[str, Any]:
+    """Live tool catalog from AVE's MCP server (JSON-RPC tools/list)."""
+    from universe_desktop_bridge import studio_mcp
+    try:
+        tools = await studio_mcp.list_tools()
+        return {"ok": True, "reachable": True, "tools": tools}
+    except studio_mcp.AveMcpError as exc:
+        return {"ok": False, "reachable": exc.reachable, "tools": [],
+                "message": exc.message}
+
+
+@app.post("/api/studio/ave/act")
+async def studio_ave_act(req: AveActReq) -> dict[str, Any]:
+    """Universe drives AVE: a natural-language instruction → the configured
+    LLM picks ONE tool from the LIVE catalog → a real JSON-RPC tools/call.
+    Honest errors when AVE is not running."""
+    from universe_desktop_bridge import studio_mcp
+    try:
+        return await studio_mcp.drive(req.instruction)
+    except studio_mcp.AveMcpError as exc:
+        raise HTTPException(503 if not exc.reachable else 502,
+                            {"code": "ave_mcp", "message": exc.message})
+
+
+@app.post("/api/meta/segment")
+async def meta_segment(req: SegmentReq) -> dict[str, Any]:
+    """SAM 3.1 media segmentation — POST /v1/responses (model "sam-3.1"):
+    a noun-phrase prompt + one input_image; returns the special-token text
+    (one box + one mask per match)."""
+    from providers import meta_media
+    try:
+        key = await meta_media.resolve_key()
+        output = await meta_media.segment(key, req.prompt, req.image_url)
+        return {"output": output}
+    except meta_media.MetaAPIError as exc:
+        raise HTTPException(exc.status if exc.status >= 400 else 502,
+                            {"code": "meta_error", "message": exc.message})
 
 
 # ---- Meta media (real Meta Model API endpoints) -----------------------------

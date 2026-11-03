@@ -169,3 +169,17 @@ def test_schedule_validation_rejects_unknown_kind():
     assert got is not None
     with pytest.raises(ValueError):
         store.set_status(bot["id"], "bogus")
+
+
+def test_shared_computer(fresh_home):
+    """One shared directory all bots read/write — the collaboration
+    substrate (one bot writes, another reads)."""
+    shared = store.shared_dir()
+    assert shared.exists()
+    (shared / "digest.md").write_text("# weekly digest", encoding="utf-8")
+    files = store.shared_files()
+    assert any(f["name"] == "digest.md" for f in files)
+    assert files[0]["size"] > 0
+    # a second bot sees the same substrate — no per-bot isolation there
+    bot = store.create_bot("Reader", "reads what other bots write")
+    assert bot["workspace"] != str(shared)  # own workspace, shared substrate

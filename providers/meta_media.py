@@ -153,3 +153,59 @@ async def transcribe(key: str, audio: bytes, filename: str = "audio.wav",
             text = " ".join(str(s.get("text") or "") for s in body["segments"])
         return str(text).strip()
     return resp.text.strip()
+
+
+async def segment(key: str, text: str, image_url: str) -> str:
+    """SAM 3.1 media segmentation — POST /v1/responses with model "sam-3.1":
+    a noun-phrase prompt + one input_image. The model answers with
+    special-token text (one box + one mask per match). Handles both the
+    buffered JSON shape and the SSE stream shape."""
+    url = f"{api_base()}/v1/responses"
+    payload = {
+        "model": "sam-3.1",
+        "input": [{
+            "type": "message",
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": text},
+                {"type": "input_image", "image_url": image_url},
+            ],
+        }],
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        resp = await client.post(url, headers={**_headers(key),
+                                              "Content-Type": "application/json"},
+                                 content=json.dumps(payload))
+    if resp.status_code in (401, 403):
+        raise MetaAPIError(resp.status_code, "Meta rejected the API key "
+                           f"(HTTP {resp.status_code}).")
+    if resp.status_code != 200:
+        raise MetaAPIError(resp.status_code,
+                           f"SAM 3.1 failed (HTTP {resp.status_code}).")
+    ctype = resp.headers.get("content-type", "")
+    if "text/event-stream" in ctype:
+        deltas: list[str] = []
+        for raw_line in resp.text.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("data: "):
+                continue
+            chunk = line[len("data: "):]
+            if chunk == "[DONE]":
+                break
+            try:
+                event = json.loads(chunk)
+            except Exception:
+                continue
+            if event.get("type") == "response.output_text.delta":
+                deltas.append(str(event.get("delta") or ""))
+        return "".join(deltas).strip()
+    body = resp.json()
+    if isinstance(body.get("output_text"), str) and body["output_text"]:
+        return body["output_text"].strip()
+    pieces: list[str] = []
+    for item in body.get("output") or []:
+        for part in (item.get("content") or []):
+            if isinstance(part, dict) and part.get("text"):
+                pieces.append(str(part["text"]))
+    return "\n".join(pieces).strip()

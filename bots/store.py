@@ -226,6 +226,30 @@ def resolve_approval(bot_id: str, approval_id: str,
         return {"ok": removed}
 
 
+def shared_dir() -> Path:
+    """The bots' SHARED COMPUTER (Grok-Bot parity): one directory every bot
+    can read and write — the files substrate bots collaborate through (one
+    bot writes a file, another reads it)."""
+    d = get_config().home / "bot-shared"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def shared_files() -> list[dict[str, Any]]:
+    root = shared_dir()
+    out = []
+    for p in sorted(root.rglob("*")):
+        if p.is_file():
+            try:
+                st = p.stat()
+                out.append({"name": str(p.relative_to(root)),
+                            "size": st.st_size,
+                            "mtime": _iso(st.st_mtime)})
+            except OSError:
+                continue
+    return out[:200]
+
+
 def to_public(bot: dict[str, Any], *, include_transcript: bool = False) -> dict[str, Any]:
     out = {
         "id": bot["id"],
