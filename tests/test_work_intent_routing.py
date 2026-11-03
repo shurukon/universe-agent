@@ -29,29 +29,8 @@ from test_honesty_fixes import _MockOpenAI, _install_mock_provider
 
 
 # ---------------------------------------------------------------- mock LLM
-@pytest.fixture(scope="module")
-def mock_llm():
-    """Reuse the shared mock LLM server on :8399 (started by whichever
-    module needs it first); otherwise start a fresh one."""
-    import time
-    import urllib.request
-
-    def _alive(port: int) -> bool:
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models",
-                                        timeout=2) as r:
-                return r.status == 200
-        except Exception:
-            return False
-
-    if _alive(8399):
-        yield None
-        return
-    srv = _MockOpenAI()
-    srv.start()
-    yield srv
-    srv.should_exit = True
-    time.sleep(0.05)
+# mock_llm now lives session-scoped in conftest.py (one server per run —
+# the module-scoped copy raced the honesty module's teardown on :8399).
 
 
 class TestOneEngineRoutesEverything:

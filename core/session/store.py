@@ -75,7 +75,9 @@ class SessionStore:
         entries = self.transcript(session_id); msgs: list[dict[str, Any]] = []
         for e in entries:
             if exclude_seq and e.get("seq") == exclude_seq: continue
-            kind = e.get("kind", "message"); role = e.get("role", "user")
+            kind = e.get("kind", "message")
+            if kind in ("turn_start", "turn_end", "reflected"): continue  # bookkeeping metadata — never replayed
+            role = e.get("role", "user")
             if kind == "synthetic": msgs.append({"role": "system", "content": e.get("content",""), "kind": "synthetic", "preCompactTokenCount": e.get("preCompactTokenCount"), "postCompactTokenCount": e.get("postCompactTokenCount")})
             elif role == "tool": msgs.append({"role": "tool", "tool_call_id": e.get("tool_call_id",""), "content": e.get("content","")})
             elif role == "assistant" and e.get("tool_calls"): msgs.append({"role": "assistant", "content": e.get("content") or None, "tool_calls": e["tool_calls"]})

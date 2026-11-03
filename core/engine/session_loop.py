@@ -30,6 +30,72 @@ def _new_turn_id() -> str:
     return "turn-" + uuid.uuid4().hex[:12]
 
 
+# The session engine's context window matches the turn engine's default
+# (run_turn's context_window_tokens=32_000): both compaction layers trip
+# on the same budget.
+SESSION_CONTEXT_WINDOW_TOKENS = 32_000
+
+
+async def maybe_compact(*, session_id: str, llm_client: Any,
+                        model: str = "") -> bool:
+    """P3 — the ONE compute-based compaction (85% of the window).
+
+    Runs over the transcript replay before a turn: when the replayed
+    history approaches the model window, the older middle is summarized
+    with the model (the CC /compact template — section 6 keeps every user
+    message verbatim) and recorded as a synthetic compaction marker in
+    the transcript. Replay then carries the summary, not the old rows —
+    compaction is a LOGGED transcript event, exactly the Codex semantics.
+    Falls back to the keyword heuristic (user messages preserved verbatim
+    in the marker) when the model summary fails; returns False when
+    nothing compacted."""
+    from context.compaction import (compact_messages, compact_with_model,
+                                    context_window_for_model,
+                                    should_compact)
+    from core.agent.base_agent import _approx_tokens
+    from core.session.store import get_session_store
+    store = get_session_store()
+    msgs = store.history_messages(session_id)
+    if len(msgs) < 8:
+        return False
+    window = (context_window_for_model(model) if model
+              else SESSION_CONTEXT_WINDOW_TOKENS)
+    pre = _approx_tokens(msgs)
+    if not should_compact(pre, window):
+        return False
+    compacted = await compact_with_model(msgs, llm_client, agent="universe")
+    if not compacted:
+        # honest heuristic fallback — the transcript still gets ONE summary
+        msgs[:] = compact_messages(msgs)
+    summary = next(
+        (str(m.get("content") or "") for m in reversed(msgs)
+         if m.get("role") == "system"
+         and str(m.get("content") or "").startswith(
+             ("Prior context summary", "Compacted prior context",
+              "[prior context compacted]"))),
+        "")
+    if not summary:
+        return False
+    if not compacted:
+        # the heuristic summary drops user turns from its text — keep every
+        # user message verbatim in the marker so constraints outlive it
+        keep = [str(m.get("content") or "") for m in msgs
+                if m.get("role") == "user"]
+        if keep:
+            summary += "\n\nPreserved verbatim (user messages):\n" + "\n".join(
+                f"- {k}" for k in keep)[-12000:]
+    store.compact_separator(session_id, pre, _approx_tokens(msgs),
+                            summary[:16000])
+    try:
+        from observability.events import emit
+        emit("context_compaction", session_id=session_id,
+             pre_tokens=pre, post_tokens=_approx_tokens(msgs),
+             model_summarized=compacted)
+    except Exception:
+        pass
+    return True
+
+
 def _summarize_tool_events(events: list[dict[str, Any]],
                            started_at: float) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
     """Fold raw engine tool events into (tools_used, tool_history, tool_failures)."""
@@ -108,6 +174,11 @@ async def run_session_turn(
         except Exception:
             pass
 
+    # ---- the m3 event spine opens with a metadata row (no role) -------
+    store.append(session_id, {"kind": "turn_start", "turn_id": turn_id,
+                              "status": "executing",
+                              "engine": "session"})
+
     async def _maybe_step(payload: dict[str, Any]) -> None:
         if on_step is None:
             return
@@ -125,10 +196,18 @@ async def run_session_turn(
     timeline_record(turn_id, agent="universe", event="turn_start",
                     detail=str(text)[:200])
 
-    # ---- append-only: the user turn enters the transcript FIRST -------
+    # ---- append-only: the user message is the canonical replay row -----
     user_seq = store.append(session_id, {
-        "kind": "turn_start", "role": "user", "content": str(text),
+        "kind": "message", "role": "user", "content": str(text),
         "turn_id": turn_id, "engine": "session"})
+
+    # ---- P3: the ONE compaction pass (85% of the window) runs over the
+    # replay BEFORE context assembly — a logged transcript event, never a
+    # turn blocker.
+    try:
+        await maybe_compact(session_id=session_id, llm_client=llm_client)
+    except Exception:
+        pass
 
     # ---- context assembly: full transcript replay (no 24x4000 cut) ----
     history = store.history_messages(session_id, exclude_seq=user_seq)
@@ -153,8 +232,7 @@ async def run_session_turn(
         # exception propagates to the caller (no silent swallowed turns)
         try:
             store.append(session_id, {
-                "kind": "turn_end", "role": "assistant", "content": "",
-                "turn_id": turn_id, "engine": "session",
+                "kind": "turn_end", "turn_id": turn_id,
                 "status": "failed",
                 "error": str(exc)[:500],
                 "stop_reason": type(exc).__name__})
@@ -187,9 +265,8 @@ async def run_session_turn(
             "kind": "message", "role": "assistant", "content": reply,
             "turn_id": turn_id, "engine": "session"})
     store.append(session_id, {
-        "kind": "turn_end", "role": "assistant", "content": reply,
-        "turn_id": turn_id, "engine": "session",
-        "status": "completed", "stop_reason": str(turn_out.stop_reason),
+        "kind": "turn_end", "turn_id": turn_id, "status": "completed",
+        "stop_reason": str(turn_out.stop_reason),
         "steps": turn_out.steps, "tool_calls_total": turn_out.tool_calls_total})
 
     # ---- the same truth envelope: verified tool results are the record -
@@ -199,10 +276,9 @@ async def run_session_turn(
     pkg.is_knowledge_based = bool(tools_used) or pkg.is_knowledge_based
 
     completed_at = time.time()
-    try:
-        in_t, out_t = llm_client.session_tokens()
-    except Exception:
-        in_t = out_t = 0
+    # measured, not faked: the final completion's own usage counts (m3)
+    in_t = int(getattr(resp, "input_tokens", 0) or 0)
+    out_t = int(getattr(resp, "output_tokens", 0) or 0)
     try:
         llm_calls = len(llm_client.call_log())
     except Exception:

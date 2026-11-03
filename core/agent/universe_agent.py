@@ -221,8 +221,12 @@ class UniverseAgent:
         replayed as context, and closed with a turn_end event. The tool
         loop still runs on the same ZCode turn engine and the Capability
         Gate still guards every call. GAX_ENGINE=goal restores the legacy
-        goal-state path until it is deleted after the burn-in period."""
-        import os as _os
+        goal-state path until it is deleted after the burn-in period.
+
+        This thin binding resolves the session + project root and hands
+        off to core.engine.session_loop.run_session_turn — the one and
+        only session loop (context assembly, append-only persistence and
+        the session-shaped summary envelope live there)."""
         from core.session.store import get_session_store
         store = get_session_store()
         sid = str(session_id or "").strip()
@@ -233,15 +237,6 @@ class UniverseAgent:
                 pass
         if not sid or store.get(sid) is None:
             sid = store.create(title=str(text)[:120])["id"]
-        store.append(sid, {"kind": "turn_start", "turn_id": turn_id,
-                           "status": "executing"})
-        store.append(sid, {"kind": "message", "role": "user",
-                           "content": str(text), "turn_id": turn_id})
-        if on_step:
-            await self._maybe_call(on_step, {"phase": "agent_turn",
-                                             "agent": "universe", "step": 0,
-                                             "instruction": str(text)[:200]})
-        history = store.history_messages(sid)
         effective_root = str(project_root or "")
         if not effective_root and project_id:
             try:
@@ -258,49 +253,21 @@ class UniverseAgent:
                 effective_root = str(get_config().get("project_root", "") or "")
             except Exception:
                 effective_root = ""
-        messages = self._build_turn_messages(
-            goal_text=str(text), language=str(language or "en"),
-            history=history[:-1], l4_skills=[], l3_stars=[],
-            rules=self.memory.active_rules(), project_root=effective_root)
-        from core.agent.steer import take_steer as _take_steer
-        token_budget = EFFORT_MAX_TOKENS.get(
-            str(effort or ""), EFFORT_DEFAULT_MAX_TOKENS)
-        gate = capability_gate or get_gate()
-        from core.agent.turn_engine import run_turn as _engine_turn
-        try:
-            resp, events, turn_out = await _engine_turn(
-                llm_client=self.llm, messages=messages, agent="universe",
-                turn_id=turn_id, capability_gate=gate,
-                max_tokens=token_budget,
-                drain_steer=lambda: [str(m.get("text", ""))
-                                     for m in _take_steer(turn_id)])
-        except Exception as e:                                   # honest failure
-            store.append(sid, {"kind": "turn_end", "turn_id": turn_id,
-                               "status": "failed", "stop_reason": "error",
-                               "error": str(e)[:500]})
-            return {"engine": "session", "session_id": sid,
-                    "turn_id": turn_id, "success": False,
-                    "reply": f"Turn failed: {e}", "steps": [],
-                    "tools_used": []}
-        reply = str(resp.text or "").strip()
-        for _ev in events:          # tool protocol atoms ride in the transcript
-            if _ev.get("tool"):
-                store.append(sid, {"kind": "tool", "role": "tool",
-                                   "tool_call_id": f"{_ev.get('tool')}:{_ev.get('seq', '')}",
-                                   "content": json.dumps(_ev.get("args") or {},
-                                                         ensure_ascii=False)[:4000]})
-        store.append(sid, {"kind": "message", "role": "assistant",
-                           "content": reply, "turn_id": turn_id})
-        store.append(sid, {"kind": "turn_end", "turn_id": turn_id,
-                           "status": "completed"})
-        return {"engine": "session", "session_id": sid, "turn_id": turn_id,
-                "success": True, "reply": reply, "goal_text": str(text),
-                "tools_used": sorted({str(e.get("tool", "")) for e in events
-                                      if e.get("tool")}),
-                "steps": [], "tool_failures": [],
-                "input_tokens": int(getattr(resp, "input_tokens", 0) or 0),
-                "output_tokens": int(getattr(resp, "output_tokens", 0) or 0),
-                "llm_calls": 1}
+
+        def _build(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return self._build_turn_messages(
+                goal_text=str(text), language=str(language or "en"),
+                history=history, l4_skills=[], l3_stars=[],
+                rules=self.memory.active_rules(),
+                project_root=effective_root)
+
+        from core.engine.session_loop import run_session_turn
+        return await run_session_turn(
+            text=str(text), session_id=sid, llm_client=self.llm,
+            build_messages=_build,
+            gate=capability_gate or get_gate(),
+            turn_id=turn_id, language=str(language or "en"),
+            effort=str(effort or ""), on_step=on_step)
 
     async def run_turn(self, text: str, *, language: str = "en",
                        turn_id: str | None = None,
@@ -758,12 +725,15 @@ class UniverseAgent:
             from core.session.store import get_session_store
             sess_hist = get_session_store().history_messages(parent_task_id)
             if sess_hist:
-                # history_messages already returns role/content with tool_calls, bounded
+                # history_messages already returns role/content with tool_calls.
+                # Legacy VIEW bound (goal path only — the session engine replays
+                # the FULL transcript): 100 recent messages / 8k chars, so a
+                # long task container no longer loses its own beginning.
                 out_sess: list[dict[str, str]] = []
-                for m in sess_hist[-24:]:
+                for m in sess_hist[-100:]:
                     c = str(m.get("content") or "").strip()
                     if c:
-                        out_sess.append({"role": str(m.get("role") or "user"), "content": c[:4000]})
+                        out_sess.append({"role": str(m.get("role") or "user"), "content": c[:8000]})
                 if out_sess:
                     return out_sess
         except Exception:

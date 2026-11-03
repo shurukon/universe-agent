@@ -21,7 +21,11 @@ def find_page_ws() -> str:
 
 
 def main() -> None:
-    ws = websocket.create_connection(find_page_ws(), timeout=10)
+    # suppress_origin: Chromium's DevTools WS rejects requests carrying an
+    # Origin header unless --remote-allow-origins matches — suppressing the
+    # header makes the probe work regardless of launch flags.
+    ws = websocket.create_connection(find_page_ws(), timeout=10,
+                                     suppress_origin=True)
     mid = 0
 
     def call(method: str, params: dict | None = None):

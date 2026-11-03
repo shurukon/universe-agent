@@ -71,7 +71,9 @@ RAPID_REFILL_MAX_CONSECUTIVE = 3
 RAPID_REFILL_TOOL_TURN_THRESHOLD = 3
 
 # Operator limit (deliberate, kept from the old engine): GAX_TOOL_MAX_ROUNDS
-# caps a turn's model steps when set. Default 0 = unbounded, like ZCode.
+# caps a turn's model steps. DEFAULT 200 (2026-11 migration decision): a
+# runaway tool loop dies after 200 steps instead of burning the provider
+# forever; set 0 explicitly for ZCode-style unbounded.
 TOOL_STEP_LIMIT_ENV = "GAX_TOOL_MAX_ROUNDS"
 
 
@@ -339,11 +341,11 @@ async def run_turn(
             delta_state["at"] = time.monotonic()
             _flush_delta()
 
-    operator_cap = 0
+    operator_cap = 200
     try:
-        operator_cap = int(os.environ.get(TOOL_STEP_LIMIT_ENV, "0") or "0")
+        operator_cap = int(os.environ.get(TOOL_STEP_LIMIT_ENV, "200") or "200")
     except ValueError:
-        operator_cap = 0
+        operator_cap = 200
     # why the while-loop broke early (the tail returns this honestly):
     # "operator_limit" via the cap check, "breaker" via the circuit breaker
     turn_stop_pending: str | None = None
@@ -396,7 +398,7 @@ async def run_turn(
             _microcompact_tool_outputs(messages, max_chars=2000)
             microcompacts_used += 1
             ev("context_compacted", approx_tokens_before=approx,
-               model_summarized=False, phase=phase, kind="microcompact")
+               model_summarized=False, phase=phase, mode="microcompact")
 
         # ---- 3. autocompact on the limit + rapid-refill breaker --------
         approx = _approx_tokens(messages)
@@ -421,7 +423,7 @@ async def run_turn(
                 })
             ev("context_compacted", approx_tokens_before=approx,
                model_summarized=bool(summarized), phase=phase,
-               kind="autocompact")
+               mode="autocompact")
 
         # ---- 4. model step (agent_step) --------------------------------
         if operator_cap > 0 and step_index >= operator_cap:

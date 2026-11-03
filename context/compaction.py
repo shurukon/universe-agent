@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-COMPACTION_TRIGGER_PCT = 0.80
+COMPACTION_TRIGGER_PCT = 0.85  # the 2026-11 migration decision: ONE compute-based pass at 85%
 
 # Round-7 CC parity: the /compact summary template (claude binary, tuo,
 # 9 sections — the "All user messages" rule keeps security-relevant

@@ -110,13 +110,79 @@ class SubconsciousLoop:
         # §18 lifecycle: skills idle >90 days decay toward review. It was
         # defined in l4 but never invoked from anywhere — dead policy (m3).
         decayed = mem.l4.apply_idle_decay()
+        # P4: post-session reflection — the ONLY memory writer for session
+        # turns (the turn hot path never touches memory; the plan's
+        # "memory writes are NOT on the hot path" contract).
+        reflected = self._reflect_sessions(mem)
         verified = 0
         if time.time() - self._last_signature_check > 7 * 86400:
             verified = verify_all_signatures().get("verified", 0)
             self._last_signature_check = time.time()
         return {"promoted": len(promoted), "edges": edges,
                 "compressed": compressed, "decayed": decayed,
+                "reflected": reflected,
                 "signatures_verified": verified}
+
+    def _reflect_sessions(self, mem) -> int:
+        """Distill NEW transcript content of recently-active sessions into
+        L3 (semantic stars, domain='session'). Idempotent: a 'reflected'
+        watermark row in each transcript marks what was already distilled,
+        so a restart re-reflects nothing. Best-effort — a failing session
+        is skipped, never fatal to the cycle."""
+        try:
+            from core.session.store import get_session_store
+            store = get_session_store()
+        except Exception:
+            return 0
+        distilled = 0
+        try:
+            sessions = store.list_sessions(limit=5)[:3]
+        except Exception:
+            return 0
+        for sess in sessions:
+            try:
+                sid = str(sess.get("id") or "")
+                if not sid:
+                    continue
+                ents = store.transcript(sid)
+                if not ents:
+                    continue
+                # watermark: only rows AFTER the last reflected marker
+                last_reflected = 0
+                for e in ents:
+                    if e.get("kind") == "reflected":
+                        last_reflected = int(e.get("seq", 0) or 0)
+                new = [e for e in ents
+                       if int(e.get("seq", 0) or 0) > last_reflected
+                       and e.get("kind") == "message"]
+                if len(new) < 4:
+                    continue  # not enough substance to be worth a star
+                users = [str(e.get("content") or "").strip()
+                         for e in new if e.get("role") == "user"]
+                assists = [str(e.get("content") or "").strip()
+                           for e in new if e.get("role") == "assistant"]
+                topic = (users[0][:80] if users else
+                         (assists[0][:80] if assists else ""))
+                if not topic:
+                    continue
+                digest_lines = []
+                for u in users[:8]:
+                    digest_lines.append(f"user: {u[:400]}")
+                for a in assists[:8]:
+                    if a:
+                        digest_lines.append(f"assistant: {a[:400]}")
+                content = "\n".join(digest_lines)[:8000]
+                mem.l3.create_star(topic=topic, domain="session",
+                                   summary=content[:300], content=content)
+                distilled += 1
+                store.append(sid, {
+                    "kind": "reflected", "role": "system",
+                    "content": f"[memory reflection recorded: {len(new)} "
+                               f"messages distilled to L3]",
+                    "reflected_seq": ents[-1].get("seq", 0)})
+            except Exception:
+                continue
+        return distilled
 
     def _connect_stars(self, mem) -> int:
         edges_added = 0

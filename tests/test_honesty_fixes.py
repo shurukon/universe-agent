@@ -98,25 +98,8 @@ class _MockOpenAI:
         self._server.should_exit = True
 
 
-@pytest.fixture(scope="module")
-def mock_llm():
-    """Reuse the mock LLM server when it is already up (the e2e harness
-    leaves one running on :8399); otherwise start a fresh one."""
-    def _alive(port: int) -> bool:
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models",
-                                        timeout=2) as r:
-                return r.status == 200
-        except Exception:
-            return False
-
-    if _alive(8399):
-        yield None
-        return
-    srv = _MockOpenAI()
-    srv.start()
-    yield srv
-    srv.stop()
+# mock_llm now lives session-scoped in conftest.py (one server per run —
+# the module-scoped copies raced each other's teardown on :8399).
 
 
 def _install_mock_provider() -> None:

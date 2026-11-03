@@ -65,6 +65,16 @@ async def repl_loop(io: ConsoleIO | None = None) -> None:
     from security.capability import get_gate
     subconscious = get_loop()
     subconscious.start()
+    # configured channels boot with the REPL (audit H4: TelegramChannel was
+    # complete but nothing ever called start() — the channel never came up).
+    # A channel that fails to boot is logged and skipped, never fatal.
+    from channels import start_channels, stop_channels
+    try:
+        booted_channels = await start_channels()
+        if booted_channels:
+            io.print(f"Channels live: {', '.join(booted_channels)}")
+    except Exception as _ch_err:
+        io.print(f"[dim]Channels did not start: {_ch_err}[/dim]")
 
     async def consent_handler(tool, agent: str, turn_id: str, args: dict) -> bool:
         # full redacted argument vector, not a one-line preview: a truncated
@@ -87,6 +97,7 @@ async def repl_loop(io: ConsoleIO | None = None) -> None:
             line = io.input("\nuniverse> ")
         except (EOFError, KeyboardInterrupt):
             io.print("\nGoodbye. The mind that remembers everything.")
+            await stop_channels()
             subconscious.stop()
             break
         line = line.strip()
@@ -94,6 +105,7 @@ async def repl_loop(io: ConsoleIO | None = None) -> None:
             continue
         if line in ("exit", "quit"):
             io.print("Goodbye. The mind that remembers everything.")
+            await stop_channels()
             subconscious.stop()
             break
         if line.startswith("/"):

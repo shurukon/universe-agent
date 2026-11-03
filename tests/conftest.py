@@ -18,6 +18,33 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+@pytest.fixture(scope="session")
+def mock_llm():
+    """The shared OpenAI-compatible mock server on :8399 — started ONCE per
+    session. The previous module-scoped copies raced each other's teardown:
+    a module saw the port alive while the previous server was still exiting,
+    skipped starting its own, and the next LLM call hit a dead socket."""
+    import time as _t
+    import urllib.request as _u
+
+    def _alive(port: int) -> bool:
+        try:
+            with _u.urlopen(f"http://127.0.0.1:{port}/v1/models",
+                            timeout=2) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    if _alive(8399):
+        yield None
+        return
+    from test_honesty_fixes import _MockOpenAI
+    srv = _MockOpenAI()
+    srv.start()
+    yield srv
+    srv.stop()
+
+
 def install_test_provider() -> bool:
     """Wire the real test provider (from env) into the manager exactly the
     way the bridge does. Returns True when all three env vars are present."""
