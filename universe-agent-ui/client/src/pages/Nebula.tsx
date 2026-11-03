@@ -58,15 +58,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useUi } from "@/stores/ui";
+import Sidebar from "@/components/desktop/Sidebar";
+import "../components/desktop/design-system.css";
+import "../components/desktop/desktop.css";
 
 // ---- palette ----------------------------------------------------------------
 
 const PANEL =
-  "rounded-xl border border-[rgba(125,160,255,0.14)] bg-white/[0.03] backdrop-blur-md";
+  "rounded-xl border border-[var(--ds-line)] bg-white/[0.03] backdrop-blur-md";
 const ACCENT_BTN =
-  "gap-1.5 bg-[#5b9dff] text-[#05070d] hover:bg-[#7fb2ff] hover:text-[#05070d]";
+  "gap-1.5 bg-[#d4d4d4] text-[#161616] hover:bg-white hover:text-[#161616]";
 const GHOST_BTN =
-  "gap-1.5 border-[rgba(125,160,255,0.14)] bg-white/[0.03] text-xs text-white/70 hover:bg-white/[0.07] hover:text-white/90";
+  "gap-1.5 border-[var(--ds-line)] bg-white/[0.03] text-xs text-white/70 hover:bg-white/[0.07] hover:text-white/90";
 
 // ---- small helpers -----------------------------------------------------------
 
@@ -185,7 +189,7 @@ function renderInline(
             key={key}
             type="button"
             onClick={() => onWiki(title)}
-            className="mx-0.5 inline-flex items-center gap-1 rounded-md border border-[#5b9dff]/25 bg-[#5b9dff]/10 px-1.5 py-px align-baseline text-[0.92em] font-medium text-[#7fb2ff] transition-colors hover:bg-[#5b9dff]/25 hover:text-[#a9cdff]"
+            className="mx-0.5 inline-flex items-center gap-1 rounded-md border border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] px-1.5 py-px align-baseline text-[0.92em] font-medium text-[var(--ds-accent)] transition-colors hover:bg-[rgba(70,191,114,0.2)] hover:text-[var(--ds-accent)]"
           >
             <Link2 className="size-3 shrink-0" aria-hidden />
             {title}
@@ -258,7 +262,7 @@ function MarkdownView({
                     {b.lang}
                   </div>
                 )}
-                <pre className="overflow-x-auto rounded-lg border border-[rgba(125,160,255,0.14)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-[#9ecbff]">
+                <pre className="overflow-x-auto rounded-lg border border-[var(--ds-line)] bg-black/40 p-3 font-mono text-xs leading-relaxed text-[var(--ds-ink-3)]">
                   <code>{b.text}</code>
                 </pre>
               </div>
@@ -328,7 +332,7 @@ function Constellation({
             y1={a.y}
             x2={b.x}
             y2={b.y}
-            stroke="rgba(125,160,255,0.25)"
+            stroke="rgba(212,212,212,0.25)"
             strokeWidth={1}
           />
         );
@@ -349,9 +353,9 @@ function Constellation({
               cx={p.x}
               cy={p.y}
               r={p.r}
-              fill="#5b9dff"
+              fill="#46bf72"
               fillOpacity={p.o}
-              stroke={active ? "#dbe7ff" : "rgba(91,157,255,0.55)"}
+              stroke={active ? "#f2f2f2" : "rgba(70,191,114,0.55)"}
               strokeWidth={active ? 1.6 : 1}
             />
             <text
@@ -371,6 +375,20 @@ function Constellation({
 }
 
 // ---- the page -----------------------------------------------------------------
+
+/** The shared shell: stable left sidebar + the Nebula surface. The sidebar
+ *  is the same column on every workspace — only Bots swaps its body. */
+function Shell({ children }: { children: React.ReactNode }) {
+  const sidebarOpen = useUi(s => s.sidebarOpen);
+  return (
+    <div className="app-root">
+      <div className={`app${sidebarOpen ? "" : " sb-closed"}`}>
+        <Sidebar open={sidebarOpen} />
+        <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
+      </div>
+    </div>
+  );
+}
 
 export default function NebulaPage() {
   const [notes, setNotes] = useState<
@@ -586,7 +604,7 @@ export default function NebulaPage() {
       onClick={() => void runDistill()}
       className={cn(GHOST_BTN, extra?.className)}
     >
-      <Sparkle className="size-3.5 text-[#5b9dff]" aria-hidden />
+      <Sparkle className="size-3.5 text-[var(--ds-accent)]" aria-hidden />
       {distilling ? "Distilling…" : "Distill session"}
     </Button>
   );
@@ -600,43 +618,48 @@ export default function NebulaPage() {
 
   if (initialLoading) {
     return (
-      <div className="flex h-[calc(100vh-56px)] gap-3 bg-[#05070d] p-3">
-        <div className={cn(PANEL, "w-72 animate-pulse")} />
-        <div className={cn(PANEL, "flex-1 animate-pulse")} />
-        <div className={cn(PANEL, "w-80 animate-pulse")} />
-      </div>
+      <Shell>
+        <div className="flex h-full gap-3 p-3">
+          <div className={cn(PANEL, "w-72 animate-pulse rounded-xl border bg-white/[0.03]")} />
+          <div className={cn(PANEL, "flex-1 animate-pulse rounded-xl border bg-white/[0.03]")} />
+          <div className={cn(PANEL, "w-80 animate-pulse rounded-xl border bg-white/[0.03]")} />
+        </div>
+      </Shell>
     );
   }
 
   if (notes === null) {
     return (
-      <div className="flex h-[calc(100vh-56px)] flex-col items-center justify-center gap-3 bg-[#05070d] p-8 text-center">
-        <AlertTriangle className="size-6 text-[#ffb454]" aria-hidden />
-        <p className="max-w-md text-sm text-white/60">{loadErr}</p>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void refreshMeta()}
-          className={GHOST_BTN}
-        >
-          <RefreshCw className="size-3.5" aria-hidden />
-          Retry
-        </Button>
-      </div>
+      <Shell>
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+          <AlertTriangle className="size-6 text-[#ffb454]" aria-hidden />
+          <p className="max-w-md text-sm text-white/60">{loadErr}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void refreshMeta()}
+            className={GHOST_BTN}
+          >
+            <RefreshCw className="size-3.5" aria-hidden />
+            Retry
+          </Button>
+        </div>
+      </Shell>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-56px)] gap-3 overflow-hidden bg-[#05070d] p-3 text-white">
+    <Shell>
+    <div className="flex h-full gap-3 overflow-hidden p-3 text-[var(--ds-ink)]">
       {isEmpty ? (
         /* ---- empty-state hero ------------------------------------------------ */
         <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
           <div
             className={cn(
-              "flex size-14 items-center justify-center rounded-2xl border border-[rgba(125,160,255,0.14)] bg-white/[0.03]"
+              "flex size-14 items-center justify-center rounded-2xl border border-[var(--ds-line)] bg-white/[0.03]"
             )}
           >
-            <Sparkles className="size-6 text-[#5b9dff]" aria-hidden />
+            <Sparkles className="size-6 text-[var(--ds-accent)]" aria-hidden />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-white/90">
@@ -658,8 +681,8 @@ export default function NebulaPage() {
           <aside className={cn(PANEL, "flex w-72 shrink-0 flex-col")}>
             <div className="px-3.5 pt-3.5">
               <div className="flex items-center gap-2">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[#5b9dff]/10">
-                  <Sparkles className="size-4 text-[#5b9dff]" aria-hidden />
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)]">
+                  <Sparkles className="size-4 text-[var(--ds-accent)]" aria-hidden />
                 </span>
                 <h1 className="text-sm font-semibold text-white/90">Nebula</h1>
               </div>
@@ -671,7 +694,7 @@ export default function NebulaPage() {
                 {newNoteButton()}
               </div>
             </div>
-            <Separator className="mt-3.5 bg-[rgba(125,160,255,0.14)]" />
+            <Separator className="mt-3.5 bg-[var(--ds-line)]" />
             <div className="px-3 py-2.5">
               <div className="relative">
                 <Search
@@ -682,7 +705,7 @@ export default function NebulaPage() {
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="Search title or tag"
-                  className="h-8 border-[rgba(125,160,255,0.14)] bg-black/20 pl-8 text-xs text-white/80 placeholder:text-white/25 focus-visible:ring-[#5b9dff]/40"
+                  className="h-8 border-[var(--ds-line)] bg-black/20 pl-8 text-xs text-white/80 placeholder:text-white/25 focus-visible:ring-[rgba(70,191,114,0.4)]"
                 />
               </div>
             </div>
@@ -696,7 +719,7 @@ export default function NebulaPage() {
                     className={cn(
                       "w-full rounded-lg border px-2.5 py-2 text-left transition-colors",
                       n.id === selectedId
-                        ? "border-[#5b9dff]/40 bg-[#5b9dff]/10"
+                        ? "border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.12)]"
                         : "border-transparent hover:bg-white/[0.04]"
                     )}
                   >
@@ -709,7 +732,7 @@ export default function NebulaPage() {
                           <Badge
                             key={t}
                             variant="outline"
-                            className="border-[#5b9dff]/25 bg-[#5b9dff]/10 px-1.5 py-0 text-[10px] text-[#7fb2ff]"
+                            className="border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] px-1.5 py-0 text-[10px] text-[var(--ds-accent)]"
                           >
                             {t}
                           </Badge>
@@ -755,9 +778,9 @@ export default function NebulaPage() {
               </div>
             ) : editing ? (
               <>
-                <div className="flex items-center justify-between gap-3 border-b border-[rgba(125,160,255,0.14)] px-5 py-3">
+                <div className="flex items-center justify-between gap-3 border-b border-[var(--ds-line)] px-5 py-3">
                   <div className="min-w-0">
-                    <p className="text-[10px] tracking-widest text-[#5b9dff]/80 uppercase">
+                    <p className="text-[10px] tracking-widest text-[var(--ds-accent)]/80 uppercase">
                       Editing markdown
                     </p>
                     <h2 className="truncate text-sm font-medium text-white/80">
@@ -791,13 +814,13 @@ export default function NebulaPage() {
                     onChange={e => setDraft(e.target.value)}
                     spellCheck={false}
                     autoFocus
-                    className="h-full w-full resize-none border-[rgba(125,160,255,0.14)] bg-black/25 font-mono text-[13px] leading-relaxed text-white/85 focus-visible:ring-[#5b9dff]/30"
+                    className="h-full w-full resize-none border-[var(--ds-line)] bg-black/25 font-mono text-[13px] leading-relaxed text-white/85 focus-visible:ring-[rgba(70,191,114,0.3)]"
                   />
                 </div>
               </>
             ) : (
               <>
-                <header className="flex items-start justify-between gap-3 border-b border-[rgba(125,160,255,0.14)] px-5 py-3.5">
+                <header className="flex items-start justify-between gap-3 border-b border-[var(--ds-line)] px-5 py-3.5">
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-semibold text-white/90">
                       {note.title}
@@ -809,7 +832,7 @@ export default function NebulaPage() {
                             <Badge
                               key={t}
                               variant="outline"
-                              className="border-[#5b9dff]/25 bg-[#5b9dff]/10 px-1.5 py-0 text-[10px] text-[#7fb2ff]"
+                              className="border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] px-1.5 py-0 text-[10px] text-[var(--ds-accent)]"
                             >
                               {t}
                             </Badge>
@@ -870,9 +893,9 @@ export default function NebulaPage() {
 
           {/* ---- RIGHT: constellation graph ----------------------------------- */}
           <aside className={cn(PANEL, "flex w-80 shrink-0 flex-col")}>
-            <div className="flex items-center justify-between border-b border-[rgba(125,160,255,0.14)] px-4 py-3">
+            <div className="flex items-center justify-between border-b border-[var(--ds-line)] px-4 py-3">
               <div className="flex items-center gap-1.5">
-                <Orbit className="size-3.5 text-[#5b9dff]" aria-hidden />
+                <Orbit className="size-3.5 text-[var(--ds-accent)]" aria-hidden />
                 <h2 className="text-xs font-semibold tracking-widest text-white/60 uppercase">
                   Constellation
                 </h2>
@@ -906,7 +929,7 @@ export default function NebulaPage() {
                   <Sparkles className="size-4 text-white/15" aria-hidden />
                   <p className="text-xs leading-relaxed text-white/35">
                     Notes with{" "}
-                    <span className="font-mono text-[#7fb2ff]">[[links]]</span>{" "}
+                    <span className="font-mono text-[var(--ds-accent)]">[[links]]</span>{" "}
                     will connect here
                   </p>
                 </div>
@@ -918,7 +941,7 @@ export default function NebulaPage() {
                 />
               )}
             </div>
-            <Separator className="bg-[rgba(125,160,255,0.14)]" />
+            <Separator className="bg-[var(--ds-line)]" />
             <div className="px-4 py-2.5 text-[10px] text-white/30">
               {graph?.nodes.length ?? 0} stars · {graph?.edges.length ?? 0}{" "}
               links
@@ -934,7 +957,7 @@ export default function NebulaPage() {
           if (!open) setCreateOpen(false);
         }}
       >
-        <DialogContent className="border-[rgba(125,160,255,0.14)] bg-[#0a0e18] sm:max-w-lg">
+        <DialogContent className="border-[var(--ds-line)] bg-[#2b2b2b] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-white/90">New note</DialogTitle>
             <DialogDescription>
@@ -947,14 +970,14 @@ export default function NebulaPage() {
             onChange={e => setCreateTitle(e.target.value)}
             placeholder="Note title"
             autoFocus
-            className="border-[rgba(125,160,255,0.14)] bg-black/25 text-sm text-white/85 placeholder:text-white/25 focus-visible:ring-[#5b9dff]/40"
+            className="border-[var(--ds-line)] bg-black/25 text-sm text-white/85 placeholder:text-white/25 focus-visible:ring-[rgba(70,191,114,0.4)]"
           />
           <Textarea
             value={createContent}
             onChange={e => setCreateContent(e.target.value)}
             placeholder={"# Heading\n\nIdeas, observations, decisions…"}
             rows={9}
-            className="border-[rgba(125,160,255,0.14)] bg-black/25 font-mono text-[13px] leading-relaxed text-white/85 placeholder:text-white/25 focus-visible:ring-[#5b9dff]/40"
+            className="border-[var(--ds-line)] bg-black/25 font-mono text-[13px] leading-relaxed text-white/85 placeholder:text-white/25 focus-visible:ring-[rgba(70,191,114,0.4)]"
           />
           <DialogFooter>
             <Button
@@ -986,7 +1009,7 @@ export default function NebulaPage() {
           if (!open) setConfirmDelete(false);
         }}
       >
-        <DialogContent className="border-[rgba(125,160,255,0.14)] bg-[#0a0e18] sm:max-w-sm">
+        <DialogContent className="border-[var(--ds-line)] bg-[#2b2b2b] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-white/90">Delete note</DialogTitle>
             <DialogDescription>
@@ -1018,5 +1041,6 @@ export default function NebulaPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </Shell>
   );
 }

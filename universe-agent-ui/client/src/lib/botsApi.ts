@@ -111,17 +111,22 @@ const seg = (id: string) => encodeURIComponent(id);
 /* ---- endpoints ------------------------------------------------------------ */
 
 export async function listBots(): Promise<Bot[]> {
-  return botsRequest<Bot[]>("/api/bots");
+  // bridge envelope: {"bots": [...]}
+  const r = await botsRequest<{ bots?: Bot[] }>("/api/bots");
+  return Array.isArray(r?.bots) ? r.bots : [];
 }
 
 export async function createBot(
   name: string,
   description: string
 ): Promise<Bot> {
-  return botsRequest<Bot>("/api/bots", {
+  // bridge envelope: {"bot": {...}}
+  const r = await botsRequest<{ bot?: Bot }>("/api/bots", {
     method: "POST",
     body: JSON.stringify({ name, description }),
   });
+  if (!r?.bot) throw new BridgeError("bad_response", "bridge returned no bot", 0);
+  return r.bot;
 }
 
 export async function getBot(id: string): Promise<BotDetail> {
@@ -159,20 +164,30 @@ export async function setBotSchedule(
   id: string,
   schedule: BotSchedule
 ): Promise<Bot> {
-  return botsRequest<Bot>(`/api/bots/${seg(id)}/schedule`, {
+  // bridge envelope: {"bot": {...}}
+  const r = await botsRequest<{ bot?: Bot }>(`/api/bots/${seg(id)}/schedule`, {
     method: "POST",
     body: JSON.stringify(schedule),
   });
+  if (!r?.bot) throw new BridgeError("bad_response", "bridge returned no bot", 0);
+  return r.bot;
 }
 
 export async function clearBotSchedule(id: string): Promise<Bot> {
-  return botsRequest<Bot>(`/api/bots/${seg(id)}/schedule/clear`, {
+  // bridge envelope: {"bot": {...}}
+  const r = await botsRequest<{ bot?: Bot }>(`/api/bots/${seg(id)}/schedule/clear`, {
     method: "POST",
   });
+  if (!r?.bot) throw new BridgeError("bad_response", "bridge returned no bot", 0);
+  return r.bot;
 }
 
 export async function listApprovals(id: string): Promise<BotApproval[]> {
-  return botsRequest<BotApproval[]>(`/api/bots/${seg(id)}/approvals`);
+  // bridge envelope: {"approvals": [...]}
+  const r = await botsRequest<{ approvals?: BotApproval[] }>(
+    `/api/bots/${seg(id)}/approvals`
+  );
+  return Array.isArray(r?.approvals) ? r.approvals : [];
 }
 
 export async function decideApproval(

@@ -1,17 +1,19 @@
 /**
- * pages/Bots.tsx — the Bots workspace: a Grok-Bot-style three-column
- * surface pinned under the topbar (h-[calc(100vh-56px)]).
+ * pages/Bots.tsx — the Bots workspace: a Grok-Bot-style IM surface pinned
+ * under the topbar (h-[calc(100vh-56px)]), styled on the SAME neutral
+ * design system as the Universe shell (design-system.css tokens — the
+ * blue-tinted palette was retired 2026-11).
  *
- *   LEFT RAIL   w-72   — bot list (avatar, name, last result, status dot),
- *                        "Bots" header + New Bot button.
- *   CENTER      flex-1 — header (name, status badge, schedule/skill chips,
- *                        stop + panel toggles), approvals banner, transcript
- *                        bubbles (user right/blue, bot left/panel,
- *                        system+approval centered muted), task composer.
- *   RIGHT PANEL 40%    — collapsible tabs: Screen (live iframe of the bot's
- *                        machine, token via query param), Details (identity,
- *                        TASK→SKILL→ROUTINE stepper, save-as-skill, schedule
- *                        editor, danger zone), Library (skills/Orbits).
+ *   SIDEBAR  w-[264px] — the shell's left column in Bots mode: the
+ *            workspace switcher on top, then the IM-style bot list
+ *            (avatar, name, last message, status dot) + New Bot.
+ *   CENTER   flex-1   — floating bot pill header (avatar, name, status),
+ *                       approvals banner, transcript bubbles (user right
+ *                       surface, bot left panel), task composer card.
+ *   RIGHT PANEL 40%  — collapsible tabs: Screen (live iframe of the bot's
+ *                       machine, token via query param), Details (identity,
+ *                       TASK→SKILL→ROUTINE stepper, save-as-skill, schedule
+ *                       editor, danger zone), Library (skills/Orbits).
  *
  * Data: lib/botsApi.ts against /api/bots* — the selected bot is polled
  * every 4s; the rail sweep refreshes quietly every 15s. User sends are
@@ -104,15 +106,14 @@ import type {
   ScheduleKind,
 } from "@/lib/botsApi";
 import { cn } from "@/lib/utils";
+import WorkspaceSwitcher from "@/components/desktop/WorkspaceSwitcher";
 
-/* ---- design tokens ------------------------------------------------------- */
+/* ---- design tokens — design-system.css (ZCode-measured neutrals) -------- */
 
-const PANEL =
-  "rounded-xl border border-[rgba(125,160,255,0.14)] bg-white/[0.03] backdrop-blur-sm";
-const ACCENT_BTN =
-  "bg-[#5b9dff] text-white hover:bg-[#7db3ff] shadow-[0_0_24px_rgba(91,157,255,0.25)]";
+/* ZCode primary: the light square button (send-btn.ready language) */
+const ACCENT_BTN = "bg-[#d4d4d4] text-[#161616] hover:bg-white";
 const FIELD =
-  "h-8 w-full border-[rgba(125,160,255,0.14)] bg-white/[0.03] text-xs";
+  "h-8 w-full border-[var(--ds-line)] bg-white/[0.03] text-xs";
 const SECTION_TITLE =
   "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
 
@@ -122,29 +123,32 @@ const STATUS_META: Record<
 > = {
   idle: {
     label: "Idle",
-    dot: "#64748b",
-    badge: "border-slate-500/30 bg-slate-500/10 text-slate-300",
+    dot: "#5e5e5e",
+    badge: "border-[var(--ds-line)] bg-white/[0.04] text-[var(--ds-ink-3)]",
   },
   running: {
     label: "Running",
-    dot: "#5b9dff",
-    badge: "border-[#5b9dff]/30 bg-[#5b9dff]/10 text-[#7db3ff]",
+    dot: "#46bf72",
+    badge:
+      "border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]",
     pulse: true,
   },
   waiting_approval: {
     label: "Waiting approval",
-    dot: "#f59e0b",
-    badge: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+    dot: "#ff8a30",
+    badge:
+      "border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.1)] text-[#ffb37a]",
   },
   error: {
     label: "Error",
-    dot: "#ef4444",
-    badge: "border-red-500/30 bg-red-500/10 text-red-400",
+    dot: "#e5484d",
+    badge:
+      "border-[rgba(229,72,77,0.3)] bg-[rgba(229,72,77,0.1)] text-[#ff8589]",
   },
   paused: {
     label: "Paused",
-    dot: "#475569",
-    badge: "border-slate-600/40 bg-slate-600/10 text-slate-400",
+    dot: "#414141",
+    badge: "border-[var(--ds-line)] bg-white/[0.03] text-[var(--ds-ink-4)]",
   },
 };
 
@@ -250,7 +254,7 @@ function BotAvatar({ name, size = "size-9" }: { name: string; size?: string }) {
   return (
     <div
       className={cn(
-        "flex shrink-0 select-none items-center justify-center rounded-full bg-gradient-to-br from-[#7db3ff] to-[#3b6fd9] font-semibold text-white",
+        "flex shrink-0 select-none items-center justify-center rounded-full bg-[var(--ds-surface-3)] font-semibold text-[var(--ds-ink)]",
         size
       )}
       aria-hidden="true"
@@ -274,8 +278,8 @@ function Chip({
       className={cn(
         "inline-flex max-w-56 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs",
         accent
-          ? "border-[#5b9dff]/30 bg-[#5b9dff]/10 text-[#7db3ff]"
-          : "border-[rgba(125,160,255,0.14)] bg-white/[0.03] text-muted-foreground"
+          ? "border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]"
+          : "border-[var(--ds-line)] bg-white/[0.03] text-muted-foreground"
       )}
     >
       <Icon className="size-3 shrink-0" />
@@ -294,7 +298,7 @@ function EventBubble({ ev }: { ev: BotEvent }) {
             {time}
           </span>
         )}
-        <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-[#5b9dff]/25 bg-[#5b9dff]/15 px-3.5 py-2 text-sm text-foreground">
+        <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[var(--ds-surface-3)] px-3.5 py-2 text-sm text-[var(--ds-ink)]">
           {ev.text}
         </div>
       </div>
@@ -303,7 +307,7 @@ function EventBubble({ ev }: { ev: BotEvent }) {
   if (ev.role === "bot") {
     return (
       <div className="flex items-end justify-start gap-1.5">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-md border border-[rgba(125,160,255,0.14)] bg-white/[0.04] px-3.5 py-2 text-sm text-foreground">
+        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-md border border-[var(--ds-line)] bg-[var(--ds-surface-1)] px-3.5 py-2 text-sm text-[var(--ds-ink)]">
           {ev.text}
         </div>
         {time && (
@@ -317,7 +321,7 @@ function EventBubble({ ev }: { ev: BotEvent }) {
   // system / approval — centered, muted, small
   return (
     <div className="flex justify-center">
-      <div className="max-w-[85%] rounded-full border border-[rgba(125,160,255,0.10)] bg-white/[0.02] px-3 py-1 text-center text-xs leading-relaxed text-muted-foreground">
+      <div className="max-w-[85%] rounded-full border border-[var(--ds-line)] bg-white/[0.02] px-3 py-1 text-center text-xs leading-relaxed text-muted-foreground">
         {ev.role === "approval" ? "Approval · " : ""}
         {ev.text}
       </div>
@@ -370,12 +374,12 @@ function ScreenTab({ bot }: { bot: BotDetail }) {
                 <Maximize2 className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent className="border border-[rgba(125,160,255,0.18)] bg-[#0a101c] text-muted-foreground">
+            <TooltipContent className="border border-[var(--ds-line)] bg-[#2b2b2b] text-muted-foreground">
               Open in a new window
             </TooltipContent>
           </Tooltip>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[rgba(125,160,255,0.14)] bg-black/40">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[var(--ds-line)] bg-black/40">
           {src ? (
             <iframe
               key={bot.id}
@@ -416,24 +420,24 @@ function Stepper({ bot }: { bot: Bot }) {
               {i > 0 && (
                 <span
                   aria-hidden="true"
-                  className="absolute -left-2 top-4 h-px w-2 bg-[rgba(125,160,255,0.2)]"
+                  className="absolute -left-2 top-4 h-px w-2 bg-[var(--ds-line)]"
                 />
               )}
               <div
                 className={cn(
                   "flex h-full flex-col gap-1.5 rounded-lg border p-2.5",
                   active
-                    ? "border-[#5b9dff]/40 bg-[#5b9dff]/10"
+                    ? "border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.1)]"
                     : done
-                      ? "border-[rgba(125,160,255,0.14)] bg-white/[0.03]"
-                      : "border-[rgba(125,160,255,0.08)] opacity-60"
+                      ? "border-[var(--ds-line)] bg-white/[0.03]"
+                      : "border-[var(--ds-line)] opacity-60"
                 )}
               >
                 <s.icon
                   className={cn(
                     "size-4",
                     active
-                      ? "text-[#7db3ff]"
+                      ? "text-[var(--ds-accent)]"
                       : done
                         ? "text-foreground/70"
                         : "text-muted-foreground"
@@ -442,7 +446,7 @@ function Stepper({ bot }: { bot: Bot }) {
                 <p
                   className={cn(
                     "text-[11px] font-semibold tracking-wide",
-                    active ? "text-[#7db3ff]" : "text-foreground/80"
+                    active ? "text-[var(--ds-accent)]" : "text-foreground/80"
                   )}
                 >
                   {s.title}
@@ -613,16 +617,16 @@ function DetailsTab({
             {bot.skill && (
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Active skill:{" "}
-                <span className="font-mono text-[#7db3ff]">/{bot.skill}</span>
+                <span className="font-mono text-[var(--ds-accent)]">/{bot.skill}</span>
               </p>
             )}
           </section>
 
-          <Separator className="bg-[rgba(125,160,255,0.10)]" />
+          <Separator className="bg-[var(--ds-line)]" />
 
           <Stepper bot={bot} />
 
-          <Separator className="bg-[rgba(125,160,255,0.10)]" />
+          <Separator className="bg-[var(--ds-line)]" />
 
           {/* save last run as skill */}
           <section>
@@ -661,7 +665,7 @@ function DetailsTab({
             </div>
           </section>
 
-          <Separator className="bg-[rgba(125,160,255,0.10)]" />
+          <Separator className="bg-[var(--ds-line)]" />
 
           {/* schedule editor */}
           <section>
@@ -677,7 +681,7 @@ function DetailsTab({
                 <SelectTrigger className={FIELD}>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="border-[rgba(125,160,255,0.18)] bg-[#0a101c]">
+                <SelectContent className="border-[var(--ds-line)] bg-[#2b2b2b]">
                   <SelectItem value="none">None</SelectItem>
                   <SelectItem value="daily">Daily</SelectItem>
                   <SelectItem value="interval">Interval</SelectItem>
@@ -734,7 +738,7 @@ function DetailsTab({
                       })
                     }
                     aria-label="Interval minutes"
-                    className="h-8 w-20 border-[rgba(125,160,255,0.14)] bg-white/[0.03] text-xs"
+                    className="h-8 w-20 border-[var(--ds-line)] bg-white/[0.03] text-xs"
                   />
                   minutes
                 </div>
@@ -774,7 +778,7 @@ function DetailsTab({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-8 border-[rgba(125,160,255,0.14)] bg-transparent text-muted-foreground hover:text-foreground"
+                    className="h-8 border-[var(--ds-line)] bg-transparent text-muted-foreground hover:text-foreground"
                     disabled={savingSched}
                     onClick={() => void clearSched()}
                   >
@@ -785,11 +789,11 @@ function DetailsTab({
             </div>
           </section>
 
-          <Separator className="bg-[rgba(125,160,255,0.10)]" />
+          <Separator className="bg-[var(--ds-line)]" />
 
           {/* danger zone */}
-          <section className="rounded-lg border border-red-500/20 bg-red-500/[0.04] p-3">
-            <h3 className="text-xs font-medium text-red-300">Danger zone</h3>
+          <section className="rounded-lg border border-[rgba(229,72,77,0.2)] bg-[rgba(229,72,77,0.05)] p-3">
+            <h3 className="text-xs font-medium text-[#ff8589]">Danger zone</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               Deleting the bot removes its transcript and schedule. The
               workspace is kept.
@@ -798,13 +802,13 @@ function DetailsTab({
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-2 border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                className="mt-2 border-[rgba(229,72,77,0.3)] bg-transparent text-[#ff8589] hover:bg-[rgba(229,72,77,0.1)] hover:text-[#ff8589]"
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="size-3.5" />
                 Delete bot
               </Button>
-              <AlertDialogContent className="border-[rgba(125,160,255,0.18)] bg-[#0a101c]">
+              <AlertDialogContent className="border-[var(--ds-line)] bg-[#2b2b2b]">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete “{bot.name}”?</AlertDialogTitle>
                   <AlertDialogDescription>
@@ -815,7 +819,7 @@ function DetailsTab({
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    className="bg-red-500 text-white hover:bg-red-400"
+                    className="bg-[#e5484d] text-white hover:bg-[#ff8589]"
                     disabled={deleting}
                     onClick={e => {
                       e.preventDefault();
@@ -851,7 +855,7 @@ function LibraryTab({ bot }: { bot: BotDetail }) {
             replayed on any schedule.
           </p>
           {bot.skills.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[rgba(125,160,255,0.14)] p-4 text-center text-xs text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-[var(--ds-line)] p-4 text-center text-xs text-muted-foreground">
               No skills yet — run the job once, then save it from Details.
             </div>
           ) : (
@@ -863,8 +867,8 @@ function LibraryTab({ bot }: { bot: BotDetail }) {
                   className={cn(
                     "gap-1 font-mono text-xs",
                     s === bot.skill
-                      ? "border-[#5b9dff]/40 bg-[#5b9dff]/10 text-[#7db3ff]"
-                      : "border-[rgba(125,160,255,0.14)] text-muted-foreground"
+                      ? "border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.1)] text-[var(--ds-accent)]"
+                      : "border-[var(--ds-line)] text-muted-foreground"
                   )}
                 >
                   <Zap className="size-3" />/{s}
@@ -875,7 +879,7 @@ function LibraryTab({ bot }: { bot: BotDetail }) {
           {bot.skill && (
             <p className="text-xs text-muted-foreground">
               Active:{" "}
-              <span className="font-mono text-[#7db3ff]">/{bot.skill}</span>
+              <span className="font-mono text-[var(--ds-accent)]">/{bot.skill}</span>
             </p>
           )}
         </div>
@@ -924,7 +928,7 @@ function CreateBotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[rgba(125,160,255,0.18)] bg-[#0a101c] sm:max-w-md">
+      <DialogContent className="border-[var(--ds-line)] bg-[#2b2b2b] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New Bot</DialogTitle>
           <DialogDescription>
@@ -1046,7 +1050,7 @@ function ApprovalsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[rgba(125,160,255,0.18)] bg-[#0a101c] sm:max-w-xl">
+      <DialogContent className="border-[var(--ds-line)] bg-[#2b2b2b] sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Pending approvals</DialogTitle>
           <DialogDescription>
@@ -1067,12 +1071,12 @@ function ApprovalsDialog({
               {rows.map(a => (
                 <div
                   key={a.id}
-                  className="rounded-lg border border-[rgba(125,160,255,0.14)] bg-white/[0.03] p-3"
+                  className="rounded-lg border border-[var(--ds-line)] bg-white/[0.03] p-3"
                 >
                   <div className="flex items-center gap-2">
                     <Badge
                       variant="outline"
-                      className="border-amber-500/30 bg-amber-500/10 text-amber-400"
+                      className="border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.1)] text-[#ff8a30]"
                     >
                       {a.kind}
                     </Badge>
@@ -1100,7 +1104,7 @@ function ApprovalsDialog({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-[#5b9dff]/40 bg-transparent text-[#7db3ff] hover:bg-[#5b9dff]/10 hover:text-[#7db3ff]"
+                      className="border-[rgba(70,191,114,0.4)] bg-transparent text-[var(--ds-accent)] hover:bg-[rgba(70,191,114,0.1)] hover:text-[var(--ds-accent)]"
                       disabled={deciding !== null}
                       onClick={() => void decide(a, "always_allow")}
                     >
@@ -1109,7 +1113,7 @@ function ApprovalsDialog({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                      className="border-[rgba(229,72,77,0.3)] bg-transparent text-[#ff8589] hover:bg-[rgba(229,72,77,0.1)] hover:text-[#ff8589]"
                       disabled={deciding !== null}
                       onClick={() => void decide(a, "deny")}
                     >
@@ -1283,22 +1287,29 @@ export default function BotsPage() {
   }, [detail, refreshList]);
 
   return (
-    <div className="flex h-[calc(100vh-56px)] gap-3 overflow-hidden bg-[#05070d] p-3 text-foreground">
-      {/* ---- left rail ---- */}
-      <aside className={cn(PANEL, "flex w-72 shrink-0 flex-col overflow-hidden")}>
-        <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3.5">
-          <h1 className="text-sm font-semibold tracking-wide">Bots</h1>
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-[var(--canvas)] text-foreground">
+      {/* ---- sidebar: the shell's left column in Bots mode. Same width and
+          tokens as the workspace sidebar — only the body changes (the
+          switcher stays; the bots rail replaces the task tree). ---- */}
+      <aside className="flex w-[264px] shrink-0 flex-col overflow-hidden bg-[var(--ds-surface-1)]">
+        <div className="zsb-ws-row">
+          <WorkspaceSwitcher />
+        </div>
+        <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-2.5">
+          <h1 className="text-sm font-semibold tracking-wide text-[var(--ds-ink)]">
+            Bots
+          </h1>
           <Button
             size="sm"
-            className={cn("h-8 px-3", ACCENT_BTN)}
+            className={cn("h-8 gap-1.5 px-3", ACCENT_BTN)}
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="size-3.5" />
             New Bot
           </Button>
         </div>
-        <ScrollArea className="min-h-0 flex-1 px-2 pb-2">
-          <div className="flex flex-col gap-1">
+        <ScrollArea className="min-h-0 flex-1 px-2 pb-3">
+          <div className="flex flex-col gap-0.5">
             {bots === null &&
               !listError &&
               Array.from({ length: 5 }).map((_, i) => (
@@ -1321,19 +1332,19 @@ export default function BotsPage() {
                   type="button"
                   onClick={() => setSelectedId(b.id)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
                     selected
-                      ? "border-[#5b9dff]/50 bg-[#5b9dff]/10"
-                      : "border-transparent hover:border-[rgba(125,160,255,0.14)] hover:bg-white/[0.04]"
+                      ? "bg-[var(--ds-surface-3)]"
+                      : "hover:bg-white/[0.045]"
                   )}
                 >
                   <BotAvatar name={b.name} size="size-8" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-foreground">
+                    <span className="block truncate text-[13px] font-medium text-[var(--ds-ink)]">
                       {b.name}
                     </span>
                     <span
-                      className="block truncate text-[11px] text-muted-foreground"
+                      className="block truncate text-[11px] text-[var(--ds-ink-3)]"
                       title={b.last_result ?? undefined}
                     >
                       {b.last_result ?? "No runs yet"}
@@ -1344,7 +1355,7 @@ export default function BotsPage() {
               );
             })}
             {bots !== null && bots.length === 0 && (
-              <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+              <p className="px-2 py-6 text-center text-xs leading-relaxed text-[var(--ds-ink-3)]">
                 Nothing here yet — your bots will line up in this rail.
               </p>
             )}
@@ -1352,29 +1363,33 @@ export default function BotsPage() {
         </ScrollArea>
       </aside>
 
-      {/* ---- center ---- */}
-      <main className={cn(PANEL, "flex min-w-0 flex-1 flex-col overflow-hidden")}>
-        <header className="flex shrink-0 items-center gap-2.5 border-b border-[rgba(125,160,255,0.10)] px-4 py-2.5">
+      {/* ---- center: the bot chat — floating pill header (Grok reference),
+          transcript, composer card ---- */}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="relative flex h-14 shrink-0 items-center justify-center px-4">
           {detail ? (
             <>
-              <BotAvatar name={detail.name} size="size-8" />
-              <h2 className="shrink-0 truncate text-sm font-semibold text-foreground">
-                {detail.name}
-              </h2>
-              <Badge
-                variant="outline"
-                className={cn("shrink-0 gap-1.5", STATUS_META[detail.status].badge)}
-              >
-                <StatusDot status={detail.status} />
-                {STATUS_META[detail.status].label}
-              </Badge>
-              <div className="ml-1 flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                <Chip icon={Clock} text={describeSchedule(detail.schedule)} />
-                {detail.skill && (
-                  <Chip icon={Zap} text={`/${detail.skill}`} accent />
-                )}
+              {/* the floating IM pill: avatar + name + live status */}
+              <div className="flex items-center gap-2.5 rounded-full border border-[var(--ds-line)] bg-[var(--ds-surface-1)] py-1.5 pl-2 pr-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
+                <BotAvatar name={detail.name} size="size-7" />
+                <h2 className="shrink-0 text-sm font-semibold text-[var(--ds-ink)]">
+                  {detail.name}
+                </h2>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "shrink-0 gap-1.5 rounded-full",
+                    STATUS_META[detail.status].badge
+                  )}
+                >
+                  <StatusDot status={detail.status} />
+                  {STATUS_META[detail.status].label}
+                </Badge>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              {/* right cluster: schedule/skill + stop + panel toggle */}
+              <div className="absolute right-4 flex items-center gap-1.5">
+                <Chip icon={Clock} text={describeSchedule(detail.schedule)} />
+                {detail.skill && <Chip icon={Zap} text={`/${detail.skill}`} accent />}
                 {(detail.status === "running" ||
                   detail.status === "waiting_approval") && (
                   <Tooltip>
@@ -1394,7 +1409,7 @@ export default function BotsPage() {
                         Stop
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent className="border border-[rgba(125,160,255,0.18)] bg-[#0a101c] text-muted-foreground">
+                    <TooltipContent className="border border-[var(--ds-line)] bg-[#2b2b2b] text-muted-foreground">
                       Ask the bot to stop after its current step
                     </TooltipContent>
                   </Tooltip>
@@ -1410,11 +1425,11 @@ export default function BotsPage() {
                       onClick={() => setRightOpen(v => !v)}
                     >
                       <PanelRight
-                        className={rightOpen ? "text-[#7db3ff]" : undefined}
+                        className={rightOpen ? "text-[var(--ds-ink)]" : undefined}
                       />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent className="border border-[rgba(125,160,255,0.18)] bg-[#0a101c] text-muted-foreground">
+                  <TooltipContent className="border border-[var(--ds-line)] bg-[#2b2b2b] text-muted-foreground">
                     {rightOpen ? "Hide panel" : "Show panel"}
                   </TooltipContent>
                 </Tooltip>
@@ -1429,13 +1444,13 @@ export default function BotsPage() {
 
         {bots === null && listError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-            <ShieldAlert className="size-6 text-red-400" />
+            <ShieldAlert className="size-6 text-[#ff8589]" />
             <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
               {listError}
             </p>
             <Button
               variant="outline"
-              className="border-[rgba(125,160,255,0.14)] bg-transparent hover:text-foreground"
+              className="border-[var(--ds-line)] bg-transparent hover:text-foreground"
               onClick={() => void refreshList()}
             >
               Retry
@@ -1447,11 +1462,11 @@ export default function BotsPage() {
           </div>
         ) : bots.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
-            <div className="flex size-16 items-center justify-center rounded-full border border-[#5b9dff]/30 bg-[#5b9dff]/10 text-[#7db3ff] shadow-[0_0_40px_rgba(91,157,255,0.25)]">
+            <div className="flex size-16 items-center justify-center rounded-full border border-[rgba(70,191,114,0.3)] bg-[var(--ds-accent-dim)] text-[var(--ds-accent)]">
               <Sparkles className="size-7" />
             </div>
             <div className="space-y-1.5">
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold text-[var(--ds-ink)]">
                 Create your first bot
               </h2>
               <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
@@ -1472,13 +1487,13 @@ export default function BotsPage() {
         ) : detail ? (
           <>
             {detail.approvals_pending > 0 && (
-              <div className="mx-4 mt-3 flex shrink-0 items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
-                <ShieldAlert className="size-4 shrink-0 text-amber-400" />
+              <div className="mx-4 mt-3 flex shrink-0 items-center gap-3 rounded-xl border border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.08)] px-4 py-2.5">
+                <ShieldAlert className="size-4 shrink-0 text-[#ff8a30]" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-amber-300">
+                  <p className="text-sm font-medium text-[#ffb37a]">
                     Bot is waiting for your approval
                   </p>
-                  <p className="text-xs text-amber-400/70">
+                  <p className="text-xs text-[rgba(255,138,48,0.7)]">
                     {detail.approvals_pending} pending decision
                     {detail.approvals_pending === 1 ? "" : "s"} — it pauses
                     until you answer.
@@ -1509,8 +1524,8 @@ export default function BotsPage() {
               </div>
             </ScrollArea>
 
-            <div className="shrink-0 border-t border-[rgba(125,160,255,0.10)] p-3">
-              <div className="flex items-end gap-2 rounded-xl border border-[rgba(125,160,255,0.14)] bg-white/[0.03] p-2">
+            <div className="shrink-0 p-3">
+              <div className="composer flex items-end gap-2 p-2">
                 <Textarea
                   value={draft}
                   onChange={e => setDraft(e.target.value)}
@@ -1543,7 +1558,7 @@ export default function BotsPage() {
           </>
         ) : selectedId ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3">
-            <Loader2 className="size-5 animate-spin text-[#7db3ff]" />
+            <Loader2 className="size-5 animate-spin text-[var(--ds-accent)]" />
             <p className="text-xs text-muted-foreground">
               Connecting to the bot…
             </p>
@@ -1557,18 +1572,17 @@ export default function BotsPage() {
         )}
       </main>
 
-      {/* ---- right panel ---- */}
+      {/* ---- right panel: the bot's machine (screen / details / library) ---- */}
       {detail && (
         <section
           className={cn(
-            PANEL,
-            "w-[40%] min-w-[360px] shrink-0 flex-col overflow-hidden",
+            "w-[40%] min-w-[360px] shrink-0 flex-col overflow-hidden border-l border-[var(--ds-line)] bg-[var(--ds-surface-1)]",
             rightOpen ? "flex" : "hidden"
           )}
         >
           <Tabs defaultValue="screen" className="flex min-h-0 flex-1 flex-col gap-0">
-            <div className="shrink-0 border-b border-[rgba(125,160,255,0.10)] px-3 py-2">
-              <TabsList className="h-8 w-full border border-[rgba(125,160,255,0.10)] bg-white/[0.04]">
+            <div className="shrink-0 border-b border-[var(--ds-line)] px-3 py-2">
+              <TabsList className="h-8 w-full border border-[var(--ds-line)] bg-white/[0.03]">
                 <TabsTrigger value="screen" className="h-7 text-xs">
                   Screen
                 </TabsTrigger>

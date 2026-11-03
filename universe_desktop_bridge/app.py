@@ -3372,17 +3372,17 @@ async def bots_screen(bot_id: str) -> Response:
 <meta http-equiv="refresh" content="5">
 <title>{_html.escape(bot['name'])} — screen</title>
 <style>
- body{{background:#05070d;color:#dbe6ff;font:13px/1.5 ui-monospace,monospace;margin:0;padding:14px}}
- h1{{font-size:15px;color:#7db3ff;margin:0 0 4px}}
- .sub{{color:#64748b;margin-bottom:10px}}
- .ev{{display:flex;gap:8px;padding:5px 8px;margin:3px 0;border:1px solid rgba(125,160,255,.14);border-radius:8px;background:rgba(255,255,255,.03)}}
- .ev.user{{border-color:rgba(91,157,255,.45)}}
- .role{{color:#5b9dff;min-width:52px;text-transform:uppercase;font-size:10px;padding-top:2px}}
+ body{{background:#161616;color:#d4d4d4;font:13px/1.5 ui-monospace,monospace;margin:0;padding:14px}}
+ h1{{font-size:15px;color:#d4d4d4;margin:0 0 4px}}
+ .sub{{color:#999999;margin-bottom:10px}}
+ .ev{{display:flex;gap:8px;padding:5px 8px;margin:3px 0;border:1px solid #414141;border-radius:8px;background:#2b2b2b}}
+ .ev.user{{border-color:#4b4b4b;background:#363636}}
+ .role{{color:#999999;min-width:52px;text-transform:uppercase;font-size:10px;padding-top:2px}}
  .txt{{flex:1;word-break:break-word}}
- .badge{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(125,160,255,.3);margin-right:6px}}
- h2{{font-size:11px;color:#7db3ff;text-transform:uppercase;letter-spacing:.12em;margin:14px 0 4px}}
- .file{{display:flex;justify-content:space-between;gap:8px;padding:3px 8px;margin:2px 0;border-radius:6px;background:rgba(255,255,255,.02)}}
- .sz{{color:#64748b}}
+ .badge{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #414141;margin-right:6px;color:#d4d4d4}}
+ h2{{font-size:11px;color:#999999;text-transform:uppercase;letter-spacing:.12em;margin:14px 0 4px}}
+ .file{{display:flex;justify-content:space-between;gap:8px;padding:3px 8px;margin:2px 0;border-radius:6px;background:#2b2b2b}}
+ .sz{{color:#999999}}
 </style></head><body>
 <h1>{_html.escape(bot['name'])} <span class="badge">{bot['status']}</span>
 <span class="badge">workspace: {ws_files} files</span></h1>

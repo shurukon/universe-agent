@@ -1290,6 +1290,97 @@
 .welcome h1 { display: none; }
 .welcome .w-eyebrow { display: none; }
 
+/* ---- welcome: Manus-style start cards (2026-11) -----------------------
+   Reference: Manus 2.0 Lite home — Build/Create stacked left, the
+   local-folder card right. Rendered on the measured neutral tokens:
+   surface-1 cards, hairline borders, green/orange icon tiles, no glass. */
+.w-cards {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 10px;
+  width: 660px;
+  max-width: calc(100vw - 96px);
+  margin: 4px auto 0;
+  animation: rise .5s ease .12s backwards;
+}
+.w-cards-col { display: flex; flex-direction: column; gap: 10px; }
+.w-card {
+  position: relative; overflow: hidden;
+  display: flex; align-items: flex-start; gap: 12px;
+  text-align: left;
+  min-height: 88px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--zc-line, #414141);
+  background: var(--zc-panel, #2b2b2b);
+  cursor: pointer;
+  font: inherit; color: inherit;
+  transition: background .14s var(--ds-ease, ease), border-color .14s var(--ds-ease, ease);
+}
+.w-card:hover {
+  background: var(--zc-raised, #363636);
+  border-color: var(--zc-ink-faint, #5e5e5e);
+}
+.w-card:active { transform: scale(.995); }
+.w-card-icon {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; margin-top: 1px;
+}
+.w-ci-build { background: rgba(70, 191, 114, .14); color: var(--zc-accent, #46bf72); }
+.w-ci-create { background: rgba(255, 138, 48, .14); color: var(--zc-permission, #ff8a30); }
+.w-card-body { display: flex; flex-direction: column; min-width: 0; }
+.w-card-title {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 14.5px; font-weight: 600; color: var(--zc-ink, #d4d4d4);
+}
+.w-card-title svg { color: var(--zc-ink-faint, #5e5e5e); }
+.w-card-sub { margin-top: 3px; font-size: 12.5px; color: var(--zc-ink-dim, #999999); }
+.w-card-art {
+  position: absolute; right: -8px; bottom: -14px;
+  opacity: .06; pointer-events: none; color: var(--zc-ink, #d4d4d4);
+}
+.w-card-tall {
+  flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 2px; padding: 18px;
+}
+.w-card-eyebrow {
+  position: absolute; top: 12px; right: 14px;
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--zc-ink-faint, #5e5e5e);
+}
+.w-card-art-big {
+  display: grid; place-items: center;
+  width: 56px; height: 56px; margin-bottom: 10px; border-radius: 16px;
+  background: rgba(255, 255, 255, .045); color: var(--zc-ink-dim, #999999);
+}
+.w-card-title-c { font-size: 14.5px; font-weight: 600; color: var(--zc-ink, #d4d4d4); }
+.w-card-sub-c { font-size: 12.5px; color: var(--zc-ink-dim, #999999); }
+
+/* no-provider alert: quiet neutral notice with the permission orange word */
+.welcome .w-noprovider {
+  margin: 0 auto 16px;
+  max-width: 660px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--zc-panel, #2b2b2b);
+  border: 1px solid var(--zc-line, #414141);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--zc-ink-dim, #999999);
+  text-align: left;
+  animation: rise .5s ease .06s backwards;
+}
+.welcome .w-noprovider b { color: var(--zc-permission, #ff8a30); }
+.w-noprovider-btn {
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  border: 0; background: var(--zc-ink, #d4d4d4); color: #161616;
+  transition: background .14s ease;
+}
+.w-noprovider-btn:hover { background: #ffffff; }
+
 /* --- 2026-10-22 additions II: header title, machine slot, hint --------- */
 .zc-header-title {
   margin-left: 10px;
@@ -2430,24 +2521,32 @@
   z-index: 6;
 }
 
-/* ---- Universe workspace toggle (Universe | Studio | Bots | Nebula) ---- */
+/* ---- Universe workspace toggle (Universe | Studio | Bots | Nebula) ----
+   Lives at the top of the LEFT SIDEBAR (WorkspaceSwitcher) — full-width
+   segmented control on the ZCode-measured neutral tokens: surface-2 tray,
+   surface-3 active pill, ink text. No blue tint, no glow. */
+.zsb-ws-row {
+  padding: 12px 14px 6px;
+  flex-shrink: 0;
+}
 .zsb-ws-toggle {
   display: flex; align-items: center; gap: 2px;
-  margin-left: 14px; padding: 3px;
-  border: 1px solid rgba(125, 160, 255, 0.16);
+  width: 100%; box-sizing: border-box; padding: 3px;
+  border: 1px solid var(--ds-line, #414141);
   border-radius: 10px; background: rgba(255, 255, 255, 0.03);
 }
 .zsb-ws-toggle button {
-  font-size: 11.5px; letter-spacing: 0.2px; color: #8b93a7;
+  flex: 1 1 0; justify-content: center;
+  font-size: 11.5px; letter-spacing: 0.2px; color: var(--ds-ink-3, #999999);
   background: transparent; border: 0; border-radius: 7px;
-  padding: 4px 12px; cursor: pointer;
+  padding: 5px 10px; cursor: pointer;
   display: flex; align-items: center; gap: 6px;
   transition: color 0.15s ease, background 0.15s ease;
 }
 .zsb-ws-toggle button:hover {
-  color: #c9d6ff; background: rgba(125, 160, 255, 0.08);
+  color: var(--ds-ink, #d4d4d4); background: rgba(255, 255, 255, 0.05);
 }
 .zsb-ws-toggle button[data-active="true"] {
-  color: #eaf1ff; background: rgba(91, 157, 255, 0.18);
-  box-shadow: 0 0 14px rgba(91, 157, 255, 0.18);
+  color: var(--ds-ink, #d4d4d4);
+  background: var(--ds-surface-3, #414141);
 }

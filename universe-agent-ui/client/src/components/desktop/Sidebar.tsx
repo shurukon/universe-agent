@@ -32,6 +32,7 @@ import { api, BridgeError, type Project } from "@/lib/api";
 import { resolveTaskStatus, useChat, type TaskStatus } from "@/stores/chat";
 import { useUi } from "@/stores/ui";
 import ConfirmDialog, { type ConfirmSpec } from "./ConfirmDialog";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import {
   ArchiveIcon,
   CalendarClock,
@@ -527,6 +528,31 @@ export default function Sidebar({ open }: { open: boolean }) {
     input?.focus();
   };
 
+  // the welcome screen's "Start from a work folder" card asks for the same
+  // add-project flow (native folder picker in the desktop app)
+  useEffect(() => {
+    const onAddProject = () => {
+      const g = (
+        window as unknown as {
+          universe?: { pickFolder?: () => Promise<string | null> };
+        }
+      ).universe;
+      if (g?.pickFolder) {
+        void g.pickFolder().then(root => {
+          if (root) void createProjectFromFolder(root);
+        });
+      } else {
+        toast.info("Folder picking needs the desktop app", {
+          description: "Add a work folder from the Universe desktop build.",
+        });
+      }
+    };
+    window.addEventListener("universe:add-project", onAddProject);
+    return () =>
+      window.removeEventListener("universe:add-project", onAddProject);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // outside close for the filter popover
   useEffect(() => {
     if (!toolsMenu) return;
@@ -610,6 +636,12 @@ export default function Sidebar({ open }: { open: boolean }) {
       className={`sidebar zsb${open ? "" : " closed"}`}
       aria-label="Workspace"
     >
+      {/* --- workspace switcher: Universe | Studio | Bots | Nebula. The
+          sidebar is the stable shell; only Bots swaps this column's body
+          for the bots rail (same width, same tokens). --- */}
+      <div className="zsb-ws-row">
+        <WorkspaceSwitcher />
+      </div>
       {/* --- ZCode's three menu rows: New task / Search / Automations.
          (Plugin Marketplace is deliberately absent — Universe has no store.) --- */}
       <div className="zsb-nav">

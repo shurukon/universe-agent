@@ -53,6 +53,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useUi } from "@/stores/ui";
+import Sidebar from "@/components/desktop/Sidebar";
+import "../components/desktop/design-system.css";
+import "../components/desktop/desktop.css";
+import "../components/desktop/redesign.css";
 import {
   driveAve,
   generateImage,
@@ -130,37 +135,40 @@ const STATUS_META: Record<
 > = {
   running: {
     label: "Running",
-    dot: "bg-emerald-400",
-    chip: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300",
+    dot: "bg-[#46bf72]",
+    chip:
+      "border-[rgba(70,191,114,0.3)] bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]",
   },
   starting: {
     label: "Starting",
-    dot: "animate-pulse bg-amber-400",
-    chip: "border-amber-400/25 bg-amber-400/10 text-amber-300",
+    dot: "animate-pulse bg-[#ff8a30]",
+    chip:
+      "border-[rgba(255,138,48,0.3)] bg-[rgba(255,138,48,0.1)] text-[#ffb37a]",
   },
   stopped: {
     label: "Stopped",
-    dot: "bg-slate-500",
-    chip: "border-white/10 bg-white/[0.03] text-slate-400",
+    dot: "bg-[#5e5e5e]",
+    chip: "border-[var(--ds-line)] bg-white/[0.03] text-[var(--ds-ink-3)]",
   },
   unreachable: {
     label: "Unreachable",
-    dot: "bg-red-500",
-    chip: "border-red-400/25 bg-red-400/10 text-red-300",
+    dot: "bg-[#e5484d]",
+    chip:
+      "border-[rgba(229,72,77,0.3)] bg-[rgba(229,72,77,0.1)] text-[#ff8589]",
   },
   unconfigured: {
     label: "Not configured",
-    dot: "bg-slate-500",
-    chip: "border-dashed border-white/15 bg-transparent text-slate-400",
+    dot: "bg-[#5e5e5e]",
+    chip:
+      "border-dashed border-[var(--ds-line)] bg-transparent text-[var(--ds-ink-3)]",
   },
 };
 
-/** Palette tokens for the Universe dark theme (kept here so every surface
- *  on the page shares one source of truth). */
-const PANEL =
-  "border-[#7da0ff]/[0.14] bg-white/[0.03] backdrop-blur-xl";
-const ACCENT_BTN =
-  "bg-[#5b9dff] text-white shadow-[0_0_24px_rgba(91,157,255,0.25)] hover:bg-[#7db3ff]";
+/** Palette tokens for the Universe dark theme (design-system.css — the
+ *  measured ZCode neutrals; the blue-tinted palette is retired). */
+const PANEL = "border-[var(--ds-line)] bg-[var(--ds-surface-1)]";
+/* ZCode primary: the light square button (send-btn.ready language) */
+const ACCENT_BTN = "bg-[#d4d4d4] text-[#161616] hover:bg-white";
 
 /* ---- helpers -------------------------------------------------------------- */
 
@@ -205,20 +213,20 @@ function Hero({ onPick }: { onPick: (mode: Mode) => void }) {
     <section className="flex w-full flex-col items-center text-center">
       <div
         className={cn(
-          "mb-7 flex size-16 items-center justify-center rounded-2xl text-[#5b9dff] shadow-[0_0_24px_rgba(91,157,255,0.25)]",
+          "mb-6 flex size-16 items-center justify-center rounded-2xl text-[var(--ds-ink)]",
           PANEL
         )}
       >
         <Orbit className="size-8" />
       </div>
-      <h1 className="text-4xl font-semibold tracking-tight text-slate-100">
+      <h1 className="text-3xl font-semibold tracking-tight text-[var(--ds-ink)]">
         Universe Studio
       </h1>
-      <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-400">
+      <p className="mt-2.5 max-w-xl text-sm leading-relaxed text-[var(--ds-ink-3)]">
         One workspace to design, edit and model — driven by Universe.
       </p>
 
-      <div className="mt-10 grid w-full gap-4 sm:grid-cols-3">
+      <div className="mt-9 grid w-full max-w-3xl gap-3 sm:grid-cols-3">
         {TOOLS.map(tool => {
           const Icon = tool.icon;
           return (
@@ -227,24 +235,33 @@ function Hero({ onPick }: { onPick: (mode: Mode) => void }) {
               type="button"
               onClick={() => onPick(tool.id)}
               className={cn(
-                "group relative flex h-full flex-col rounded-xl p-5 text-left outline-none transition-all hover:-translate-y-0.5 hover:border-[#5b9dff]/40 hover:bg-white/[0.05] hover:shadow-[0_0_24px_rgba(91,157,255,0.25)] focus-visible:ring-2 focus-visible:ring-[#5b9dff]/50",
+                "group relative flex h-full min-h-[132px] flex-col rounded-[14px] p-4 text-left outline-none transition-colors hover:border-[var(--ds-ink-4)] hover:bg-[var(--ds-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--ds-ink-4)]",
                 PANEL
               )}
             >
-              <span className="mb-4 flex size-10 items-center justify-center rounded-lg bg-[#5b9dff]/10 text-[#5b9dff]">
+              <span
+                className={cn(
+                  "mb-4 flex size-10 items-center justify-center rounded-xl",
+                  tool.id === "video"
+                    ? "bg-[rgba(255,138,48,0.14)] text-[#ff8a30]"
+                    : tool.id === "design"
+                      ? "bg-[rgba(70,191,114,0.14)] text-[var(--ds-accent)]"
+                      : "bg-white/[0.045] text-[var(--ds-ink)]"
+                )}
+              >
                 <Icon className="size-5" />
               </span>
-              <span className="text-base font-semibold text-slate-100">
+              <span className="text-[15px] font-semibold text-[var(--ds-ink)]">
                 {tool.name}
               </span>
-              <span className="mt-1 text-sm text-slate-400">
+              <span className="mt-1 text-[12.5px] text-[var(--ds-ink-3)]">
                 {tool.tagline}
               </span>
-              <span className="mt-auto flex items-center justify-between pt-6">
-                <span className="text-[11px] uppercase tracking-widest text-slate-600">
+              <span className="mt-auto flex items-center justify-between pt-5">
+                <span className="text-[10.5px] uppercase tracking-widest text-[var(--ds-ink-4)]">
                   {tool.hint}
                 </span>
-                <ChevronRight className="size-4 -translate-x-1 text-[#5b9dff] opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
+                <ChevronRight className="size-4 -translate-x-1 text-[var(--ds-ink-3)] opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
               </span>
             </button>
           );
@@ -258,7 +275,7 @@ function Hero({ onPick }: { onPick: (mode: Mode) => void }) {
 
 function PendingBody() {
   return (
-    <div className="flex h-full items-center justify-center gap-2 text-sm text-slate-500">
+    <div className="flex h-full items-center justify-center gap-2 text-sm text-[var(--ds-ink-3)]">
       <Loader2 className="size-4 animate-spin" />
       Reaching the bridge…
     </div>
@@ -272,7 +289,7 @@ function BridgeDownBody({ onRetry }: { onRetry: () => void }) {
         className={cn("w-full max-w-md text-center shadow-none", PANEL)}
       >
         <CardHeader>
-          <CardTitle className="text-base text-slate-100">
+          <CardTitle className="text-base text-[var(--ds-ink)]">
             Universe bridge is not responding
           </CardTitle>
           <CardDescription>
@@ -285,7 +302,7 @@ function BridgeDownBody({ onRetry }: { onRetry: () => void }) {
             type="button"
             variant="outline"
             onClick={onRetry}
-            className="gap-2 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-slate-100"
+            className="gap-2 border-white/10 bg-white/[0.03] text-[var(--ds-ink-2)] hover:bg-white/[0.06] hover:text-[var(--ds-ink)]"
           >
             <RefreshCw className="size-4" />
             Retry
@@ -312,22 +329,22 @@ function LaunchBody({
     <div className="flex h-full items-center justify-center">
       <Card className={cn("w-full max-w-md text-center shadow-none", PANEL)}>
         <CardHeader>
-          <div className="mx-auto mb-1 flex size-11 items-center justify-center rounded-lg bg-[#5b9dff]/10 text-[#5b9dff]">
+          <div className="mx-auto mb-1 flex size-11 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
             <Icon className="size-5" />
           </div>
-          <CardTitle className="text-base text-slate-100">
+          <CardTitle className="text-base text-[var(--ds-ink)]">
             {service.name}
           </CardTitle>
           <CardDescription>{service.description}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-3">
           {service.detail ? (
-            <p className="text-xs leading-relaxed text-slate-500">
+            <p className="text-xs leading-relaxed text-[var(--ds-ink-3)]">
               {service.detail}
             </p>
           ) : null}
           {service.status === "starting" ? (
-            <span className="inline-flex items-center gap-2 text-sm text-amber-300">
+            <span className="inline-flex items-center gap-2 text-sm text-[#ffb37a]">
               <Loader2 className="size-4 animate-spin" />
               Starting {service.name}…
             </span>
@@ -343,7 +360,7 @@ function LaunchBody({
               Start {service.name}
             </Button>
           )}
-          <p className="text-[11px] uppercase tracking-widest text-slate-600">
+          <p className="text-[11px] uppercase tracking-widest text-[var(--ds-ink-4)]">
             {STATUS_META[service.status].label}
           </p>
         </CardContent>
@@ -368,11 +385,11 @@ function BlenderBody({
       >
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#5b9dff]/10 text-[#5b9dff]">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
               <Cable className="size-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <CardTitle className="text-base text-slate-100">
+              <CardTitle className="text-base text-[var(--ds-ink)]">
                 Blender MCP
               </CardTitle>
               <CardDescription className="truncate">
@@ -382,7 +399,7 @@ function BlenderBody({
             <StatusChip status={service.status} />
           </div>
           {service.detail ? (
-            <p className="text-xs leading-relaxed text-slate-500">
+            <p className="text-xs leading-relaxed text-[var(--ds-ink-3)]">
               {service.detail}
             </p>
           ) : null}
@@ -395,10 +412,10 @@ function BlenderBody({
               "Choose how Universe should connect:",
             ].map((step, i) => (
               <li key={step} className="flex items-start gap-3 text-sm">
-                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-[#7da0ff]/[0.14] bg-white/[0.03] text-[11px] font-medium text-[#5b9dff]">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-[var(--ds-line)] bg-white/[0.03] text-[11px] font-medium text-[var(--ds-accent)]">
                   {i + 1}
                 </span>
-                <span className="text-slate-300">{step}</span>
+                <span className="text-[var(--ds-ink-2)]">{step}</span>
               </li>
             ))}
           </ol>
@@ -418,27 +435,27 @@ function BlenderBody({
                   aria-checked={selected}
                   onClick={() => onBridgeMode(option.id)}
                   className={cn(
-                    "flex items-start gap-3 rounded-xl border p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#5b9dff]/50",
+                    "flex items-start gap-3 rounded-xl border p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ds-ink-4)]",
                     selected
-                      ? "border-[#5b9dff]/60 bg-[#5b9dff]/[0.08]"
-                      : "border-[#7da0ff]/[0.14] bg-white/[0.02] hover:border-[#5b9dff]/40 hover:bg-white/[0.04]"
+                      ? "border-[var(--ds-ink-3)] bg-white/[0.05]"
+                      : "border-[var(--ds-line)] bg-white/[0.02] hover:border-[var(--ds-ink-4)] hover:bg-white/[0.04]"
                   )}
                 >
                   <span
                     className={cn(
                       "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                      selected ? "border-[#5b9dff]" : "border-slate-600"
+                      selected ? "border-[var(--ds-ink-2)]" : "border-[var(--ds-line)]"
                     )}
                   >
                     {selected ? (
-                      <span className="size-2 rounded-full bg-[#5b9dff]" />
+                      <span className="size-2 rounded-full bg-[var(--ds-accent)]" />
                     ) : null}
                   </span>
                   <span>
-                    <span className="block text-sm font-medium text-slate-200">
+                    <span className="block text-sm font-medium text-[var(--ds-ink)]">
                       {option.name}
                     </span>
-                    <span className="mt-0.5 block text-xs leading-snug text-slate-500">
+                    <span className="mt-0.5 block text-xs leading-snug text-[var(--ds-ink-3)]">
                       {option.description}
                     </span>
                   </span>
@@ -447,7 +464,7 @@ function BlenderBody({
             })}
           </div>
 
-          <p className="text-xs leading-relaxed text-slate-500">
+          <p className="text-xs leading-relaxed text-[var(--ds-ink-3)]">
             Modeling requests are sent from the chat once Blender is
             connected.
           </p>
@@ -475,13 +492,13 @@ function MuseCard({
   const src = image ? imageSrc(image) : null;
   return (
     <div className="shrink-0 px-3 pb-3">
-      <div className="flex items-center gap-3 rounded-xl border border-[#7da0ff]/[0.14] bg-white/[0.02] p-2.5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#5b9dff]/10 text-[#5b9dff]">
+      <div className="flex items-center gap-3 rounded-xl border border-[var(--ds-line)] bg-white/[0.02] p-2.5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
           <Wand2 className="size-4" />
         </span>
         <div className="w-28 shrink-0">
-          <p className="text-xs font-medium text-slate-200">Muse Image</p>
-          <p className="text-[11px] leading-snug text-slate-500">
+          <p className="text-xs font-medium text-[var(--ds-ink)]">Muse Image</p>
+          <p className="text-[11px] leading-snug text-[var(--ds-ink-3)]">
             Render an image for your design
           </p>
         </div>
@@ -493,7 +510,7 @@ function MuseCard({
           }}
           disabled={busy}
           placeholder="A lone lighthouse under a nebula sky…"
-          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-slate-200 placeholder:text-slate-600"
+          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-[var(--ds-ink)] placeholder:text-[var(--ds-ink-4)]"
         />
         <Button
           type="button"
@@ -513,7 +530,7 @@ function MuseCard({
           <img
             src={src}
             alt="Muse image result"
-            className="size-14 shrink-0 rounded-lg border border-[#7da0ff]/[0.14] object-cover"
+            className="size-14 shrink-0 rounded-lg border border-[var(--ds-line)] object-cover"
           />
         ) : (
           <span className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/10 text-slate-700">
@@ -542,13 +559,13 @@ function AveDriveBar({
 }) {
   return (
     <div className="shrink-0 px-3 pb-3">
-      <div className="flex items-center gap-3 rounded-xl border border-[#7da0ff]/[0.14] bg-white/[0.02] p-2.5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#5b9dff]/10 text-[#5b9dff]">
+      <div className="flex items-center gap-3 rounded-xl border border-[var(--ds-line)] bg-white/[0.02] p-2.5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[rgba(70,191,114,0.12)] text-[var(--ds-accent)]">
           <Clapperboard className="size-4" />
         </span>
         <div className="w-28 shrink-0">
-          <p className="text-xs font-medium text-slate-200">Universe drives AVE</p>
-          <p className="text-[11px] leading-snug text-slate-500">
+          <p className="text-xs font-medium text-[var(--ds-ink)]">Universe drives AVE</p>
+          <p className="text-[11px] leading-snug text-[var(--ds-ink-3)]">
             Edit the timeline from chat via MCP
           </p>
         </div>
@@ -560,7 +577,7 @@ function AveDriveBar({
           }}
           disabled={busy}
           placeholder="Split the first clip and add a fade…"
-          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-slate-200 placeholder:text-slate-600"
+          className="h-9 min-w-0 flex-1 border-white/10 bg-black/20 text-sm text-[var(--ds-ink)] placeholder:text-[var(--ds-ink-4)]"
         />
         <Button
           type="button"
@@ -578,10 +595,10 @@ function AveDriveBar({
         </Button>
       </div>
       {result ? (
-        <p className="mt-1.5 px-1 text-[11px] leading-snug text-slate-500">
+        <p className="mt-1.5 px-1 text-[11px] leading-snug text-[var(--ds-ink-3)]">
           {result.tool ? (
             <>
-              Tool <span className="text-[#7db3ff]">{result.tool}</span> executed
+              Tool <span className="text-[var(--ds-accent)]">{result.tool}</span> executed
               {result.result?.isError
                 ? " — AVE reported an error"
                 : " ✓ — watch the embedded editor update"}
@@ -652,8 +669,8 @@ function Composer({
                   className={cn(
                     "size-9 rounded-lg",
                     active
-                      ? "bg-[#5b9dff]/15 text-[#5b9dff] shadow-[0_0_24px_rgba(91,157,255,0.25)]"
-                      : "text-slate-500 hover:bg-white/[0.05] hover:text-slate-300"
+                      ? "bg-white/[0.07] text-[var(--ds-ink)]"
+                      : "text-[var(--ds-ink-3)] hover:bg-white/[0.05] hover:text-[var(--ds-ink-2)]"
                   )}
                 >
                   <Icon className="size-4" />
@@ -707,6 +724,8 @@ export default function Studio() {
   const [services, setServices] = useState<StudioService[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
+  // the shell sidebar is shared chrome (same store as Chat / Bots)
+  const sidebarOpen = useUi(s => s.sidebarOpen);
   const [prompt, setPrompt] = useState("");
   const [busyId, setBusyId] = useState<StudioServiceId | null>(null);
   const [bridgeMode, setBridgeMode] = useState<BlenderBridgeMode>("preview");
@@ -893,7 +912,7 @@ export default function Studio() {
           key={service.url}
           src={embedUrl(service.url)}
           title={service.name}
-          className="h-full w-full rounded-lg border border-[#7da0ff]/[0.14] bg-[#05070d]"
+          className="h-full w-full rounded-lg border border-[var(--ds-line)] bg-[var(--canvas)]"
         />
       );
     }
@@ -908,27 +927,34 @@ export default function Studio() {
   })();
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#05070d] text-slate-200">
-      {/* ambient glow */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(91,157,255,0.10),transparent_70%)]"
-      />
+    <div className="app-root">
+      <div className={`app${sidebarOpen ? "" : " sb-closed"}`}>
+        <Sidebar open={sidebarOpen} />
+        <main className="relative min-w-0 flex-1 overflow-hidden bg-[var(--canvas)] text-[var(--ds-ink)]">
+          <div className="h-full overflow-y-auto">
+            <div
+              style={{ marginInline: "auto" }}
+              className={cn(
+                "relative w-full max-w-3xl px-4",
+                mode === null
+                  ? "flex min-h-full items-center justify-center pb-56 pt-16"
+                  : "pb-[calc(52vh+10.5rem)] pt-6"
+              )}
+            >
+              {mode === null ? <Hero onPick={setMode} /> : null}
+            </div>
+          </div>
 
-      <main
-        className={cn(
-          "relative mx-auto w-full max-w-3xl px-4",
-          mode === null
-            ? "flex min-h-screen items-center justify-center pb-56 pt-16"
-            : "pb-[calc(52vh+10.5rem)] pt-6"
-        )}
-      >
-        {mode === null ? <Hero onPick={setMode} /> : null}
-      </main>
-
-      {/* fixed dock: workspace panel above the composer */}
-      <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+  {/* fixed dock: workspace panel above the composer — offset by the
+      sidebar column so it hugs the work surface, not the window edge */}
+  <div
+    className="fixed bottom-0 z-40 px-4 pb-4"
+    style={{ left: sidebarOpen ? 264 : 0, right: 0 }}
+  >
+        <div
+          style={{ marginInline: "auto" }}
+          className="flex w-full max-w-3xl flex-col gap-3"
+        >
           {mode !== null && activeTool ? (
             <section
               className={cn(
@@ -936,8 +962,8 @@ export default function Studio() {
                 PANEL
               )}
             >
-              <header className="flex shrink-0 items-center gap-3 border-b border-[#7da0ff]/[0.14] py-2 pl-4 pr-2.5">
-                <h2 className="text-sm font-semibold text-slate-100">
+              <header className="flex shrink-0 items-center gap-3 border-b border-[var(--ds-line)] py-2 pl-4 pr-2.5">
+                <h2 className="text-sm font-semibold text-[var(--ds-ink)]">
                   {activeTool.name}
                 </h2>
                 {service ? (
@@ -945,7 +971,7 @@ export default function Studio() {
                 ) : (
                   <Badge
                     variant="outline"
-                    className="gap-1.5 rounded-full border-white/10 bg-white/[0.03] px-2 py-0.5 text-[11px] text-slate-400"
+                    className="gap-1.5 rounded-full border-white/10 bg-white/[0.03] px-2 py-0.5 text-[11px] text-[var(--ds-ink-3)]"
                   >
                     <Loader2 className="size-3 animate-spin" />
                     Checking
@@ -960,7 +986,7 @@ export default function Studio() {
                         size="sm"
                         disabled={busyId === service.id}
                         onClick={() => void toggleService(service, "stop")}
-                        className="h-8 gap-1.5 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-slate-100"
+                        className="h-8 gap-1.5 border-white/10 bg-white/[0.03] text-[var(--ds-ink-2)] hover:bg-white/[0.06] hover:text-[var(--ds-ink)]"
                       >
                         <Square className="size-3.5" />
                         Stop
@@ -971,7 +997,7 @@ export default function Studio() {
                         variant="outline"
                         size="sm"
                         disabled
-                        className="h-8 gap-1.5 border-white/10 bg-white/[0.03] text-slate-400"
+                        className="h-8 gap-1.5 border-white/10 bg-white/[0.03] text-[var(--ds-ink-3)]"
                       >
                         <Loader2 className="size-3.5 animate-spin" />
                         Starting…
@@ -983,7 +1009,7 @@ export default function Studio() {
                         size="sm"
                         disabled={busyId === service.id}
                         onClick={() => void toggleService(service, "start")}
-                        className="h-8 gap-1.5 border-[#5b9dff]/40 bg-[#5b9dff]/10 text-[#5b9dff] hover:bg-[#5b9dff]/20 hover:text-[#7db3ff]"
+                        className="h-8 gap-1.5 border-[rgba(70,191,114,0.4)] bg-[rgba(70,191,114,0.1)] text-[var(--ds-accent)] hover:bg-[rgba(70,191,114,0.2)] hover:text-[var(--ds-accent)]"
                       >
                         <Play className="size-3.5" />
                         Start
@@ -1001,7 +1027,7 @@ export default function Studio() {
                           onClick={() =>
                             window.open(service.url, "_blank", "noopener")
                           }
-                          className="text-slate-400 hover:bg-white/[0.05] hover:text-slate-100"
+                          className="text-[var(--ds-ink-3)] hover:bg-white/[0.05] hover:text-[var(--ds-ink)]"
                         >
                           <ExternalLink className="size-4" />
                         </Button>
@@ -1011,13 +1037,13 @@ export default function Studio() {
                       </TooltipContent>
                     </Tooltip>
                   ) : null}
-                  <span className="mx-1 h-5 w-px bg-[#7da0ff]/[0.14]" />
+                  <span className="mx-1 h-5 w-px bg-[var(--ds-line)]" />
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => setMode(null)}
-                    className="h-8 gap-1.5 text-slate-400 hover:bg-white/[0.05] hover:text-slate-100"
+                    className="h-8 gap-1.5 text-[var(--ds-ink-3)] hover:bg-white/[0.05] hover:text-[var(--ds-ink)]"
                   >
                     <LayoutGrid className="size-3.5" />
                     Switch tool
@@ -1063,6 +1089,8 @@ export default function Studio() {
             onSend={send}
           />
         </div>
+  </div>
+        </main>
       </div>
     </div>
   );
