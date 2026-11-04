@@ -36,6 +36,7 @@ import {
   ChevronDown,
   Clock,
   Cable,
+  ExternalLink,
   FileText,
   Library,
   Loader2,
@@ -143,6 +144,42 @@ function fmtClock(ts: string | null): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Grok-style at-a-glance routine label for a bot's schedule. */
+function routineLabel(s: Bot["schedule"]): string {
+  if (s.kind === "daily") return `Every day${s.time ? ` · ${s.time}` : ""}`;
+  if (s.kind === "interval")
+    return `Every ${s.expr?.replace(/m$/, " min") ?? "interval"}`;
+  if (s.kind === "cron") return `Cron · ${s.expr ?? ""}`;
+  return "";
+}
+
+/* split a bot report into prose + URLs (trailing punctuation stays prose) */
+const URL_RE = /(https?:\/\/[^\s<>"')\]]+)/g;
+
+function splitLinks(
+  text: string
+): Array<{ t: string; url?: string }> {
+  const parts: Array<{ t: string; url?: string }> = [];
+  let last = 0;
+  for (const m of Array.from(text.matchAll(URL_RE))) {
+    const i = m.index ?? 0;
+    const url = m[0].replace(/[.,;:!?)\]]+$/, "");
+    if (i > last) parts.push({ t: text.slice(last, i) });
+    parts.push({ t: url, url });
+    last = i + url.length;
+  }
+  if (last < text.length) parts.push({ t: text.slice(last) });
+  return parts;
+}
+
+function hostOf(u: string): string {
+  try {
+    return new URL(u).host.replace(/^www\./, "");
+  } catch {
+    return u.slice(0, 28);
+  }
+}
+
 function fmtDay(ts: string | null): string {
   if (!ts) return "";
   const d = new Date(ts);
@@ -168,10 +205,39 @@ function EventBubble({ ev }: { ev: BotEvent }) {
     );
   }
   if (ev.role === "bot") {
+    // Grok Bot's result-card pattern: a structured report with a Done
+    // dot, the prose with live links, and one chip per artifact URL.
+    const parts = splitLinks(ev.text);
+    const links = Array.from(new Set(parts.filter(p => p.url).map(p => p.url!)));
     return (
       <div className="bots-ev">
-        <div className="bots-ev-bot">{ev.text}</div>
-        {time && <span className="bots-ev-time">{time}</span>}
+        <div className="bots-report">
+          <div className="bots-report-head">
+            <span className="bots-report-dot" aria-hidden="true" />
+            <b>Report · done</b>
+            {time && <span className="bots-ev-time">{time}</span>}
+          </div>
+          <div className="bots-report-body">
+            {parts.map((p, i) =>
+              p.url ? (
+                <a key={i} href={p.url} target="_blank" rel="noopener noreferrer">
+                  {p.t}
+                </a>
+              ) : (
+                <span key={i}>{p.t}</span>
+              )
+            )}
+          </div>
+          {links.length > 0 && (
+            <div className="bots-report-links">
+              {links.map(u => (
+                <a key={u} href={u} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-3" /> {hostOf(u)}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -362,6 +428,25 @@ function CreateBotDialog({
 
 /* ---- the roster (sidebar body) --------------------------------------------- */
 
+/* Grok Bot groups teammates by their standing schedule */
+const ROSTER_GROUPS: Array<{
+  id: string;
+  label: string;
+  match: (b: Bot) => boolean;
+}> = [
+  { id: "daily", label: "Daily", match: b => b.schedule.kind === "daily" },
+  {
+    id: "recurring",
+    label: "Recurring",
+    match: b => b.schedule.kind === "interval" || b.schedule.kind === "cron",
+  },
+  {
+    id: "ondemand",
+    label: "On demand",
+    match: b => b.schedule.kind === "none",
+  },
+];
+
 function Roster({
   bots,
   selectedId,
@@ -457,41 +542,54 @@ function Roster({
           No bots yet — create your first teammate and hand it real work.
         </p>
       ) : (
-        <ul>
-          {bots.map(b => {
-            const last = b.last_result ?? "";
+        /* Grok Bot groups the roster by standing schedule: Daily,
+           Recurring, then bots you message on demand. */
+        <div>
+          {ROSTER_GROUPS.map(g => {
+            const rows = bots.filter(g.match);
+            if (rows.length === 0) return null;
             return (
-              <li key={b.id}>
-                <button
-                  type="button"
-                  className={`bots-row${selectedId === b.id ? " on" : ""}`}
-                  onClick={() => onSelect(b.id)}
-                >
-                  <BotAvatar
-                    name={b.name}
-                    status={b.status}
-                    size={30}
-                  />
-                  <span className="bots-row-name">
-                    <b>{b.name}</b>
-                    <span>
-                      {b.status === "running"
-                        ? "working…"
-                        : b.status === "waiting_approval"
-                          ? "needs your approval"
-                          : last
-                            ? last.slice(0, 64)
-                            : STATUS_LINE[b.status]}
-                    </span>
-                  </span>
-                  <span className="bots-row-time">
-                    {fmtDay(b.last_run_at)}
-                  </span>
-                </button>
-              </li>
+              <div key={g.id}>
+                <div className="bots-group-label">{g.label}</div>
+                <ul>
+                  {rows.map(b => {
+                    const last = b.last_result ?? "";
+                    return (
+                      <li key={b.id}>
+                        <button
+                          type="button"
+                          className={`bots-row${selectedId === b.id ? " on" : ""}`}
+                          onClick={() => onSelect(b.id)}
+                        >
+                          <BotAvatar
+                            name={b.name}
+                            status={b.status}
+                            size={30}
+                          />
+                          <span className="bots-row-name">
+                            <b>{b.name}</b>
+                            <span>
+                              {b.status === "running"
+                                ? "working…"
+                                : b.status === "waiting_approval"
+                                  ? "needs your approval"
+                                  : last
+                                    ? last.slice(0, 64)
+                                    : STATUS_LINE[b.status]}
+                            </span>
+                          </span>
+                          <span className="bots-row-time">
+                            {fmtDay(b.last_run_at)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
     </div>
   );
@@ -1118,6 +1216,14 @@ export default function BotsPage() {
                       : STATUS_LINE[detail.status]}
                   </span>
                 </div>
+                {routineLabel(detail.schedule) && (
+                  <span
+                    className="bots-chip"
+                    title="Standing routine — it runs and reports back here"
+                  >
+                    <Clock className="size-3" /> {routineLabel(detail.schedule)}
+                  </span>
+                )}
                 <button
                   type="button"
                   className={`bots-ptab${panelOpen && panelTab === "screen" ? " on" : ""}`}
@@ -1176,14 +1282,43 @@ export default function BotsPage() {
               </header>
 
               {pendingApprovals.length > 0 && (
-                <div className="bots-approvals">
+                /* Grok Bot's Computer card: the bot holds on a step that
+                   needs a human — the live screen is one click away and
+                   the decision controls stay honest. */
+                <div className="bots-approvals computer">
+                  <div className="bots-comp-head">
+                    <Monitor className="size-3.5" />
+                    <b>Computer</b>
+                    <span className="bots-chip warn">
+                      <ShieldAlert className="size-3" /> Action needed
+                    </span>
+                    <button
+                      type="button"
+                      className="bots-btn"
+                      title="Open the bot's live screen and take over"
+                      onClick={() => {
+                        setPanelOpen(true);
+                        setPanelTab("screen");
+                      }}
+                    >
+                      <Maximize2 className="size-3.5" /> Take over
+                    </button>
+                  </div>
                   {pendingApprovals.map(a => (
-                    <div key={a.id} style={{ marginBottom: pendingApprovals.length > 1 ? 10 : 0 }}>
-                      <h4>
-                        <ShieldAlert className="size-3.5" /> Approval needed ·{" "}
-                        {a.kind.replace(/_/g, " ")}
-                      </h4>
-                      <p>{a.summary}</p>
+                    <div
+                      key={a.id}
+                      className="bots-comp-ask"
+                      style={{
+                        marginBottom:
+                          pendingApprovals.length > 1 ? 10 : 0,
+                      }}
+                    >
+                      <p>
+                        {a.summary}
+                        <span className="bots-comp-kind">
+                          {" "}· {a.kind.replace(/_/g, " ")}
+                        </span>
+                      </p>
                       <div className="bots-approvals-actions">
                         <button
                           type="button"
