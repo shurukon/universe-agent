@@ -90,7 +90,7 @@ export default function TopBar() {
           </button>
         </span>
 
-        {/* The workspace toggle (Universe | Studio | Bots | Nebula) lives at
+        {/* The workspace toggle (Universe | Studio | Bots) lives at
             the TOP OF THE LEFT SIDEBAR now (WorkspaceSwitcher) — the sidebar
             is the stable shell and only changes shape in Bots mode. */}
         <span className="zt-strip-flex" aria-hidden="true" />

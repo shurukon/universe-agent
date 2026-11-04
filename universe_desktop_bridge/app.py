@@ -3213,7 +3213,7 @@ async def terminal_ws(ws: WebSocket) -> None:
             pass
 
 
-# ==== Universe Bots · Studio · Nebula · Meta media (P0 2026-11) ==============
+# ==== Universe Bots · Studio · Meta media (P0 2026-11) ========================
 
 class BotCreate(BaseModel):
     name: str
@@ -3242,19 +3242,6 @@ class ApprovalDecisionReq(BaseModel):
 class ImageReq(BaseModel):
     prompt: str
     size: str | None = None
-
-
-class NoteCreate(BaseModel):
-    title: str
-    content: str = ""
-
-
-class NoteUpdate(BaseModel):
-    content: str
-
-
-class DistillReq(BaseModel):
-    session_id: str | None = None
 
 
 class MetaTestReq(BaseModel):
@@ -4071,68 +4058,3 @@ async def design_comment_add(req: DesignComment) -> dict[str, Any]:
         fh.write(json.dumps(row) + "\n")
     return {"comment": row}
 
-
-# ---- Nebula (Memory — Obsidian-like vault) ----------------------------------
-
-@app.get("/api/nebula/notes")
-async def nebula_notes() -> dict[str, Any]:
-    from nebula import vault
-    return {"notes": vault.list_notes()}
-
-
-@app.post("/api/nebula/notes")
-async def nebula_create(req: NoteCreate) -> dict[str, Any]:
-    from nebula import vault
-    if not req.title.strip():
-        raise HTTPException(400, {"code": "bad_note",
-                                  "message": "title required"})
-    note = vault.create_note(req.title, req.content)
-    note.pop("content", None)
-    return {"note": note}
-
-
-@app.get("/api/nebula/notes/{note_id}")
-async def nebula_get(note_id: str) -> dict[str, Any]:
-    from nebula import vault
-    note = vault.get_note(note_id)
-    if note is None:
-        raise HTTPException(404, {"code": "note_not_found",
-                                  "message": f"note {note_id!r} unknown"})
-    return {"note": note}
-
-
-@app.put("/api/nebula/notes/{note_id}")
-async def nebula_update(note_id: str, req: NoteUpdate) -> dict[str, Any]:
-    from nebula import vault
-    note = vault.update_note(note_id, req.content)
-    if note is None:
-        raise HTTPException(404, {"code": "note_not_found",
-                                  "message": f"note {note_id!r} unknown"})
-    note.pop("content", None)
-    return {"note": note}
-
-
-@app.delete("/api/nebula/notes/{note_id}")
-async def nebula_delete(note_id: str) -> dict[str, Any]:
-    from nebula import vault
-    if not vault.delete_note(note_id):
-        raise HTTPException(404, {"code": "note_not_found",
-                                  "message": f"note {note_id!r} unknown"})
-    return {"ok": True}
-
-
-@app.get("/api/nebula/graph")
-async def nebula_graph() -> dict[str, Any]:
-    from nebula import vault
-    return vault.graph()
-
-
-@app.post("/api/nebula/distill")
-async def nebula_distill(req: DistillReq) -> dict[str, Any]:
-    """Dust → Stars: condense a session transcript into a linked note."""
-    from nebula import vault
-    try:
-        return await vault.distill(req.session_id)
-    except ValueError as exc:
-        raise HTTPException(400, {"code": "distill_failed",
-                                  "message": str(exc)})

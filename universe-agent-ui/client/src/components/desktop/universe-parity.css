@@ -2521,7 +2521,7 @@
   z-index: 6;
 }
 
-/* ---- Universe workspace toggle (Universe | Studio | Bots | Nebula) ----
+/* ---- Universe workspace toggle (Universe | Studio | Bots) ----
    Lives at the top of the LEFT SIDEBAR (WorkspaceSwitcher) — full-width
    segmented control on the Universe-measured neutral tokens: surface-2 tray,
    surface-3 active pill, ink text. No blue tint, no glow. */

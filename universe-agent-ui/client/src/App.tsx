@@ -18,7 +18,6 @@ const LazySettings = lazy(() => import("./pages/Settings"));
 const LazyAutomations = lazy(() => import("./pages/Automations"));
 const LazyBots = lazy(() => import("./pages/Bots"));
 const LazyStudio = lazy(() => import("./pages/Studio"));
-const LazyNebula = lazy(() => import("./pages/Nebula"));
 
 function Router() {
   return (
@@ -64,14 +63,6 @@ function Router() {
           component={() => (
             <Suspense fallback={<div className="page-loading" />}>
               <LazyStudio />
-            </Suspense>
-          )}
-        />
-        <Route
-          path={"/nebula"}
-          component={() => (
-            <Suspense fallback={<div className="page-loading" />}>
-              <LazyNebula />
             </Suspense>
           )}
         />

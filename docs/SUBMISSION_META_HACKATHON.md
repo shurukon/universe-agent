@@ -49,15 +49,10 @@ pastes their key in *Settings → Providers → Meta*, everything works.
      websites & presentations, exported to HTML / PDF / JSX.
    - **3D** — Blender via blender-mcp (preview or background rendering).
    Plus **Muse Image** generation inline in the Design panel.
-4. **Nebula** (Memory) — an Obsidian-like markdown vault: plain `.md` files
-   with `[[wikilinks]]`, computed backlinks, a constellation graph, and
-   **Dust → Stars distillation** that condenses a session transcript into a
-   linked memory note (LLM summary when a key is configured, honest raw
-   excerpt otherwise).
 
 ## Engineering quality (verified in this repo)
 
-- **612 tests passing / 0 failing** (pytest), plus Electron + Vite builds
+- **609 tests passing / 0 failing** (pytest, 41 skipped), plus Electron + Vite builds
   green and a live bridge smoke (`scripts/bridge_smoke_p0.py`).
 - Keys are AES-encrypted at rest via the existing secrets vault; the Meta
   key is never logged, never committed.
@@ -75,20 +70,18 @@ pastes their key in *Settings → Providers → Meta*, everything works.
    review of the site" → run it once → the bot screen streams its work →
    *Save as skill* `/daily-blog-pulse` → schedule *every day at 05:00
    Europe/Rome* → a risky step pops the approval banner → *Deny*.
-4. **0:45–1:10** — Toggle to **Studio** → pick **Video** (AVE launches and
+4. **0:45–1:20** — Toggle to **Studio** → pick **Video** (AVE launches and
    embeds; Universe edits the timeline through MCP) → **Design**: a Muse
    Image generated inside the panel → **3D**: Blender renders in the
    background.
-5. **1:10–1:25** — Toggle to **Nebula** → *Distill session* → the transcript
-   becomes a linked note; the constellation graph grows.
-6. **1:25–1:30** — The compass again. "Universe — eight domains, one center:
+5. **1:20–1:30** — The compass again. "Universe — eight domains, one center:
    Meta's models."
 
 ## Application-form short answers
 
 **What does it do?** Universe Agent is a desktop agent with a cosmos-mapped
-brain: sessions (Dust) are distilled by the center into memory (Nebula),
-skills (Orbits) and knowledge (Stars), while bots — built on Meta's Muse Code
+brain: sessions (Dust) are distilled by the center into memory, skills
+(Orbits) and knowledge (Stars), while bots — built on Meta's Muse Code
 — run real jobs on a schedule with human approvals, and a studio turns chat
 into video, design and 3D.
 

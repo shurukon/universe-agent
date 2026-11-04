@@ -650,7 +650,7 @@ export default function Sidebar({
       className={`sidebar zsb${open ? "" : " closed"}`}
       aria-label="Workspace"
     >
-      {/* --- workspace switcher: Universe | Studio | Bots | Nebula. The
+      {/* --- workspace switcher: Universe | Studio | Bots. The
           sidebar is the stable shell; only Bots swaps this column's body
           for the bots rail (same width, same tokens). --- */}
       <div className="zsb-ws-row">

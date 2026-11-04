@@ -136,19 +136,19 @@ def main() -> int:
               page.locator('.sx-idedit').count() == 0)
         page.locator('button:has-text("Edit")').first.click()
         page.wait_for_selector('.sx-idedit input', timeout=5000)
-        page.locator('.sx-idedit input').fill('Nebula')
+        page.locator('.sx-idedit input').fill('Nova')
         page.locator('.sx-idedit button:has-text("Cancel")').click()
         check('Cancel discards rename',
-              'nebula' not in page.locator('.sx-idname').inner_text().lower())
+              'nova' not in page.locator('.sx-idname').inner_text().lower())
         page.locator('button:has-text("Edit")').first.click()
-        page.locator('.sx-idedit input').fill('Nebula')
+        page.locator('.sx-idedit input').fill('Nova')
         page.locator('.sx-idedit button:has-text("Save")').click()
         # poll the bridge: the store PUT resolves async — a fixed timeout
         # raced it (the earlier false FAIL)
         persisted = False
         for _ in range(20):
             page.wait_for_timeout(500)
-            if bridge('/api/setup')['assistant_name'] == 'Nebula':
+            if bridge('/api/setup')['assistant_name'] == 'Nova':
                 persisted = True
                 break
         check('Edit->Save persists name', persisted,
