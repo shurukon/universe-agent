@@ -610,10 +610,29 @@ export const api = {
       meta_key: boolean;
     }>("/api/bots/status"),
 
+  /** Find Muse Code on this machine and connect it — installing it for real
+   *  when missing. `installed:false` carries the honest failure detail. */
+  botsMuseInstall: () =>
+    request<{
+      ok: boolean;
+      installed: boolean;
+      muse_path: string;
+      detail: string;
+    }>("/api/bots/muse/install", { method: "POST" }),
+
   /** One real Blender viewport frame through the addon socket (Studio 3D
    *  Live view). 503 = the addon is unreachable — an honest error. */
   blenderViewport: () =>
     request<{ b64: string; format: string }>("/api/studio/blender/viewport"),
+
+  /** Connect Blender with one click: the bridge searches the machine for
+   *  the real binary, launches it with the MCP addon and waits for the
+   *  socket. Honest result either way. */
+  connectBlender: () =>
+    request<{ ok: boolean; status: string; detail: string }>(
+      "/api/studio/blender/connect",
+      { method: "POST" }
+    ),
 
   memory: () => request<Record<string, unknown>>("/api/memory"),
 

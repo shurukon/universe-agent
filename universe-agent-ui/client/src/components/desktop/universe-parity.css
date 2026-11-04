@@ -5,7 +5,7 @@
  * Measured Universe tokens (see docs/shell-tokens.md):
  *   canvas        #161616   panel #2b2b2b   raised #363636   line #414141
  *   ink #d4d4d4   ink-dim #999999   ink-faint #5e5e5e
- *   accent #46bf72 (green)   permission #ff8a30 (orange)
+ *   accent #2b5c9b (dark logo blue)   permission = faint white
  *   sidebar 264px   row 30px   topbar 38px   card radius 10px
  *
  * This file is imported LAST (main.tsx, after shell.css) so it wins the
@@ -24,9 +24,9 @@
   --zc-ink: #d4d4d4;
   --zc-ink-dim: #999999;
   --zc-ink-faint: #5e5e5e;
-  --zc-accent: #46bf72;
+  --zc-accent: #2b5c9b;
   --zc-accent-ink: #0d1f14;
-  --zc-permission: #ff8a30;
+  --zc-permission: rgba(255, 255, 255, 0.62);
   --zc-danger: #e5484d;
 
   --zc-r-sm: 5px;
@@ -639,7 +639,7 @@
   flex: none;
 }
 .cx-chip.comp.on .comp-dot {
-  background: var(--zc-accent, #46bf72);
+  background: var(--zc-accent, #2b5c9b);
   opacity: 1;
   transform: none;
 }
@@ -1326,8 +1326,8 @@
   display: grid; place-items: center;
   width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; margin-top: 1px;
 }
-.w-ci-build { background: rgba(70, 191, 114, .14); color: var(--zc-accent, #46bf72); }
-.w-ci-create { background: rgba(255, 138, 48, .14); color: var(--zc-permission, #ff8a30); }
+.w-ci-build { background: rgba(43, 92, 155, .18); color: var(--zc-accent, #2b5c9b); }
+.w-ci-create { background: rgba(255, 255, 255, .10); color: var(--zc-permission, rgba(255, 255, 255, 0.62)); }
 .w-card-body { display: flex; flex-direction: column; min-width: 0; }
 .w-card-title {
   display: inline-flex; align-items: center; gap: 3px;
@@ -1372,7 +1372,7 @@
   text-align: left;
   animation: rise .5s ease .06s backwards;
 }
-.welcome .w-noprovider b { color: var(--zc-permission, #ff8a30); }
+.welcome .w-noprovider b { color: var(--zc-permission, rgba(255, 255, 255, 0.62)); }
 .w-noprovider-btn {
   font: inherit; font-size: 12.5px; font-weight: 600;
   padding: 5px 12px; border-radius: 8px; cursor: pointer;
@@ -1403,7 +1403,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--zc-accent, #46bf72);
+  background: var(--zc-accent, #2b5c9b);
 }
 
 .zt-tab-dot {
@@ -1411,7 +1411,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--zc-accent, #46bf72);
+  background: var(--zc-accent, #2b5c9b);
 }
 
 /* --- 2026-10-22 additions III: task-list truth (pinned section, groups,
@@ -1455,7 +1455,7 @@
   text-overflow: ellipsis;
 }
 .side-menu > button:hover { background: var(--zc-raised, #363636); }
-.side-menu > button.on { color: var(--zc-accent, #46bf72); }
+.side-menu > button.on { color: var(--zc-accent, #2b5c9b); }
 .pn-chevron {
   width: 20px;
   height: 20px;
@@ -1733,12 +1733,12 @@
 .composer .cx-chip:hover {
   background: rgba(255, 255, 255, 0.06) !important;
 }
-/* the ungated modes take Universe's warning tint; gated ones stay neutral */
+/* the ungated modes take the faint-white attention tone; gated ones stay neutral */
 .cx-chip.perm {
-  color: #ff8a30 !important;
+  color: rgba(255, 255, 255, 0.62) !important;
 }
 .cx-chip.perm svg {
-  color: #ff8a30;
+  color: rgba(255, 255, 255, 0.62);
 }
 .cx-chip.perm.calm {
   color: var(--zc-bar-ink, rgba(229, 229, 229, 0.6)) !important;
@@ -1818,7 +1818,7 @@
 }
 .composer .send-btn.ready {
   opacity: 1 !important;
-  background: var(--zc-accent, #46bf72) !important;
+  background: var(--zc-accent, #2b5c9b) !important;
   color: var(--zc-accent-ink, #0d1f14) !important;
 }
 .composer .send-btn.stop {

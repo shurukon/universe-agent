@@ -1,7 +1,7 @@
 /* Universe Desktop — Universe identity (2026-10 restyle).
    Neutral-gray dark canvas, measured Universe palette (docs/shell-tokens.md):
    #161616 canvas, #2b2b2b panels, #262626 top bar, #d4d4d4 ink,
-   #46bf72 green accent, #ff8a30 permission orange. design-system.css is
+   #2b5c9b dark logo-blue accent, faint-white attention tone. design-system.css is
    the canonical token source; the values below seed the shadcn layer
    before it loads. */
 @import "tailwindcss";
@@ -41,7 +41,7 @@
   --destructive-foreground: #fff;
   --border: #414141;               /* Universe hairline */
   --input: rgba(255,255,255,.12);
-  --ring: #46bf72;                 /* Universe green focus ring */
+  --ring: #2b5c9b;                 /* Universe logo-blue focus ring */
 
   /* universe reference tokens — overridden by design-system.css; kept so the
      chat shell renders correctly before/without that file */
@@ -56,12 +56,12 @@
   --ink: #d4d4d4;
   --ink2: #d4d4d4;
   --ink3: #999999;
-  --accent-cyan: #46bf72;          /* legacy name — now the Universe green accent */
-  --accent2: #5bc987;
-  --accent-dim: rgba(70, 191, 114, .14);
+  --accent-cyan: #2b5c9b;          /* legacy name — now the Universe logo-blue accent */
+  --accent2: #3a72b8;
+  --accent-dim: rgba(43, 92, 155, .16);
   --blue: #6cb5e8;
-  --teal: #46bf72;                  /* success = Universe green */
-  --amber: #ff8a30;                 /* Universe permission orange (fixes flow.css refs) */
+  --teal: #2b5c9b;                  /* success = Universe logo blue */
+  --amber: rgba(255, 255, 255, 0.62); /* attention = faint white (orange retired) */
   --rose: #e5484d;                  /* stopped / failure */
 
   --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -83,7 +83,7 @@
   }
   button, input, textarea { font: inherit; }
   button:not(:disabled), [role="button"]:not([aria-disabled="true"]), [type="button"]:not(:disabled), [type="submit"]:not(:disabled) { cursor: pointer; }
-  ::selection { background: rgba(70, 191, 114, .3); }
+  ::selection { background: rgba(43, 92, 155, .35); }
   :focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
 }
 

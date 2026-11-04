@@ -618,19 +618,45 @@ export const useChat = create<ChatStore>((set, get) => ({
           text: "",
         });
       }
-      // Live ring: refill returns events for the TASK goal; keep them as-is
-      // (live turns store their ring under their own task id)
-      const liveEvents = [...(refill?.events ?? [])].sort(
-        (a, b) => (a.seq ?? 0) - (b.seq ?? 0)
+      // Reopen replay: the refill now returns the goal's FULL durable wire
+      // stream (bridge ~/.universe/rings — the task ring plus every message
+      // ring merged). Distribute the events by each one's own turn_id so
+      // every agent message's timeline restores at full fidelity (thinking,
+      // plan, tools, subagents — everything the live flow showed), then
+      // mirror a seq-stable aggregate under the task id for
+      // ActivityPane/StatusCard. The tool_history rebuild below stays as
+      // the fallback for goals that never got a ring file.
+      const refillEvents = [...(refill?.events ?? [])].sort(
+        (a, b) =>
+          ((a as { ts?: number }).ts ?? 0) -
+            ((b as { ts?: number }).ts ?? 0) ||
+          (a.seq ?? 0) - (b.seq ?? 0)
       );
+      const refillGroups = new Map<string, BridgeEvent[]>();
+      for (const e of refillEvents) {
+        const gid = (e as { turn_id?: string }).turn_id || turnId;
+        const arr = refillGroups.get(gid);
+        if (arr) arr.push(e);
+        else refillGroups.set(gid, [e]);
+      }
       set(s => {
         const known = new Set(s.tasks.map(t => t.turn_id));
         const nextEvents = { ...s.eventsByGoal };
         const nextSeqs = { ...s.lastSeqByGoal };
-        if (liveEvents.length) {
-          nextEvents[turnId] = liveEvents;
-          nextSeqs[turnId] =
-            liveEvents[liveEvents.length - 1].seq ?? liveEvents.length;
+        if (refillEvents.length) {
+          for (const [gid, evs] of Array.from(refillGroups.entries())) {
+            // a live ring already in the store is richer — never downgrade it
+            if (nextEvents[gid]?.length) continue;
+            nextEvents[gid] = evs;
+            nextSeqs[gid] = evs[evs.length - 1]?.seq ?? evs.length;
+          }
+          if (!nextEvents[turnId]?.length) {
+            // aggregate under the task id, from CLONES: the per-message
+            // events keep their own seqs (live dedup depends on them)
+            const agg = refillEvents.map((e, i) => ({ ...e, seq: i + 1 }));
+            nextEvents[turnId] = agg;
+            nextSeqs[turnId] = agg.length;
+          }
         }
         // History replay: distribute per-message events + aggregate under taskId for ActivityPane/StatusCard
         for (const [mid, evs] of Array.from(historyByGoal.entries())) {

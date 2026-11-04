@@ -4,7 +4,7 @@
  * Tokens quoted verbatim from awesome-design-md design-md/linear.app:
  * canvas #161616, surface-1 #2b2b2b, surface-2 #363636, hairlines
  * #414141/#4b4b4b, ink #d4d4d4, muted #d4d4d4/#999999/#5e5e5e,
- * success #46bf72, buttons 14px/500 + 8px radius, inputs 8px/12px,
+ * success #2b5c9b, buttons 14px/500 + 8px radius, inputs 8px/12px,
  * cards 12px radius + 24px padding, status pills.
  * The single accent stays monochrome (white inverse CTA) per the explicit
  * "no blue" direction. No gradients, no glows, no shadows.
@@ -132,7 +132,7 @@
   background: #363636; border-radius: 9999px; padding: 2px 8px;
   display: inline-flex; align-items: center;
 }
-.sx-pill.serving { color: #46bf72; }
+.sx-pill.serving { color: var(--ds-accent, #2b5c9b); }
 .sx-pill.offline { color: #5e5e5e; }
 .sx-dot {
   width: 5px; height: 5px; border-radius: 50%;
@@ -267,7 +267,7 @@
   font-size: 15px; font-weight: 700; letter-spacing: 0.16em;
   color: #d4d4d4;
 }
-.sx-idglyph { color: #46bf72; font-size: 17px; }
+.sx-idglyph { color: var(--ds-accent, #2b5c9b); font-size: 17px; }
 .sx-idsuffix {
   font-size: 9px; font-weight: 500; letter-spacing: 0.34em; color: #5e5e5e;
 }
@@ -295,7 +295,7 @@
 /* ------------------------------------------------------------------ */
 /* Providers v2: key rows + add-key + custom card                      */
 /* ------------------------------------------------------------------ */
-.sx-pill.bad { color: #ff8a30; border-color: rgba(255,138,48,.4); }
+.sx-pill.bad { color: rgba(255, 255, 255, 0.62); border-color: rgba(255, 255, 255, 0.2); }
 .sx-keyrow {
   display: flex; align-items: center; gap: 8px;
   padding: 5px 8px; margin-top: 6px;
@@ -492,8 +492,8 @@
 .am-row-side {
   display: flex; align-items: center; gap: 14px; flex-shrink: 0;
 }
-.am-next { font-size: 12px; color: #46bf72; min-width: 84px; text-align: right; }
-.am-next:not(:empty) { color: #46bf72; }
+.am-next { font-size: 12px; color: var(--ds-accent, #2b5c9b); min-width: 84px; text-align: right; }
+.am-next:not(:empty) { color: var(--ds-accent, #2b5c9b); }
 .am-row.off .am-next { color: #5e5e5e; }
 .am-last { font-size: 12px; color: #5e5e5e; min-width: 92px; text-align: right; }
 .am-del {
@@ -512,8 +512,8 @@
 .sk-name { font-size: 13px; font-weight: 500; color: #d4d4d4; display: flex; gap: 8px; align-items: center; }
 .sk-flag {
   font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase; color: #ff8a30;
-  border: 1px solid rgba(255, 138, 48, 0.4);
+  text-transform: uppercase; color: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 9999px; padding: 1px 7px;
 }
 .sk-desc { font-size: 12px; color: #999999; margin-top: 2px; }

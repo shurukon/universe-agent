@@ -843,10 +843,11 @@ async def dev_synthesize(spec: Request) -> dict[str, Any]:
         _st = get_storage()
         if _st.query_one("SELECT id FROM goals WHERE id=?;", (turn_id,)) is None:
             with _st.transaction() as conn:
+                # unassigned: no fake project rows
                 conn.execute(
                     "INSERT INTO goals (id, text, status, created_at, "
-                    "project_id, title) VALUES (?, ?, 'running', ?, "
-                    "'', 'New task')  # unassigned: no fake project rows",
+                    "project_id, title) VALUES (?, ?, 'running', ?, '', "
+                    "'New task')",
                     (turn_id, text, time.time()),
                 )
     gt.status = "running"
@@ -1175,6 +1176,31 @@ async def goal_detail(turn_id: str = None, goal_id: str = None) -> dict[str, Any
     return item
 
 
+def _ring_events(turn_id: str, after_seq: int) -> list[dict[str, Any]]:
+    """Read one goal's durable wire ring (``~/.universe/rings/<id>.jsonl``)
+    — the full event stream the goal streamed live, persisted verbatim by
+    state.GoalTask._persist_event. Replays every row kind the timeline
+    renders (thinking, plan, tools, subagents, artifacts), not just the
+    tool_history subset the DB fallback can rebuild."""
+    try:
+        from config import get_config
+        path = get_config().home / "rings" / f"{turn_id}.jsonl"
+        if not path.exists():
+            return []
+        out: list[dict[str, Any]] = []
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(e, dict) and (e.get("seq") or 0) > after_seq:
+                    out.append(e)
+        return out
+    except Exception:
+        return []
+
+
 @app.get("/api/turn/{turn_id}/events")
 @app.get("/api/goal/{goal_id}/events")
 async def goal_events(turn_id: str = None, goal_id: str = None, after_seq: int = 0) -> dict[str, Any]:
@@ -1188,7 +1214,29 @@ async def goal_events(turn_id: str = None, goal_id: str = None, after_seq: int =
         events = [e for e in gt.events if e.get("seq", 0) > after_seq]
         return {"turn_id": turn_id, "after_seq": after_seq,
                 "latest_seq": gt.seq, "dropped": gt.dropped, "events": events}
-    # Fallback: old goal not in ring — rebuild events from persisted tool_history + todos + lifecycle
+    # Durable ring replay: a restarted bridge (or a TTL-evicted goal) still
+    # has the goal's full wire stream on disk. A task id replays its own
+    # ring plus every message goal's ring, merged in arrival order — the
+    # reopened timeline is the run the user actually watched.
+    ring_events = _ring_events(turn_id, after_seq)
+    if not ring_events:
+        try:
+            msg_rows = get_storage().query_all(
+                "SELECT id FROM goals WHERE parent_goal_id=? "
+                "AND kind='message' ORDER BY created_at ASC;", (turn_id,))
+            if msg_rows:
+                merged: list[dict[str, Any]] = []
+                for r in msg_rows:
+                    merged.extend(_ring_events(r["id"], 0))
+                ring_events = merged
+        except Exception:
+            ring_events = []
+    if ring_events:
+        ring_events.sort(key=lambda e: (e.get("ts") or 0, e.get("seq") or 0))
+        latest = max((e.get("seq") or 0) for e in ring_events)
+        return {"turn_id": turn_id, "after_seq": after_seq,
+                "latest_seq": latest, "dropped": 0, "events": ring_events}
+    # Fallback: old goal with no ring file — rebuild from persisted tool_history + todos + lifecycle
     row = get_storage().query_one("SELECT final_summary, created_at, completed_at, kind FROM goals WHERE id=?;", (turn_id,))
     if row and not row.get("final_summary") and row.get("kind") == "task":
         last_msg = get_storage().query_one("SELECT final_summary, created_at, completed_at FROM goals WHERE parent_goal_id=? AND kind='message' ORDER BY created_at DESC LIMIT 1;", (turn_id,))
@@ -2062,11 +2110,12 @@ async def delete_goal(turn_id: str, hard: bool = False) -> dict[str, Any]:
         else:
             conn.execute("UPDATE goals SET archived=1, deleted=1 WHERE id=?;",
                          (turn_id,))
-    # timeline file goes only on hard delete
+    # timeline + durable ring files go only on hard delete
     if hard:
         try:
             from config import get_config as _gc
             ( _gc().home / "timelines" / f"{turn_id}.jsonl").unlink(missing_ok=True)
+            ( _gc().home / "rings" / f"{turn_id}.jsonl").unlink(missing_ok=True)
             ( _gc().home / "checkpoints" / f"{turn_id}.json").unlink(missing_ok=True)
         except Exception:
             pass
@@ -2192,6 +2241,7 @@ async def truncate_task(task_id: str, req: TruncateRequest) -> dict[str, Any]:
     for gid in dead_ids:
         try:
             (_gc().home / "timelines" / f"{gid}.jsonl").unlink(missing_ok=True)
+            (_gc().home / "rings" / f"{gid}.jsonl").unlink(missing_ok=True)
             (_gc().home / "checkpoints" / f"{gid}.json").unlink(missing_ok=True)
         except Exception:
             pass
@@ -3397,6 +3447,65 @@ async def bots_status() -> dict[str, Any]:
             "meta_key": meta_key}
 
 
+_MUSE_COMMON_PATHS = (
+    "/usr/local/bin/muse", "/usr/bin/muse", "/opt/homebrew/bin/muse",
+    "/home/linuxbrew/.linuxbrew/bin/muse",
+)
+
+
+def _find_muse() -> str:
+    """One real search for the Muse Code CLI: PATH first, then the standard
+    install locations the official installer uses."""
+    import shutil
+    hit = shutil.which("muse")
+    if hit:
+        return hit
+    for cand in _MUSE_COMMON_PATHS:
+        if Path(cand).is_file() and os.access(cand, os.X_OK):
+            return cand
+    return ""
+
+
+@app.post("/api/bots/muse/install")
+async def bots_muse_install() -> dict[str, Any]:
+    """Find Muse Code on this machine and connect it — install it for real
+    (the official installer) when it is missing. The honest result comes
+    back either way; the caller re-probes /api/bots/status."""
+    hit = _find_muse()
+    if hit:
+        return {"ok": True, "installed": True, "muse_path": hit,
+                "detail": "Muse Code found and connected."}
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            "curl -fsSL https://dev.meta.ai/install.sh | bash",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=420)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {"ok": False, "installed": False, "muse_path": "",
+                    "detail": "install timed out after 420s — try it "
+                              "manually in a terminal"}
+        tail = out.decode(errors="replace").splitlines()[-4:]
+    except Exception as exc:  # noqa: BLE001 — honest failure to the UI
+        return {"ok": False, "installed": False, "muse_path": "",
+                "detail": f"installer could not run: {exc}"}
+    # the fresh binary may sit on a PATH this process has not reloaded
+    hit = _find_muse()
+    if not hit:
+        for cand in ("~/.local/bin/muse", "~/bin/muse", "~/.cargo/bin/muse"):
+            p = Path(cand).expanduser()
+            if p.is_file() and os.access(str(p), os.X_OK):
+                hit = str(p)
+                break
+    return {"ok": bool(hit), "installed": bool(hit), "muse_path": hit or "",
+            "detail": ("Muse Code installed and connected."
+                       if hit else
+                       "installer finished but the muse binary was not "
+                       "found — " + " | ".join(tail))}
+
+
 @app.post("/api/bots")
 async def bots_create(req: BotCreate) -> dict[str, Any]:
     from bots import store
@@ -3844,6 +3953,15 @@ async def studio_blender_viewport() -> dict[str, Any]:
     if "," in b64 and b64.strip().startswith("data:"):
         b64 = b64.split(",", 1)[1]
     return {"b64": b64.strip(), "format": "png"}
+
+
+@app.post("/api/studio/blender/connect")
+async def studio_blender_connect() -> dict[str, Any]:
+    """One-click connect: search this machine for the real Blender binary,
+    launch it with the blender-mcp addon enabled and wait for the socket.
+    Honest result either way — never a simulated status."""
+    from universe_desktop_bridge import studio
+    return await studio.connect_blender()
 
 
 # ---- Design workspace (real open-design daemon surfaces) ---------------------

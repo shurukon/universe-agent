@@ -483,7 +483,7 @@
   box-shadow: var(--glass-edge), 0 0 26px rgba(255,255,255,.05);
 }
 .wiz.premium .wiz-card.online { border-color: rgba(127, 184, 166, .4); }
-.wc-badge.paid { background: rgba(255,138,48,.13); color: #ff8a30; }
+.wc-badge.paid { background: rgba(255, 255, 255, 0.10); color: rgba(255, 255, 255, 0.62); }
 .wc-badge.local { display: inline-flex; align-items: center; gap: 5px; }
 .wc-badge.local.on { background: rgba(127, 184, 166, .13); color: var(--teal); }
 .wc-badge.local.on .wc-pulse { animation: rdx-blink 1.6s ease infinite; }

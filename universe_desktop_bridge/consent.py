@@ -6,7 +6,9 @@ desktop answers via this manager:
 
   gate handler  ->  pending request created, consent_required event emitted
   UI modal      ->  POST /api/consent/{id} {approve}
-  timeout 60s   ->  auto-deny (never blocks the goal forever)
+  no timeout    ->  the prompt waits for the user (approve/deny or the
+                    goal being cancelled); it never auto-denies, so the
+                    banner stays until the human decides
 
 Every decision is emitted on the bus (consent_decided) so the UI can
 dismiss its modal even if the HTTP response raced.
@@ -19,8 +21,6 @@ from typing import Any
 
 from observability.events import emit
 from security.secret_filter import redact_dict
-
-CONSENT_TIMEOUT_S = 60.0
 
 
 def _summarize(args: dict[str, Any]) -> str:
@@ -79,13 +79,16 @@ class ConsentManager:
              tool=self._meta[pending_id]["tool"], agent=agent,
              args_summary=self._meta[pending_id]["args_summary"],
              args_full=self._meta[pending_id]["args_full"],
-             timeout_s=CONSENT_TIMEOUT_S)
+             timeout_s=0)  # 0 = no countdown: waits for the user
         try:
-            return await asyncio.wait_for(fut, CONSENT_TIMEOUT_S)
-        except asyncio.TimeoutError:
-            emit("consent_decided", turn_id=turn_id or None, pending_id=pending_id,
-                 decision="denied", reason="timeout")
-            return False
+            return await fut
+        except asyncio.CancelledError:
+            # the goal was stopped while the prompt waited: resolve the
+            # future as denied so the gate never sees a dangling wait
+            emit("consent_decided", turn_id=turn_id or None,
+                 pending_id=pending_id, decision="denied",
+                 reason="cancelled")
+            raise
         finally:
             self._pending.pop(pending_id, None)
             self._meta.pop(pending_id, None)

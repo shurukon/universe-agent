@@ -26,7 +26,7 @@
   --zt-faint: #5e5e5e;
   --zt-line: rgba(255, 255, 255, 0.1);
   --zt-panel: #2b2b2b;
-  --zt-warn: #ff8a30;
+  --zt-warn: rgba(255, 255, 255, 0.62);
   --zt-rail: rgba(255, 255, 255, 0.07);
   display: flex;
   flex-direction: column;

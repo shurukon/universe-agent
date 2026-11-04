@@ -102,10 +102,14 @@ const STATUS_LINE: Record<Bot["status"], string> = {
   paused: "paused",
 };
 
+/** Identity hues — the decided Universe palette: blues, violets, magentas,
+ *  cyans and crimsons. Green and orange are retired brand-wide (2026-11). */
+const IDENTITY_HUES = [215, 230, 250, 262, 285, 310, 330, 350, 195, 175];
+
 function statusHue(name: string): number {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return h % 360;
+  return IDENTITY_HUES[h % IDENTITY_HUES.length];
 }
 
 function BotAvatar({
@@ -376,7 +380,7 @@ function CreateBotDialog({
             {engine && (
               <div className="bots-draft">
                 <div className="bots-draft-row">
-                  <Sparkles className="size-3.5 text-[var(--ds-accent,#46bf72)]" />
+                  <Sparkles className="size-3.5 text-[var(--ds-accent,#2b5c9b)]" />
                   <b>Drafted by the engine</b>
                   <span className="bots-chip on rec">editable</span>
                 </div>
@@ -453,14 +457,18 @@ function Roster({
   onSelect,
   onNew,
   runtime,
+  onRuntimeRefresh,
 }: {
   bots: Bot[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: (mode: "chat" | "form") => void;
   runtime: { runtime: string; muse_installed: boolean; meta_key: boolean } | null;
+  onRuntimeRefresh: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [museBusy, setMuseBusy] = useState(false);
+  const [museMsg, setMuseMsg] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menuOpen) return;
@@ -470,6 +478,25 @@ function Roster({
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [menuOpen]);
+
+  // one click: the bridge searches this machine for the Muse Code CLI and
+  // installs it (official installer) when missing — then the runtime flips
+  const installMuse = async () => {
+    setMuseBusy(true);
+    setMuseMsg("");
+    try {
+      const r = await api.botsMuseInstall();
+      setMuseMsg(r.detail);
+      toast(r.installed ? "Muse Code connected" : "Muse Code install failed", {
+        description: r.detail,
+      });
+      if (r.installed) onRuntimeRefresh();
+    } catch {
+      setMuseMsg("bridge unreachable — is it running?");
+    } finally {
+      setMuseBusy(false);
+    }
+  };
 
   return (
     <div className="bots-roster">
@@ -518,11 +545,24 @@ function Roster({
             <Cable className="size-3.5" /> Connect to Muse Code
           </b>
           <p>
-            Bots run on Meta's Muse Code runtime. Install it (
-            <code>curl -fsSL https://dev.meta.ai/install.sh | bash</code>) and
-            the page flips to ready — until then tasks run on Universe's own
-            engine.
+            Bots run on Meta's Muse Code runtime. Universe can find it on
+            this machine, install it if it is missing, and connect it —
+            until then tasks run on Universe's own engine.
           </p>
+          <button
+            type="button"
+            className="bots-btn primary"
+            disabled={museBusy}
+            onClick={() => void installMuse()}
+          >
+            {museBusy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Cable className="size-3.5" />
+            )}
+            {museBusy ? "Searching & installing…" : "Install & connect Muse Code"}
+          </button>
+          {museMsg && <p className="bots-connect-msg">{museMsg}</p>}
         </div>
       )}
       {runtime && runtime.muse_installed && !runtime.meta_key && (
@@ -1164,6 +1204,7 @@ export default function BotsPage() {
               onSelect={select}
               onNew={mode => setCreateOpen(mode)}
               runtime={runtime}
+              onRuntimeRefresh={refreshRuntime}
             />
           }
         />

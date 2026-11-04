@@ -35,7 +35,7 @@ export default function ContextMeter() {
   const circ = 2 * Math.PI * r;
   const dash = (pct / 100) * circ;
   const color =
-    pct > 80 ? "#ef4444" : pct > 60 ? "#f59e0b" : "rgba(255,255,255,0.35)";
+    pct > 80 ? "#ef4444" : "rgba(255,255,255,0.62)";
 
   return (
     <span

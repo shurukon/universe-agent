@@ -210,6 +210,85 @@ async def stop_service(sid: str) -> dict[str, Any]:
     return {"ok": True, "status": "stopped", "detail": ""}
 
 
+# ---- Connect Blender: find the binary on this machine and connect it --------
+
+_BLENDER_BIN_CANDIDATES = (
+    "/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender",
+    "/var/lib/flatpak/exports/bin/org.blender.Blender",
+    "/Applications/Blender.app/Contents/MacOS/Blender",
+)
+
+
+def _find_blender() -> str:
+    """One real search for the Blender binary: PATH first, then the standard
+    install locations (Linux snap/flatpak, macOS app bundle)."""
+    hit = shutil.which("blender")
+    if hit:
+        return hit
+    for cand in _BLENDER_BIN_CANDIDATES:
+        if Path(cand).is_file():
+            return cand
+    return ""
+
+
+# Runs inside the real Blender process: enable the blender-mcp addon if it
+# is installed and start its socket server through the addon's own operator
+# (both known idnames are tried; a missing addon prints honestly and the
+# caller reports it).
+_CONNECT_EXPR = (
+    "import bpy, addon_utils\n"
+    "mods = {m.__name__ for m in addon_utils.modules()}\n"
+    "if 'blender_mcp' in mods:\n"
+    "    addon_utils.enable('blender_mcp', default_set=True, persistent=True)\n"
+    "    for _name in ('blender_mcp.start_server', 'blendermcp.start_server'):\n"
+    "        try:\n"
+    "            getattr(bpy.ops, _name)()\n"
+    "            print('universe: mcp server started via', _name)\n"
+    "            break\n"
+    "        except Exception as _e:\n"
+    "            print('universe: start attempt failed:', _name, _e)\n"
+    "else:\n"
+    "    print('universe: blender-mcp addon not installed in Blender')\n"
+)
+
+
+async def connect_blender() -> dict[str, Any]:
+    """One-click connect: probe the addon socket; when Blender is not
+    running, search this machine for the real binary and launch it with the
+    MCP addon enabled, then wait for the socket. Honest result either way —
+    never a simulated status."""
+    port = int(SERVICES["blender"]["port"])
+    if await asyncio.to_thread(_probe_tcp, "127.0.0.1", port):
+        return {"ok": True, "status": "running",
+                "detail": "Blender MCP addon is reachable."}
+    binary = _find_blender()
+    if not binary:
+        return {"ok": False, "status": "stopped",
+                "detail": "Blender is not installed on this machine — "
+                          "install it from blender.org and retry."}
+    log_path = _log_file("blender")
+    try:
+        with open(log_path, "ab", buffering=0) as fh:  # noqa: SIM115
+            fh.write(f"[universe] connecting: launching {binary}\n".encode())
+            subprocess.Popen(  # noqa: S603 — fixed binary from the local search
+                [binary, "--python-expr", _CONNECT_EXPR],
+                stdout=fh, stderr=fh, start_new_session=True)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "status": "stopped",
+                "detail": f"Blender failed to launch: {exc}"}
+    for _ in range(45):
+        await asyncio.sleep(1.0)
+        if await asyncio.to_thread(_probe_tcp, "127.0.0.1", port):
+            return {"ok": True, "status": "running",
+                    "detail": "Blender connected — the MCP addon is "
+                              "listening on port 9876."}
+    return {"ok": False, "status": "starting",
+            "detail": "Blender launched but the MCP socket did not open in "
+                      "45s — enable the blender-mcp addon inside Blender "
+                      "(Edit → Preferences → Add-ons) and press Start MCP "
+                      "server; details: " + str(log_path)}
+
+
 def reset_for_tests() -> None:
     _procs.clear()
     _starting.clear()

@@ -7,7 +7,9 @@ handle. This is the only mutable bridge state.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
+from pathlib import Path
 from typing import Any
 
 # events kept per goal for late subscribers (matches the timeline's value:
@@ -59,10 +61,32 @@ class GoalTask:
             self.seq += 1
             event["seq"] = self.seq
         self.events.append(event)
+        self._persist_event(event)
         if len(self.events) > GOAL_EVENT_RING:
             overflow = len(self.events) - GOAL_EVENT_RING
             del self.events[:-GOAL_EVENT_RING]
             self.dropped += overflow
+
+    def _persist_event(self, event: dict[str, Any]) -> None:
+        """Durable wire ring: append every event to
+        ``~/.universe/rings/<turn_id>.jsonl`` so a goal survives the
+        process. The in-memory ring is a live view with a 512-event cap;
+        without this file a reopened task could only be rebuilt from the
+        final_summary's tool_history — tool calls and todos — and every
+        other row the timeline showed live (thinking, plan, subagents,
+        artifacts…) vanished between sessions. The file IS the full
+        stream the user saw, replayed verbatim on reopen. Observability
+        must never break the observed work: best-effort, never raises."""
+        try:
+            from config import get_config
+            ring_dir = Path(get_config().home) / "rings"
+            ring_dir.mkdir(parents=True, exist_ok=True)
+            with open(ring_dir / f"{self.turn_id}.jsonl", "a",
+                      encoding="utf-8") as fh:
+                fh.write(json.dumps(event, ensure_ascii=False,
+                                    default=str) + "\n")
+        except Exception:
+            pass
 
 
 class BridgeState:

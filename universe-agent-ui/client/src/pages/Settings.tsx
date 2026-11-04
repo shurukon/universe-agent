@@ -2590,7 +2590,7 @@ function SkillsTab() {
           </select>
         </div>
         {err && (
-          <p className="sx-sub" style={{ color: "#ff8a30" }}>
+          <p className="sx-sub" style={{ color: "rgba(255, 255, 255, 0.62)" }}>
             {err}{" "}
             <button
               type="button"

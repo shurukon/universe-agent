@@ -474,6 +474,27 @@ export default function Studio() {
     }
   }, []);
 
+  // one click: the bridge searches this machine for the real Blender binary,
+  // launches it with the MCP addon enabled and waits for the socket
+  const [blenderConnecting, setBlenderConnecting] = useState(false);
+  const [blenderMsg, setBlenderMsg] = useState("");
+  const connectBlenderNow = async () => {
+    setBlenderConnecting(true);
+    setBlenderMsg("");
+    try {
+      const r = await api.connectBlender();
+      setBlenderMsg(r.detail);
+      toast(r.ok ? "Blender connected" : "Connect Blender", {
+        description: r.detail,
+      });
+      void refresh();
+    } catch {
+      setBlenderMsg("bridge unreachable — is it running?");
+    } finally {
+      setBlenderConnecting(false);
+    }
+  };
+
   return (
     <div className="app-root">
       <OfflineBanner />
@@ -520,15 +541,18 @@ export default function Studio() {
                   service={services?.find(s => s.id === "blender") ?? null}
                   active={false}
                   busy={busyId === "blender"}
+                  connecting={blenderConnecting}
+                  connectMsg={blenderMsg}
+                  onConnect={() => void connectBlenderNow()}
                   onPick={() => {
                     setTool("3d");
                     const svc = services?.find(s => s.id === "blender");
                     if (svc && svc.status !== "running") {
                       toast.info("Connect Blender", {
                         description:
-                          "Open Blender and enable the Universe 3D addon " +
-                          "(Edit → Preferences → Add-ons) — Universe " +
-                          "connects to it on port 9876.",
+                          "Press Connect Blender — Universe finds the app on " +
+                          "this machine, launches it with the MCP addon and " +
+                          "connects on port 9876.",
                       });
                     }
                   }}
@@ -577,18 +601,28 @@ function BlenderCard({
   active,
   busy,
   onPick,
+  onConnect,
+  connecting,
+  connectMsg,
 }: {
   service: StudioService | null;
   active: boolean;
   busy: boolean;
   onPick: () => void;
+  onConnect: () => void;
+  connecting: boolean;
+  connectMsg: string;
 }) {
   const connected = service?.status === "running";
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       className={`studio-card studio-card-tall${active ? " picked" : ""}`}
       onClick={onPick}
+      onKeyDown={e => {
+        if (e.key === "Enter" || e.key === " ") onPick();
+      }}
       aria-pressed={active}
     >
       <span className="studio-card-eyebrow">
@@ -609,14 +643,35 @@ function BlenderCard({
       <span className="studio-card-sub-c">
         {connected
           ? "Addon reachable on port 9876 — model and render"
-          : "Open Blender with the Universe 3D addon to connect"}
+          : "Universe finds Blender on this machine and connects it"}
       </span>
       {service?.status === "starting" && (
         <span className="studio-card-note">
           <Loader2 className="size-3 animate-spin" /> waiting for the addon…
         </span>
       )}
+      {!connected && (
+        <button
+          type="button"
+          className="studio-connect-btn"
+          disabled={connecting}
+          onClick={e => {
+            e.stopPropagation();
+            onConnect();
+          }}
+        >
+          {connecting ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Cable className="size-3.5" />
+          )}
+          {connecting ? "Searching & connecting…" : "Connect Blender"}
+        </button>
+      )}
+      {connectMsg && (
+        <span className="studio-connect-msg">{connectMsg}</span>
+      )}
       {busy && <span className="sr-only">starting</span>}
-    </button>
+    </div>
   );
 }

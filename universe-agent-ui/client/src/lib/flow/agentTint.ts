@@ -21,12 +21,12 @@ const TINTS: Record<string, number> = {
   planning: 215, // steel blue (legacy rows)
   research: 160, // spring teal
   code: 262, // violet
-  review: 40, // amber
+  review: 220, // logo blue (amber retired with the orange purge)
   security: 350, // crimson
-  data: 125, // green (legacy rows)
+  data: 210, // logo blue family (green retired)
   design: 310, // magenta
-  browser: 85, // lime (legacy rows)
-  devops: 25, // orange (legacy rows)
+  browser: 175, // teal (lime retired)
+  devops: 225, // blue (orange retired)
   file: 235, // indigo (legacy rows)
   api: 195, // sky (legacy rows)
   write: 285, // orchid (legacy rows)

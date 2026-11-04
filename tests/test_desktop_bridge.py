@@ -313,28 +313,30 @@ def test_consent_denial_blocks_the_tool(llm_client):
         gate.set_auto_grant(True)
 
 
-def test_consent_auto_deny_on_timeout(client):
-    """No UI answer for 60s -> denied, goal unblocked (compressed here by
-    patching the timeout to 0.2s)."""
-    from universe_desktop_bridge import consent as consent_mod
+def test_consent_waits_for_user_decision(client):
+    """The 60s auto-deny is retired: a prompt waits until the user decides.
+    A decision through decide() resolves the wait — and until then the
+    request stays pending (nothing times it out)."""
     from universe_desktop_bridge.app import get_runtime
-    import time as _time
-    orig = consent_mod.CONSENT_TIMEOUT_S
-    consent_mod.CONSENT_TIMEOUT_S = 0.2
-    try:
-        manager = get_runtime().consent
+    manager = get_runtime().consent
 
-        class FakeTool:
-            name = "Write"
-            capability = "Write"
+    class FakeTool:
+        name = "Write"
+        capability = "Write"
 
-        t0 = _time.monotonic()
-        approved = asyncio.run(manager.handler(FakeTool(), "code", "g-1", {}))
-        took = _time.monotonic() - t0
-        assert approved is False
-        assert took < 3, "timeout must bound the wait"
-    finally:
-        consent_mod.CONSENT_TIMEOUT_S = orig
+    async def scenario():
+        async def decide_later():
+            await asyncio.sleep(0.2)
+            pending = manager.pending()
+            assert pending, "prompt must still be pending — no auto-deny"
+            assert manager.decide(pending[0]["pending_id"], True)
+
+        watcher = asyncio.create_task(decide_later())
+        approved = await manager.handler(FakeTool(), "code", "g-1", {})
+        await watcher
+        assert approved is True
+
+    asyncio.run(scenario())
 
 
 # ---- cancel ---------------------------------------------------------------------

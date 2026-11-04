@@ -5,8 +5,9 @@
  * reference screenshots + a live window probe, palette stable).
  *
  * Universe is near-monochrome: neutral-gray canvas and panels, #d4d4d4 ink,
- * green #46BF72 for positive/status accents only, orange #FF8A30 for the
- * permission chip, white primary buttons. No colored side bars, no glass.
+ * dark logo-blue #2B5C9B for positive/status accents only, faint white for
+ * the attention/permission tone (no orange anywhere), white primary buttons.
+ * No colored side bars, no glass.
  *
  * This file OVERRIDES the older token sets in index.css and the glass
  * interaction layer in redesign.css — every surface reads from these
@@ -27,9 +28,9 @@
   --ds-ink-4: #5e5e5e;          /* faint: section headers, placeholders */
 
   /* -- Universe: accents ----------------------------------------------------- */
-  --ds-accent: #46bf72;         /* the green accent: positive/status, focus */
-  --ds-accent-hover: #5bc987;
-  --ds-accent-dim: rgba(70, 191, 114, 0.14);
+  --ds-accent: #2b5c9b;         /* the dark logo-blue accent (universe-logo sample) */
+  --ds-accent-hover: #3a72b8;
+  --ds-accent-dim: rgba(43, 92, 155, 0.16);
   --ds-teal: var(--ds-accent);             /* legacy alias */
   --ds-teal-hover: var(--ds-accent-hover);
   --ds-teal-dim: var(--ds-accent-dim);
@@ -48,9 +49,10 @@
   --accent-cyan: var(--ds-accent);        /* legacy name -> Universe green */
   --accent2: var(--ds-accent-hover);
   --accent-dim: var(--ds-accent-dim);
-  --success: #46bf72;                     /* Universe green */
-  --warning: #ff8a30;                     /* Universe permission orange */
-  --amber: #ff8a30;                       /* fixes dangling flow.css refs */
+  --faint: rgba(255, 255, 255, 0.62);     /* attention tone: faint white, never orange */
+  --success: #2b5c9b;                     /* Universe logo blue */
+  --warning: var(--faint);                /* attention = faint white (orange retired) */
+  --amber: var(--faint);                  /* fixes dangling flow.css refs */
   --rose: #e5484d;
   --teal: var(--success);                 /* legacy success-teal */
 

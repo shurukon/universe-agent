@@ -125,7 +125,7 @@
 .fl-state.running { color: var(--accent2); }
 .fl-state.completed { color: var(--teal); }
 .fl-state.error { color: var(--rose); }
-.fl-state.blocked { color: #ff8a30; }
+.fl-state.blocked { color: var(--faint, rgba(255, 255, 255, 0.62)); }
 .fl-chev {
   color: var(--ink3);
   flex-shrink: 0;
@@ -362,14 +362,14 @@
 
 /* ---- the inline consent banner (docked above the composer) ---- */
 .consent-banner {
-  max-width: 990px;
-  width: calc(100% - 52px);
+  max-width: 780px;                 /* exactly the chat column width */
+  width: 100%;
   margin: 0 auto 8px;
   display: flex;
   align-items: center;
   gap: 12px;
   background: var(--panel);
-  border: 1px solid rgba(185, 135, 72, .45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
   padding: 10px 12px;
   animation: rdx-rise .2s var(--ease-out);
@@ -386,19 +386,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cb-track {
-  margin-top: 7px;
-  height: 2px;
-  background: var(--line);
-  border-radius: 1px;
-  overflow: hidden;
-}
-.cb-fill {
-  height: 100%;
-  background: var(--amber);
-  transition: width 1s linear;
-}
-.cb-timer { font-size: 11px; color: var(--amber); flex-shrink: 0; }
 .cb-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .cb-btn {
   font-size: 12px;
@@ -690,7 +677,7 @@
 }
 .term-cmd  { color: #f5f5f5; }
 .term-out  { color: #d4d4d4; }
-.term-err  { color: #ff8a30; }
+.term-err  { color: var(--faint, rgba(255, 255, 255, 0.62)); }
 .term-sys  { color: #5e5e5e; }
 .term-inputrow {
   display: flex; align-items: center; gap: 8px;
@@ -698,7 +685,7 @@
   border-top: 1px solid var(--raise3, #414141);
 }
 .term-prompt {
-  font-size: 12px; color: #46bf72;
+  font-size: 12px; color: var(--ds-accent, #2b5c9b);
   max-width: 40%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex-shrink: 1;
@@ -746,7 +733,7 @@
   background: rgba(255, 255, 255, 0.02);
 }
 .act-recap b { color: #d4d4d4; font-weight: 600; }
-.act-ok { color: #46bf72; }
+.act-ok { color: var(--ds-accent, #2b5c9b); }
 .act-err { color: #ff6363; }
 .act-wait { color: #5e5e5e; }
 .act-plan { margin-bottom: 10px; }
@@ -761,7 +748,7 @@
 .act-agents { display: flex; flex-direction: column; gap: 8px; }
 .act-agent { border-left: 2px solid #414141; padding-left: 9px; }
 .act-agent.working { border-left-color: #d4d4d4; }
-.act-agent.done { border-left-color: #46bf72; }
+.act-agent.done { border-left-color: var(--ds-accent, #2b5c9b); }
 .act-agent.failed { border-left-color: #ff6363; }
 .act-agent-row { display: flex; align-items: center; gap: 7px; }
 .act-glyph { font-size: 10px; color: #d4d4d4; }
@@ -802,7 +789,7 @@
   border: 1px solid #414141; color: #999999;
 }
 .act-artifacts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
-.act-artifact { font-size: 10.5px; color: #46bf72; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.act-artifact { font-size: 10.5px; color: var(--ds-accent, #2b5c9b); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* shared inline spacer (StatusStrip/Activity rows) */
 .sp { flex: 1; min-width: 0; }
