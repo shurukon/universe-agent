@@ -18,15 +18,19 @@ async def _call(tool_name: str, *, args: dict):
 @pytest.fixture()
 def _patch_env(tmp_path, monkeypatch):
     """Isolated project root + auto grant + disarm UX hooks (parity: same
-    recipe as test_parity_round7.test_apply_patch)."""
+    recipe as test_parity_round7.test_apply_patch — reset_hook_manager_for_tests
+    RE-REGISTERS the builtins, so the builtin fact-guard has to be disarmed
+    explicitly: these tests assert the PATCH behaviour, not the fact-gate)."""
     work = tmp_path / "proj"
     work.mkdir()
     work.joinpath("t.txt").write_text("line one\nline two\nline three\n",
                                       encoding="utf-8")
     monkeypatch.setattr("connectors.builtin.files._project_root",
                         lambda: work)
-    from hooks import reset_hook_manager_for_tests
-    reset_hook_manager_for_tests()
+    from hooks import get_hook_manager
+    # disarm factguard-style UX hooks for this process (tests assert the
+    # patch engine, not hook behavior)
+    monkeypatch.setattr(get_hook_manager(), "check", lambda *a, **k: None)
     from security.capability import reset_gate_for_tests
     reset_gate_for_tests().set_auto_grant(True)
     return work

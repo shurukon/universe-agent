@@ -3,10 +3,10 @@
 §6, §10. Prompts on first use per goal. Long-running sessions killed at 5 min.
 Quarantine-tier skills run this in a Docker sandbox (security/sandbox.py).
 
-Fully unsandboxed execution is a SEPARATE tool below
-(shell_exec_unsandboxed, consent=explicit) so bypassing the OS session
-boundary is always a deliberate, gated choice — never something that
-happens silently.
+Fully unsandboxed execution (shell_exec_unsandboxed) is NOT an agent tool —
+it is reachable only from the bridge terminal WebSocket
+(universe_desktop_bridge/app.py), never from a model decision. Bypassing the
+OS session boundary is a deliberate, human action.
 """
 from __future__ import annotations
 
@@ -187,14 +187,5 @@ def register(reg: ToolRegistry) -> None:
                     "Windows without WSL2, runs inside the native Windows "
                     "sandbox (elevated, falling back to unelevated).",
         handler=shell_exec, consent="per_turn",
-        resources=["cwd"],
-    ))
-    reg.register(Tool(
-        name="BashUnsandboxed", capability="Bash",
-        description="Execute a shell command with NO sandbox — full system "
-                    "access. Only use when shell.exec reports the sandbox "
-                    "could not be set up and the task truly cannot proceed "
-                    "otherwise. Always asks for explicit, one-time consent.",
-        handler=shell_exec_unsandboxed, consent="explicit",
         resources=["cwd"],
     ))

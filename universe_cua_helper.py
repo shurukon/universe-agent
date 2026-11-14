@@ -44,15 +44,30 @@ def _load_frame_ttl() -> float:
     expire before the model's second round landed, so coordinate actions
     were rejected purely on wall-clock time. The override was added in the
     tools-matrix round — the safety semantics (an expired frame NEVER
-    drives a click) stay exactly the same, the bound is just tunable."""
+    drives a click) stay exactly the same, the bound is just tunable.
+
+    Resolution order (audit 2026-11-10): the UNIVERSE_CUA_FRAME_TTL_S env
+    var wins, then desktop.computer_frame_ttl_s in the config file of the
+    ACTIVE home (UNIVERSE_HOME — the product is UNIVERSE_HOME-scoped, so
+    reading the user's real ~/.universe was a scope bug), then 15.0.
+    The env override is what makes the helper testable without touching
+    anyone's real config."""
     raw = 15.0
-    try:
-        cfgp = os.path.join(os.path.expanduser("~"), ".universe", "config.json")
-        import json as _json
-        raw = float(_json.load(open(cfgp, encoding="utf-8"))
-                     .get("desktop", {}).get("computer_frame_ttl_s", 15.0))
-    except Exception:
-        raw = 15.0
+    env = os.environ.get("UNIVERSE_CUA_FRAME_TTL_S", "")
+    if env.strip():
+        try:
+            raw = float(env)
+        except ValueError:
+            raw = 15.0
+    else:
+        try:
+            home = os.environ.get("UNIVERSE_HOME") or os.path.expanduser("~")
+            cfgp = os.path.join(home, ".universe", "config.json")
+            with open(cfgp, encoding="utf-8") as fh:
+                raw = float(json.load(fh)
+                            .get("desktop", {}).get("computer_frame_ttl_s", 15.0))
+        except Exception:
+            raw = 15.0
     return raw if 1.0 <= raw <= 600.0 else 15.0
 
 

@@ -18,18 +18,29 @@ def _chdir_tmp(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_agent_cannot_call_tool_outside_its_whitelist(fresh_home):
     """Phase 0.1: the gate rejects tools outside the agent's whitelist.
-    Post-S1 the registered agent is 'universe' (the union of the retired
-    specialists' whitelists); TestRunner is a REAL registered tool that is
-    deliberately NOT in that whitelist — the gate must reject it, not just
-    decorate the agent object."""
+
+    Since 2026-11 there is NO registered tool outside the whitelist (the 14
+    unreachable orphans were deleted, so registry == whitelist == 121). The
+    probe therefore registers a synthetic tool and asserts the gate still
+    denies it — the deny path must keep working even though the shipped
+    registry can no longer trigger it."""
     from connectors.builtin import get_registry
+    from core.agent.base_agent import Tool
     reg = get_registry()
-    r = await reg.call("TestRunner", agent="universe", turn_id="g1", args={})
+    name = "__NotWhitelisted__"
+    reg.register(Tool(name=name, capability="Read",
+                      description="synthetic out-of-whitelist probe",
+                      handler=lambda: {"ok": True},
+                      consent="auto", resources=[]))
+    try:
+        r = await reg.call(name, agent="universe", turn_id="g1", args={})
+    finally:
+        reg._tools.pop(name, None)
     assert r["ok"] is False
     assert r["blocked_by"] == "whitelist"
     assert "universe" in r["error"]
-    assert "TestRunner" in r["error"]
-    assert "TestRunner" not in r.get("whitelist", [])
+    assert name in r["error"]
+    assert name not in r.get("whitelist", [])
 
 
 @pytest.mark.asyncio
@@ -87,11 +98,20 @@ async def test_whitelist_block_is_audited(fresh_home):
     """Phase 0.1: a blocked-by-whitelist call must produce an audit entry so
     the operator can see someone tried to escape their whitelist."""
     from connectors.builtin import get_registry
+    from core.agent.base_agent import Tool
     from security.audit import tail_audit
     reg = get_registry()
-    # S1: TestRunner is registered but NOT in universe's merged whitelist,
-    # so the gate must block and AUDIT the attempt
-    await reg.call("TestRunner", agent="universe", turn_id="g1", args={})
+    # a synthetic registered-but-not-whitelisted tool (the 14 real orphans
+    # were deleted in 2026-11) — the gate must block AND audit the attempt
+    name = "__NotWhitelistedAudit__"
+    reg.register(Tool(name=name, capability="Read",
+                      description="synthetic out-of-whitelist audit probe",
+                      handler=lambda: {"ok": True},
+                      consent="auto", resources=[]))
+    try:
+        await reg.call(name, agent="universe", turn_id="g1", args={})
+    finally:
+        reg._tools.pop(name, None)
     class IO:
         def __init__(self): self.out = []
         def print(self, *a, **k): self.out.append(a)

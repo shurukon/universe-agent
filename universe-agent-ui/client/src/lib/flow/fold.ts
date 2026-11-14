@@ -39,21 +39,18 @@ export function toolFamily(tool: string): ToolFamily {
     tool.startsWith("Openapi") ||
     tool.startsWith("Graphql") ||
     tool.startsWith("mcp_") ||
-    tool === "StaticAnalysis" ||
     tool === "VisionAnalyze" ||
     tool === "ImageOcr"
   )
     return "explore";
   if (
     tool === "Bash" ||
-    tool === "BashUnsandboxed" ||
     tool === "CodeExecute" ||
     tool === "LogTail" ||
     tool.startsWith("Docker") ||
     tool === "K8s" ||
     tool === "Cicd" ||
     tool === "Ssh" ||
-    tool.startsWith("TestRunner") ||
     tool === "Sql" ||
     tool === "PandasQuery"
   )
@@ -64,8 +61,6 @@ export function toolFamily(tool: string): ToolFamily {
     tool === "Delete" ||
     tool.startsWith("Git") ||
     tool.startsWith("github_") ||
-    tool === "SvgGen" ||
-    tool === "CssTools" ||
     tool.startsWith("Charting")
   )
     return "changes";

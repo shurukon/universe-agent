@@ -88,7 +88,11 @@ project_root (INSERT OR IGNORE); goals.project_id NULL = General.
 screen" with the real memory universe in 3D, tiny (~5% of current size or
 smaller), with many interactions.
 
-### 2.1 Component `components/desktop/MiniUniverse.tsx`
+### 2.1 Component `client/src/components/universe-sphere/MemorySphere.tsx`
+There is no `components/desktop/MiniUniverse.tsx` in this repo — the
+MiniUniverse-specific sizing described below lives in
+`client/src/components/universe-sphere/MemorySphere.tsx`, which is mounted by
+`client/src/components/universe-sphere/UniverseCanvas.tsx`.
 - A **sized** R3F `<Canvas>` (default 220×140 CSS px, prop-driven,
   `dpr={[1,1.25]}`, `frameloop` paused when frozen), NOT the full-bleed
   UniverseCanvas. Reuses from universe-glm: `buildUniverse('mini', …)` quality
@@ -123,6 +127,13 @@ smaller), with many interactions.
 ---
 
 ## W3 — First-run onboarding (`/welcome`)
+
+> **NOT IMPLEMENTED** — there is no `/welcome` route and no
+> `pages/Welcome.tsx`; `client/src/App.tsx` defines only `/`,
+> `/index.html`, `/settings`, `/automations`, `/chat`, `/bots`, `/studio`
+> and `/404`. The bridge's first-run gate does exist
+> (`universe_desktop_bridge/app.py` — `GET /api/setup` +
+> `POST /api/setup/complete`), but the client never redirects to it.
 
 3 steps, full-screen, universe identity, progress dots (step N of 3):
 
@@ -159,10 +170,13 @@ Agents · Voice · MCP Servers · Memory) + right content pane.
   moved here verbatim + per-agent default override link.
 - **General**: assistant name (wake word), language, project root default,
   theme density note, data controls (export/import, wipe history).
-- **Agents**: from `GET /api/agents` — 12 agent cards: specialty, tools,
-  current provider/model per agent with override dropdown (uses
-  `set_agent_model` bridge passthrough `PATCH /api/agents/{name}/model`),
-  fallback chain editor (add/remove order).
+- **Agents**: the `GET /api/agents` roster endpoint was **REMOVED** on
+  2026-11-10 — it always answered `{"agents": []}` because the roster has
+  exactly one agent, and there are no 12 agent cards. Universe registers
+  exactly one agent (`universe`, `core/core_agents/agents.py`) and the
+  `Agent` tool spawns worker missions from it — unspecialised, sharing the
+  universe toolset, depth 2, 4 per call and 8 per turn
+  (`core/agent/swarm.py`).
 - **Voice**: current voice card + wake word + live mic test; fixed by W1
   settings unification.
 - **MCP Servers**: list (name, transport badge, tool count, health dot,
@@ -185,7 +199,9 @@ Pattern source: vercel tool.tsx (collapsible ToolHeader + status badge +
 icon pulse) + terminal-agent task list (pending/in-progress/complete
 checklist, "esc to interrupt") + universe identity.
 
-### 5.1 `components/desktop/ActivityFeed.tsx` (inside AgentMessage)
+### 5.1 `components/desktop/ActivityPane.tsx` (inside AgentMessage)
+There is no `ActivityFeed.tsx` in this repo — the live activity surface is
+`client/src/components/desktop/ActivityPane.tsx`.
 Replaces raw event spam with a structured professional feed:
 - **Status line** (always visible while running): `[spinner verb] <agent>
   is <action>` — rotating verbs ("Charting", "igniting", "reading the
@@ -259,6 +275,11 @@ Sidebar becomes: Projects section (list, + new project, active highlight)
 
 Definition of done: every wave's acceptance criteria met and re-verified
 after the final integration pass; regression suites green twice in a row.
+
+**Status (2026-11-10):** W3 (onboarding), the MiniUniverse/ActivityFeed
+component names above, and the 12-agent roster are NOT implemented — see the
+wave notes. This document is a plan, not a report: read each wave's
+"NOT IMPLEMENTED" marker before assuming a surface exists.
 
 ## W8 — m6–m8 hardening addendum (2026-09)
 

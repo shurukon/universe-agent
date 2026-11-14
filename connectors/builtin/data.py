@@ -196,6 +196,21 @@ def pandas_query(path: str = "", op: str = "head",
                 "op": op}
 
 
+def _canonical_dtype(dtype: str) -> str:
+    """One spelling for a column kind across pandas versions.
+
+    pandas reports the text kind as "object" (2.x) and "str" (3.x); the
+    nullable string type is "string". A schema written against one spelling
+    used to fail EVERY check on the other — a valid text column reported
+    dtype_mismatch forever (audit 2026-11-10). Numbers keep their real
+    dtype names; only the text aliases are folded into one."""
+    d = str(dtype or "").strip().lower()
+    if d in ("object", "str", "string", "string[python]", "string[pyarrow]",
+             "unicode", "text"):
+        return "str"
+    return d
+
+
 def data_validate(path: str, schema: dict) -> dict:
     """Validate the dataset at `path` against `schema`.
 
@@ -234,9 +249,9 @@ def data_validate(path: str, schema: dict) -> dict:
             if spec.get("required", True):
                 errors.append({"column": col, "issue": "missing_required"})
             continue
-        actual_dtype = str(df[col].dtype)
+        actual_dtype = _canonical_dtype(str(df[col].dtype))
         expected_dtype = spec.get("dtype")
-        if expected_dtype and actual_dtype != expected_dtype:
+        if expected_dtype and actual_dtype != _canonical_dtype(str(expected_dtype)):
             errors.append({"column": col, "issue": "dtype_mismatch",
                            "expected": expected_dtype, "actual": actual_dtype})
         if "min" in spec:

@@ -95,9 +95,18 @@ async def compact_with_model(messages: list[dict[str, Any]],
 
 
 def context_window_for_model(model: str) -> int:
+    """The model's context window in tokens (int — the estimate flag stays
+    in security.capability._context_window_for, which returns the tuple
+    the meter needs; audit 2026-11-10: this wrapper used to hand a tuple
+    straight to compaction maths).
+
+    Resolution: the provider catalog's declared window first, then the
+    family heuristic. When the caller knows the active model's window it
+    should pass it explicitly instead of relying on this lookup."""
     try:
         from security.capability import _context_window_for
-        return _context_window_for(model)
+        window, _is_estimate = _context_window_for(model)
+        return int(window)
     except Exception:
         return 128000
 

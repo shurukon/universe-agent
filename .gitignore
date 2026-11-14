@@ -66,3 +66,27 @@ test_file.txt
 *.webp
 *.mp4
 *.webm
+
+# Dev leftovers in the repo root (never tracked). Several are already
+# covered by the generic *.log / *.png rules above; they are repeated
+# here so the intent is explicit and does not depend on rule order.
+payload.txt
+debug.log
+.vite_manual.log
+pytest_*.log
+pw_probe_*.js
+shot.png
+tmp_screens/
+.tooltest/
+
+# Root-level npm manifests are local scaffolding only — the real client
+# package lives in universe-agent-ui/ and MUST stay tracked.
+# (anchored with a leading slash so the UI manifests are unaffected)
+/package.json
+/package-lock.json
+
+# The session archive (audit 2026-11-11): every session's durable event log
+# lives in <project>/sessions/<session_id>/events.jsonl — inside the project
+# the user works in, by design. When that project IS the repo, the folder
+# must never be committed.
+/sessions/

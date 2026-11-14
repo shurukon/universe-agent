@@ -20,6 +20,7 @@ append-only persistence, and the session-shaped summary envelope.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any, Callable
@@ -30,10 +31,57 @@ def _new_turn_id() -> str:
     return "turn-" + uuid.uuid4().hex[:12]
 
 
-# The session engine's context window matches the turn engine's default
-# (run_turn's context_window_tokens=32_000): both compaction layers trip
-# on the same budget.
+# The session engine's context window: the ACTIVE model's declared window
+# (provider catalog → family heuristic), never a hardwired constant. It used
+# to be a copy of run_turn's 32 000 default, so both layers compacted (or
+# failed to compact) on a number no provider had ever reported
+# (audit 2026-11-10, A6).
 SESSION_CONTEXT_WINDOW_TOKENS = 32_000
+
+
+def _context_window(llm_client: Any) -> int:
+    """Resolve the window for the model the client is ACTUALLY using.
+
+    Order: the active routing chain's model (the manager reports what it
+    would call right now) → the documented 32 000 fallback. It deliberately
+    does NOT guess from the catalog's first model — with nothing configured
+    there is no active model to measure, and a wrong 128 000 is as bad as a
+    wrong 32 000."""
+    from context.compaction import context_window_for_model
+    for candidate in _active_model_names(llm_client):
+        try:
+            window = context_window_for_model(candidate)
+        except Exception:
+            continue
+        if window and window > 0:
+            return int(window)
+    return SESSION_CONTEXT_WINDOW_TOKENS
+
+
+def _active_model_names(llm_client: Any) -> list[str]:
+    """The model names the routing chain resolves right now, most specific
+    first. Empty when nothing is configured (the caller then uses the
+    documented fallback instead of a guess)."""
+    names: list[str] = []
+    try:
+        from providers.manager import get_provider_manager
+        pm = get_provider_manager()
+        for agent in ("universe", "", None):
+            try:
+                resolved = pm.best_available(agent or "universe")
+            except Exception:
+                resolved = None
+            if resolved:
+                names.append(str(resolved[1]))
+                break
+    except Exception:
+        pass
+    # a client that carries its own last-used model is the most specific
+    for attr in ("last_model", "_last_model", "model", "current_model"):
+        val = getattr(llm_client, attr, None)
+        if val:
+            names.append(str(val))
+    return names
 
 
 async def maybe_compact(*, session_id: str, llm_client: Any,
@@ -58,8 +106,8 @@ async def maybe_compact(*, session_id: str, llm_client: Any,
     msgs = store.history_messages(session_id)
     if len(msgs) < 8:
         return False
-    window = (context_window_for_model(model) if model
-              else SESSION_CONTEXT_WINDOW_TOKENS)
+    window = (_context_window(llm_client) if not model
+              else context_window_for_model(model))
     pre = _approx_tokens(msgs)
     if not should_compact(pre, window):
         return False
@@ -167,6 +215,7 @@ async def run_session_turn(
     store = get_session_store()
     turn_id = turn_id or _new_turn_id()
     started_at = time.time()
+    _marked_active = False
 
     if not store.get(session_id):
         try:
@@ -196,6 +245,42 @@ async def run_session_turn(
     timeline_record(turn_id, agent="universe", event="turn_start",
                     detail=str(text)[:200])
 
+    # ---- M8: the turn is ACTIVE for the whole run ------------------------
+    # The subconscious memory loop yields to an "active turn" — and it used
+    # to consult is_goal_active(), which read _active_turns, a set ONLY the
+    # deleted goal path ever populated. Every session turn therefore looked
+    # idle and the writer loop wrote memory mid-turn. The active set now
+    # lives here, on the one path that runs.
+    _marked_active = False
+    try:
+        from core.agent.universe_agent import get_universe_agent
+        _active = getattr(get_universe_agent(), "_active_turns", None)
+        if isinstance(_active, set):
+            _active.add(turn_id)
+            _marked_active = True
+    except Exception:
+        pass
+
+    def _record_end(status: str, *, error: str = "",
+                    stop_reason: str = "") -> None:
+        """One closing row for every ending (M7/M11)."""
+        try:
+            store.append(session_id, {
+                "kind": "turn_end", "turn_id": turn_id,
+                "status": status, "engine": "session",
+                **({"error": error} if error else {}),
+                **({"stop_reason": stop_reason} if stop_reason else {})})
+        except Exception:
+            pass
+        try:
+            timeline_record(turn_id, agent="universe",
+                            event="turn_completed" if status == "completed"
+                            else ("turn_cancelled" if status == "cancelled"
+                                  else "turn_failed"),
+                            detail=(error or stop_reason or status)[:200])
+        except Exception:
+            pass
+
     # ---- append-only: the user message is the canonical replay row -----
     user_seq = store.append(session_id, {
         "kind": "message", "role": "user", "content": str(text),
@@ -219,47 +304,127 @@ async def run_session_turn(
         str(effort or ""), EFFORT_DEFAULT_MAX_TOKENS)
 
     from core.agent.turn_engine import run_turn
+    # A6: the engine's compaction budget is the ACTIVE model's window, not
+    # the hardwired 32 000 the engine used to default to.
+    model_window = _context_window(llm_client)
+    # The SESSION is the unit of persistence (audit 2026-11-11): every
+    # event this turn produces is appended to
+    # `<project>/sessions/<session_id>/events.jsonl`, so reopening the
+    # session replays the EXACT stream the user watched — thinking, tool
+    # calls, plan rows, artifacts — instead of a synthesised stub.
+    from observability.events import get_event_bus
+    bus = get_event_bus()
+    # The SESSION is the unit of persistence (audit 2026-11-11): every
+    # event this turn produces — the opening turn_start, the engine's
+    # thinking/tool rows, the closing turn_completed and chat_reply — is
+    # appended to `<project>/sessions/<session_id>/events.jsonl`, so
+    # reopening the session replays the EXACT stream the user watched
+    # instead of a synthesised stub.
+    _session_token = bus.push_session(session_id)
     try:
         resp, events, turn_out = await run_turn(
             llm_client=llm_client, messages=messages, agent="universe",
             turn_id=turn_id, capability_gate=gate,
             max_tokens=token_budget,
+            context_window_tokens=model_window,
             drain_steer=lambda: [str(m.get("text", ""))
-                                 for m in take_steer(turn_id)],
+                                  for m in take_steer(turn_id)],
             on_event=on_event)
-    except Exception as exc:
-        # honest failure path: the transcript records the failure, then the
-        # exception propagates to the caller (no silent swallowed turns)
-        try:
-            store.append(session_id, {
-                "kind": "turn_end", "turn_id": turn_id,
-                "status": "failed",
-                "error": str(exc)[:500],
-                "stop_reason": type(exc).__name__})
-        except Exception:
-            pass
-        try:
-            timeline_record(turn_id, agent="universe", event="turn_failed",
-                            detail=str(exc)[:200])
-        except Exception:
-            pass
+    except asyncio.CancelledError:
+        # M7: a cancelled turn closes as "cancelled" (never "failed") and
+        # the cancellation propagates to the caller.
+        _record_end("cancelled", error="cancelled by user",
+                    stop_reason="cancelled")
         raise
+    except Exception as exc:
+        # M1: a TERMINAL provider failure halts through the ONE choke point
+        # (record_provider_halt) — raw error, honest transcript row, no
+        # re-labelling, and it RETURNS a halted summary instead of raising,
+        # exactly the contract the goal engine had. Every other exception
+        # still propagates: the caller (bridge/CLI) owns those.
+        from providers.client import LLMError
+        from core.agent.turn_engine import LLMOutputLimitExceeded
+        from core.agent.universe_agent import record_provider_halt
+        if isinstance(exc, LLMError):
+            return record_provider_halt(
+                turn_id, str(exc)[:500], error=str(exc)[:500],
+                error_kind=str(getattr(exc, "kind", "unknown") or "unknown"),
+                goal_text=str(text), language=str(language or "en"),
+                session_id=session_id)
+        if isinstance(exc, LLMOutputLimitExceeded):
+            return record_provider_halt(
+                turn_id, str(exc)[:500], error=str(exc)[:500],
+                error_kind="model_output_limit_exceeded",
+                goal_text=str(text), language=str(language or "en"),
+                session_id=session_id)
+        _record_end("failed", error=str(exc)[:500],
+                    stop_reason=type(exc).__name__)
+        raise
+    finally:
+        # M11 + M8 bookkeeping close-out: per-turn state drained, the turn
+        # marked no longer active. The goal engine's finally did the first
+        # three of these; the session path never did.
+        bus.pop_session(_session_token)
+        _drain_turn_state(turn_id)
+        if _marked_active:
+            try:
+                from core.agent.universe_agent import get_universe_agent
+                _unmark = getattr(get_universe_agent(), "_active_turns", None)
+                if isinstance(_unmark, set):
+                    _unmark.discard(turn_id)
+            except Exception:
+                pass
 
     reply = str(resp.text or "").strip()
     tools_used, tool_history, tool_failures = _summarize_tool_events(
         events, started_at)
 
-    # ---- append-only: tool trace + final assistant message ------------
-    # (a synthetic system trace, NOT dangling role:tool rows — the OpenAI
-    # pairing invariant stays valid when the transcript is replayed)
-    if tool_history:
-        trace_lines = [
-            f"[tool {t['tool']} → {'ok' if t['ok'] else 'error'}] "
-            f"{t['result_preview'][:300]}" for t in tool_history]
-        store.append(session_id, {
-            "kind": "tool_trace", "role": "system", "content":
-                "[tool activity this turn]\n" + "\n".join(trace_lines),
+    # ---- append-only: the tool protocol the model actually produced ----
+    # A5 (audit 2026-11-10): tool RESULTS used to be flattened into one
+    # synthetic system "tool_trace" string with 300-char previews, so a later
+    # turn replayed a prose summary instead of the tool protocol. The
+    # transcript now carries the real assistant(tool_calls) + role:"tool"
+    # rows — the OpenAI pairing invariant still holds on replay, and a
+    # compaction marker can replace the whole block wholesale.
+    tool_rows: list[dict[str, Any]] = []
+    for e in events or []:
+        if not e.get("tool"):
+            continue
+        res = e.get("result") if isinstance(e.get("result"), dict) else {}
+        ok = bool(res.get("ok"))
+        inner = res.get("result")
+        if isinstance(inner, dict) and "ok" in inner:
+            ok = bool(inner.get("ok"))
+        if isinstance(inner, str):
+            preview = str(inner)
+        elif res.get("error"):
+            preview = str(res.get("error"))
+        else:
+            preview = json.dumps(res, ensure_ascii=False, default=str)
+        tool_rows.append({
+            "kind": "tool_result", "role": "tool",
+            "tool": str(e.get("tool", "")),
+            "tool_call_id": str(e.get("call_id") or ""),
+            "agent": str(e.get("agent") or "universe"),
+            "ok": ok,
+            "content": preview[:4000],
             "turn_id": turn_id})
+    if tool_rows:
+        # one assistant message declaring every call id in the same order
+        declared = [{
+            "id": r["tool_call_id"], "type": "function",
+            "function": {"name": r["tool"],
+                         "arguments": json.dumps(
+                             (e.get("args") or {}), ensure_ascii=False)},
+        } for r, e in zip(tool_rows, [e for e in (events or [])
+                                      if e.get("tool")])]
+        store.append(session_id, {
+            "kind": "message", "role": "assistant",
+            "content": (reply or None),
+            "tool_calls": declared,
+            "turn_id": turn_id})
+        for row in tool_rows:
+            store.append(session_id, row)
     if reply:
         store.append(session_id, {
             "kind": "message", "role": "assistant", "content": reply,
@@ -291,9 +456,13 @@ async def run_session_turn(
         "goal_text": str(text),
         "classification": {"category": "general", "domain": "general",
                            "intent": "agent_turn", "complexity": "adaptive"},
+        # A8 honesty: an empty final reply is NOT a success — the turn said
+        # nothing. model_empty_reply is reported (with its stop_reason) so
+        # the surface can say so instead of showing a silent empty turn.
         "success": bool(pkg.task_success) or bool(reply),
         "conversation": True,
         "reply": reply,
+        "stop_reason": str(turn_out.stop_reason),
         "steps": [{"agent": "universe",
                    "what": "agent turn" + (" with tools" if tools_used else ""),
                    "success": bool(pkg.task_success) or bool(reply),
@@ -333,3 +502,28 @@ async def run_session_turn(
     await _maybe_step({"phase": "turn_complete", "reply": reply[:200],
                        "status": "completed"})
     return summary
+
+
+def _drain_turn_state(turn_id: str) -> None:
+    """M11: per-turn state that used to leak.
+
+    The goal engine's `finally` dropped the steer queue, the swarm
+    bookkeeping and the hook one-shot (require_facts) rows at the end of
+    every turn. The session path never did, so a finished turn's queued
+    steer could land in the NEXT turn and hook state accumulated forever.
+    One function, called from the session loop's finally — never a leak."""
+    try:
+        from core.agent.steer import clear as _clear_steer
+        _clear_steer(turn_id)
+    except Exception:
+        pass
+    try:
+        from core.agent.swarm import clear as _clear_swarm
+        _clear_swarm(turn_id)
+    except Exception:
+        pass
+    try:
+        from hooks import get_hook_manager
+        get_hook_manager().clear_goal_state(turn_id)
+    except Exception:
+        pass

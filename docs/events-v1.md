@@ -49,25 +49,33 @@ Guarantees provided by the bus, not repeated per type:
 | type | emitted from | payload fields |
 |---|---|---|
 | `goal_started` | bridge `app.py` (HTTP), `voice.py` (voice) | `text` (≤2000), `language?`, `task_id?`, `via?=voice` |
-| `goal_planned` | `base_agent.py` (visible plan parsed) | `plan: [{step:int, agent, instruction(≤200)}]` |
-| `goal_completed` | `orchestrator.py` | `reply?`, `conversation?=true` (chat branch) |
-| `goal_failed` | `orchestrator.py` | `error` (reason) |
-| `goal_cancelled` | `orchestrator.py` | `reason="user"` |
-| `chat_reply` | `orchestrator.py` (chat branch) | `reply`, `via="orchestrator"` |
-| `chat_reply_rejected` | `orchestrator.py` (anti-hallucination gate) | `reason` |
+| `goal_planned` | LEGACY — `base_agent.py` (the goal engine was deleted 2026-11-10; live: `turn_*`) | `plan: [{step:int, agent, instruction(≤200)}]` |
+| `goal_completed` | LEGACY — `orchestrator.py` (the goal engine was deleted 2026-11-10; live: `turn_*`) | `reply?`, `conversation?=true` (chat branch) |
+| `goal_failed` | LEGACY — `orchestrator.py` (the goal engine was deleted 2026-11-10; live: `turn_*`) | `error` (reason) |
+| `goal_cancelled` | LEGACY — `orchestrator.py` (the goal engine was deleted 2026-11-10; live: `turn_*`) | `reason="user"` |
+| `chat_reply` | LEGACY — `orchestrator.py` (the goal engine was deleted 2026-11-10; live emitter: `core/agent/universe_agent.py`) | `reply`, `via="orchestrator"` |
+| `chat_reply_rejected` | LEGACY — `orchestrator.py` (the goal engine was deleted 2026-11-10; live: `turn_*`) | `reason` |
 
 Note: session-branch completions emit `goal_completed` with a summary
 `reply` as well; `conversation=true` distinguishes the chat branch.
+
+LEGACY (2026-11-10): the goal engine behind `goal_planned` /
+`goal_completed` / `goal_failed` / `goal_cancelled` /
+`chat_reply_rejected` was deleted — `core/agent/orchestrator.py` is now a
+shim for `core/agent/universe_agent.py`, and no emitter remains for those
+types. They are kept here as contract history (this document is
+additive-only; types are never deleted from it). The live equivalents are
+the `turn_*` events in `core/agent/turn_engine.py` and `chat_reply`.
 
 ### Agent loop
 
 | type | emitted from | payload fields |
 |---|---|---|
-| `llm_round` | `base_agent.py` | `agent`, `round_index`, `has_tools` |
-| `llm_delta` | `base_agent.py` (stream tap) | `agent`, `text` (tail ≤800 chars) |
-| `context_compacted` | `base_agent.py` | `agent`, `approx_tokens_before` |
-| `tool_loop_throttled` | `base_agent.py` | `agent`, `consecutive_failures`, `round_index` |
-| `steer_received` | `base_agent.py` (drain point) | `agent`, `messages: [≤200-char strings]` |
+| `llm_round` | `core/agent/turn_engine.py:438` | `agent`, `round_index`, `has_tools` |
+| `llm_delta` | `core/agent/turn_engine.py:333` (stream tap) | `agent`, `text` (tail ≤800 chars) |
+| `context_compacted` | `core/agent/turn_engine.py:398` | `agent`, `approx_tokens_before` |
+| `tool_loop_throttled` | `core/agent/turn_engine.py:607` | `agent`, `consecutive_failures`, `round_index` |
+| `steer_received` | `core/agent/turn_engine.py:365` (drain point) | `agent`, `messages: [≤200-char strings]` |
 
 ### Tool lifecycle (single choke-point: `connectors/builtin/__init__.py` `ToolRegistry.call`)
 
@@ -102,7 +110,7 @@ for consent travel on `consent_required.args_full`, not here.
 
 | type | emitted from | payload fields |
 |---|---|---|
-| `memory_updated` | `core/memory/__init__.py` | `layer` (`"L2"`/`"L3"`), plus either `kind="asteroid", gravity_score, success` or `kind="star_born", topic(≤80), domain` |
+| `memory_updated` | `core/memory/__init__.py` (emitted only when a turn runs the memory cycle) | `layer` (`"L2"`/`"L3"`), plus either `kind="asteroid", gravity_score, success` or `kind="star_born", topic(≤80), domain` |
 
 ### Consent (bridge)
 
@@ -124,7 +132,7 @@ Timeout denies: `consent_decided{decision:"denied", reason:"timeout"}`.
 | type | emitted from | payload fields |
 |---|---|---|
 | `provider_retry` | `providers/client.py` | `agent`, `provider`, `model`, `attempt`, `max_retries`, `kind` |
-| `provider_halt` | `orchestrator.py` | `reason`, `error`(≤300) |
+| `provider_halt` | `core/agent/universe_agent.py` (`record_provider_halt`) | `reason`, `error`(≤300) |
 | `catalog_probes_updated` | bridge `app.py` | `local_reachable: bool` |
 | `settings_updated` | bridge `app.py` | `**changed` (only the keys that changed) |
 | `audit_chain_broken` | bridge `app.py` | `first_bad_line` |
@@ -143,7 +151,7 @@ detail sub-shapes of `tool_finished`, not bus types of their own.
 | 2026-10-01 | contract frozen (this document) | Phase 0 |
 | 2026-10-02 | `todo_updated` (`todos`, `in_progress_idx`) — from `connectors/builtin/todos.py` | Phase 1 |
 | 2026-10-02 | `hook_intercepted` (`hook_id`, `event`, `action`, `tool`, `agent`, `message`) — from `ToolRegistry.call` | Phase 1 |
-| 2026-10-02 | `context_usage` (`round_index`, `used_tokens`, `window_tokens`, `window_is_estimate`, `model`) — from `base_agent.run_tool_loop` | Phase 1 |
+| 2026-10-02 | `context_usage` (`round_index`, `used_tokens`, `window_tokens`, `window_is_estimate`, `model`) — from `core/agent/turn_engine.py:471` | Phase 1 |
 | 2026-10-02 | `question_required` (`pending_id`, `question`, `options`, `allow_free_text`, `timeout_s`) + `question_decided` (`pending_id`, `reason`) — from `universe_desktop_bridge/questions.py` | Phase 1 |
 | 2026-10-02 | `automation_fired` (`automation_id`, `name`, `schedule`, `prompt`) — from `schedule/` | Phase 1 |
 | 2026-10-02 | `steer_queued` gains OPTIONAL `queued_as` field (additive; absent on the classic steer path) | Phase 1 |
@@ -151,3 +159,5 @@ detail sub-shapes of `tool_finished`, not bus types of their own.
 | 2026-10-03 | `automation_failed` (`automation_id`, `name`, `schedule`, `prompt`, `error`) — replaces the differently-shaped error reuse of `automation_fired` | Phase 1 review |
 | 2026-10-03 | `permission_mode_changed` (`mode`, `previous`) — mode chip stays live when plan.submit flips plan→full | Phase 1 review |
 | 2026-10-03 | `steer_queued` gains OPTIONAL `dropped` field with `queued_as="dropped"` (fail-safe queue drain) | Phase 1 review |
+| 2026-11-10 | `model_empty_reply` (`attempt`, `max_attempts`, `stop_reason`) + `model_empty_reply_exhausted` — from `core/agent/turn_engine.py` | Phase 1 review |
+| 2026-11-10 | `turn_control_stop` (`reason`, `tool_call_id`) — from `core/agent/turn_engine.py` | Phase 1 review |

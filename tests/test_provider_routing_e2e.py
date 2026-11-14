@@ -46,7 +46,6 @@ from observability.events import reset_event_bus_for_tests
 from providers.client import LLMClient, LLMError, LLMResponse
 from providers.manager import get_provider_manager
 from security.secrets_fallback import encrypt_secret
-from storage.local import get_storage
 
 
 # --------------------------------------------------------------------------
@@ -218,10 +217,14 @@ class TestCompleteChain:
     def test_classify_halt_reason_is_raw_error(self, fresh_home, monkeypatch):
         """run_turn: an exhausted provider ladder halts with the RAW error —
         no 'Stopped before starting: could not be reached' re-labeling.
-        (The durable halt row + provider_halt choke point live on the legacy
-        goal-state path — selected with GAX_ENGINE=goal.)"""
+
+        P4 (2026-11-10): there is one engine now, and the durable halt row
+        is a TRANSCRIPT row (turn_end status=failed), not a goals row — the
+        goal table is gone. GAX_ENGINE is ignored, so the session path must
+        carry the whole honesty contract on its own."""
         monkeypatch.setenv("GAX_ENGINE", "goal")
         from core.agent.universe_agent import UniverseAgent
+        from core.session.store import get_session_store
         raw = ("Error code: 410 - {'status': 410, 'detail': \"The model "
                "'x' has reached its end of life\"}")
 
@@ -233,11 +236,16 @@ class TestCompleteChain:
         summary = asyncio.run(orch.run_turn("hi there", turn_id="goal-rawerr"))
         assert summary["success"] is False and summary["halted"] is True
         assert summary["error"].startswith("Error code: 410"), summary["error"]
-        row = get_storage().query_one(
-            "SELECT status, final_summary FROM goals WHERE id=?;",
-            ("goal-rawerr",))
-        assert row["status"] == "failed"
-        assert "Stopped before starting" not in row["final_summary"]
+        # the durable row is the transcript close-out (no goals table left).
+        # run_turn resolved a FRESH session id for this turn (the caller
+        # passed none), so read the halt row by its stored session.
+        store = get_session_store()
+        rows = store.transcript(summary.get("session_id") or "goal-rawerr")
+        ends = [r for r in rows if r.get("kind") == "turn_end"]
+        assert ends, rows
+        assert ends[-1]["status"] == "failed", ends[-1]
+        assert "model_unavailable" in str(ends[-1].get("error_kind", ""))
+        assert "Stopped before starting" not in str(ends[-1].get("error", ""))
 
     def test_410_maps_to_model_unavailable(self, fresh_home, monkeypatch):
         """The SDK-classification seam: a 410 'end of life' APIStatusError
@@ -399,20 +407,40 @@ class TestVerdictsAndCancel:
         ast = mem.complete_task(planet=planet, handoffs=[])
         assert ast.task_success is False
 
-    def test_cancelled_goal_row_reads_cancelled(self, fresh_home):
-        """DB row and bridge must agree: cancel writes 'cancelled', not
-        'failed' (the old disagreement flipped the row when the live entry
-        TTL-evicted)."""
-        from core.agent.orchestrator import Orchestrator
-        get_storage().execute(
-            "INSERT INTO goals(id,text,status,created_at) "
-            "VALUES('goal-canc','x','running',1);")
-        orch = Orchestrator()
-        orch._mark_goal_cancelled("goal-canc")
-        row = get_storage().query_one(
-            "SELECT status, final_summary FROM goals WHERE id='goal-canc';")
-        assert row["status"] == "cancelled"
-        assert json.loads(row["final_summary"])["cancelled"] is True
+    def test_cancelled_session_turn_records_cancelled_not_failed(self, fresh_home):
+        """Transcript and caller must agree: a cancelled turn is recorded as
+        status="cancelled", not "failed" (P4, audit 2026-11-10).
+
+        The goal engine wrote a `goals` row here; that table is gone. The
+        single authority is the transcript row the session loop writes."""
+        import asyncio as aio
+        from core.engine.session_loop import run_session_turn
+        from core.session.store import get_session_store
+
+        class _Hang:
+            async def complete(self, **kw):
+                raise aio.CancelledError()
+
+        store = get_session_store()
+        sid = "sess-cancel-row"
+        store.create(id=sid)
+
+        async def _run():
+            task = aio.create_task(run_session_turn(
+                text="do work", session_id=sid,
+                llm_client=_Hang(), build_messages=lambda h: []))
+            await aio.sleep(0.05)
+            task.cancel()
+            try:
+                await task
+            except aio.CancelledError:
+                pass
+
+        aio.run(_run())
+        ends = [r for r in store.transcript(sid) if r.get("kind") == "turn_end"]
+        assert ends, "a cancelled turn must still close its row"
+        assert ends[-1]["status"] == "cancelled", ends[-1]
+        assert "cancelled" in str(ends[-1].get("stop_reason", ""))
 
     def test_provider_error_kind_survives_prose_stringification(self):
         """BaseAgent.run records LLMError.kind on the handoff package so the
@@ -549,28 +577,29 @@ class TestModelsEndpoints:
 # --------------------------------------------------------------------------
 
 class TestAgentRoutingEndpoints:
+    """The per-agent routing endpoints.
+
+    2026-11-10 (P2/P4): `GET /api/agents` was DELETED — it always answered
+    {"agents": []} because the roster is exactly one agent, and it had no
+    consumer. The remaining contract is `PATCH /api/agents/{name}/model`
+    (routing, still used) + the single-agent truth asserted below."""
     def _seed(self, bridge):
         bridge.post("/api/providers", json={
             "name": "Groq", "base_url": "", "api_key": "sk-g",
             "set_default": False})
 
-    def test_roster_is_subagents_only_read_only(self, bridge):
-        """2026-09 model-chip redesign: GET /api/agents is the SUBAGENT
-        roster — the universe agent is the main loop itself, not a peer row.
-        Post-S1 (single universe agent) the subagent roster is EMPTY: the
-        retired specialists were purged with their rows."""
+    def test_roster_endpoint_reports_one_agent(self, bridge):
+        """There is exactly one registered agent; the roster endpoint lists
+        the SUBAGENTS (empty post-S1) and never the main loop."""
         self._seed(bridge)
+        from core.core_agents import ALL_AGENTS
+        assert list(ALL_AGENTS) == ["universe"]
         rows = bridge.get("/api/agents").json()["agents"]
-        names = [a["name"] for a in rows]
-        assert "universe" not in names  # the main loop is never a roster row
-        assert "general" not in names
-        assert names == [], f"no subagents remain in the single-agent model: {names}"
+        assert rows == [], rows
 
-    def test_patch_roundtrip_every_agent_including_orchestrator(self, bridge):
-        """The per-agent PATCH endpoint still routes every REGISTERED agent
-        (the orchestrator alias included); the round-trip is verified
-        against the provider manager. Post-S1 the registry is exactly
-        {'universe'} — 'orchestrator' is the accepted legacy label."""
+    def test_patch_roundtrip_the_one_registered_agent(self, bridge):
+        """The per-agent PATCH endpoint routes every REGISTERED agent
+        ('orchestrator' is the accepted legacy label for 'universe')."""
         self._seed(bridge)
         from core.core_agents import ALL_AGENTS
         names = list(ALL_AGENTS) + ["orchestrator"]
@@ -580,13 +609,9 @@ class TestAgentRoutingEndpoints:
                              json={"provider": "Groq", "model": "m1"})
             assert r.status_code == 200, (name, r.text)
         pm = get_provider_manager()
-        for name in names:
-            # 'orchestrator' is routed AS universe (the endpoint's legacy
-            # label mapping), so the manager only ever holds 'universe'
-            stored = "universe" if name == "orchestrator" else name
-            assert pm.get_agent_model(stored) == ("Groq", "m1"), name
-        # S1+v22: the orchestrator routing label retired — universe IS it
-        assert pm.get_agent_model("universe") == ("Groq", "m1")
+        # 'orchestrator' is routed AS universe (the endpoint's legacy label
+        # mapping), so the manager only ever holds 'universe'
+        assert pm.get_agent_model("universe") == ("Groq", "m1"), names
 
     def test_patch_rejects_unknown_and_uninstalled(self, bridge):
         r = bridge.patch("/api/agents/nope/model",

@@ -17,7 +17,6 @@ from typing import Any
 from loguru import logger
 
 from bots import runtime, store
-from config import get_config
 
 TICK_SECONDS = 30.0
 
@@ -97,17 +96,30 @@ class BotScheduler:
         self._task: asyncio.Task[Any] | None = None
 
     def start(self) -> None:
-        if self._task is None or self._task.done():
-            self._task = asyncio.create_task(self._loop())
+        # loop-safe (audit 2026-11-10): drop a task whose loop is gone, the
+        # same way scheduling/__init__.py now does — a dead scheduler task
+        # looked "running" forever and blocked every later start.
+        task = self._task
+        if task is not None and not task.done():
+            loop = task.get_loop()
+            if loop is not None and not loop.is_closed():
+                return
+        self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
+        task = self._task
+        if task is None:
+            return
+        loop = task.get_loop()
+        if loop is not None and loop.is_closed():
             self._task = None
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        self._task = None
 
     async def _loop(self) -> None:
         while True:

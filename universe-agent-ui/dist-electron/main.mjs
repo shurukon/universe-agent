@@ -9,6 +9,7 @@ import {
   ipcMain,
   net,
   protocol,
+  screen,
   session,
   shell
 } from "electron";
@@ -244,18 +245,26 @@ function bootstrapDesktop() {
     });
   }
   async function createWindow() {
+    let winW = 1440;
+    let winH = 900;
+    try {
+      const area = screen.getPrimaryDisplay().workAreaSize;
+      winW = Math.max(1440, Math.min(area.width - 16, 1800));
+      winH = Math.max(780, Math.min(area.height - 16, 1e3));
+    } catch {
+    }
     mainWindow = new BrowserWindow({
-      width: 1440,
-      height: 900,
+      width: winW,
+      height: winH,
       minWidth: 1024,
       minHeight: 700,
       backgroundColor: "#161616",
-      // ZCode canvas tone (docs/zcode-tokens.md)
+      // Universe canvas tone (docs/shell-tokens.md)
       show: false,
       // avoid the white flash; shown on ready-to-show
       title: "Universe Agent",
       autoHideMenuBar: true,
-      // ZCode-literal chrome (Phase 2): the app draws its own title bar
+      // Universe chrome (Phase 2): the app draws its own title bar
       // (client/src/components/desktop/TopBar.tsx — drag region + window
       // buttons through the universe:win IPC). pollHealth and the bridge
       // token are untouched by this.

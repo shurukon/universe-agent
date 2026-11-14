@@ -27,6 +27,8 @@ import asyncio
 import json
 import os
 import re
+import atexit
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -125,6 +127,52 @@ def _prune_client_msgs() -> None:
 _consumer_task: Any = None
 
 
+def _session_id_for_turn(turn_id: str) -> str:
+    """The session (task container) a turn belongs to.
+
+    The turn id is what the bus carries; the session id is what the user
+    opens. The bridge knows the mapping because it created the turn inside
+    a task container (`gt.task_id`), and the binding survives the TTL
+    pruner (state.BridgeState._sessions). When the turn is unknown (a bot
+    turn, a synthetic turn) the turn id IS the session — one session per
+    turn, which is still a correct, openable session."""
+    if not turn_id:
+        return ""
+    try:
+        from universe_desktop_bridge.state import get_state
+        state = get_state()
+        bound = state.session_of(str(turn_id))
+        if bound:
+            return bound
+        gt = state.get(str(turn_id))
+        if gt is not None:
+            return str(getattr(gt, "task_id", "") or turn_id)
+    except Exception:
+        pass
+    return str(turn_id)
+
+
+def _append_session_event(ev: dict[str, Any], turn_id: str = "") -> None:
+    """Append one bus event to its session's durable log (best-effort).
+
+    Events emitted INSIDE a session context already carry `session_id` and
+    were written by the bus itself (observability/events.py) — writing them
+    again here would duplicate every row. This path is for the events with
+    NO session binding (bot turns, synthetic turns): they still belong to a
+    session (the turn's own container), so they are filed there."""
+    try:
+        if ev.get("session_id"):
+            return          # the bus already persisted it
+        from core.session.event_log import append_event
+        session_id = _session_id_for_turn(str(ev.get("turn_id") or turn_id
+                                           or ""))
+        if not session_id:
+            return
+        append_event(session_id, ev)
+    except Exception:
+        pass          # observability must never break the observed work
+
+
 async def _consume_bus_forever() -> None:
     """Pump every bus event into its goal's ring buffer (seq stamping
     happens in EventBus.emit). Survives bus resets (tests) by re-subscribing
@@ -154,6 +202,16 @@ async def _consume_bus_forever() -> None:
                         gt = get_state().get(gid)
                         if gt is not None:
                             gt.add_event(dict(ev))
+                    # The DURABLE session log (audit 2026-11-11): every bus
+                    # event is appended to
+                    # `<project>/sessions/<session_id>/events.jsonl`, so
+                    # reopening a session replays the EXACT stream the user
+                    # watched — thinking, tool calls, plan rows, artifacts,
+                    # the terminal event. The ring is per TURN and lives in
+                    # the Universe home; the session log is per SESSION and
+                    # lives in the project. This write is the reason the
+                    # events stopped disappearing.
+                    _append_session_event(ev, gid)
             finally:
                 sub.stop()
         except asyncio.CancelledError:
@@ -162,8 +220,105 @@ async def _consume_bus_forever() -> None:
             await asyncio.sleep(1.0)
 
 
+# ---------------------------------------------------------------------------
+# THE bridge's background loop (a PROCESS-wide singleton)
+# ---------------------------------------------------------------------------
+# Audit 2026-11-12: the loop used to live on the Runtime INSTANCE, so every
+# new Runtime (each test's reset_runtime_for_tests(), every re-init) started
+# ANOTHER daemon event loop and never stopped the previous one. The pytest
+# process ended up with dozens of idle "universe-bridge-loop" threads and
+# the suite stalled with the process wedged (the watchdog could not even
+# fire). The background loop belongs to the PROCESS, not to a Runtime: one
+# loop, started on demand, stopped at exit.
+_BG_LOOP: asyncio.AbstractEventLoop | None = None
+_BG_THREAD: Any = None
+_BG_LOCK = threading.Lock()
+
+
+def _bg_loop() -> asyncio.AbstractEventLoop | None:
+    return _BG_LOOP
+
+
+def _start_bg_loop() -> None:
+    global _BG_LOOP, _BG_THREAD
+    with _BG_LOCK:
+        if _BG_LOOP is not None and _BG_LOOP.is_running():
+            return
+        loop = asyncio.new_event_loop()
+
+        def _run_loop() -> None:
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_forever()
+            finally:
+                # cancel whatever is still parked on this loop so the
+                # process does not print "Task was destroyed but it is
+                # pending" for the bridge's own background work
+                try:
+                    pending = asyncio.all_tasks(loop)
+                    for task in pending:
+                        task.cancel()
+                    if pending:
+                        loop.run_until_complete(
+                            asyncio.gather(*pending, return_exceptions=True))
+                except Exception:
+                    pass
+                try:
+                    loop.close()
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_run_loop, name="universe-bridge-loop",
+                             daemon=True)
+        t.start()
+        _BG_LOOP = loop
+        _BG_THREAD = t
+
+
+def _stop_bg_loop() -> None:
+    global _BG_LOOP, _BG_THREAD
+    with _BG_LOCK:
+        loop = _BG_LOOP
+        thread = _BG_THREAD
+        _BG_LOOP = None
+        _BG_THREAD = None
+    if loop is None:
+        return
+    try:
+        loop.call_soon_threadsafe(loop.stop)
+    except Exception:
+        pass
+    if thread is not None and thread.is_alive():
+        try:
+            thread.join(timeout=5.0)
+        except Exception:
+            pass
+
+
+def _stop_bg_loop_at_exit() -> None:
+    try:
+        _stop_bg_loop()
+    except Exception:
+        pass
+
+
+atexit.register(_stop_bg_loop_at_exit)
+
+
+
 class Runtime:
-    """Everything the bridge owns beyond FastAPI's own state."""
+    """Everything the bridge owns beyond FastAPI's own state.
+
+    P4 (audit 2026-11-10): the bridge owns ONE long-lived event loop, on a
+    daemon thread, and every piece of background work the bridge starts —
+    the turn runner, the automations scheduler, the bots scheduler, the bus
+    consumer, the model pre-warm — runs on it. They used to be created on
+    the *request's* loop, which is correct under uvicorn (one server loop
+    for the process) and a landmine anywhere else: starlette's TestClient
+    creates a fresh portal loop PER REQUEST, so the first request's portal
+    never closed while a turn was running and `POST /api/turn` blocked
+    forever (the whole tests/test_task_threading.py file hung). The app
+    now owns its background work instead of a request owning it."""
 
     def __init__(self) -> None:
         self.started_at = time.time()
@@ -178,6 +333,39 @@ class Runtime:
         self._followup_lock = asyncio.Lock()
         self.init_error: str = ""
         self._initialized = False
+
+    # ---- the bridge's own background loop -------------------------------
+    def bg_loop(self) -> asyncio.AbstractEventLoop | None:
+        """The long-lived loop. None until init() starts it."""
+        return _bg_loop()
+
+    def _start_bg_loop(self) -> None:
+        _start_bg_loop()
+
+    def submit_bg(self, coro):
+        """Run a coroutine on the bridge's own loop, never the caller's.
+
+        Falls back to the caller's loop when the bridge loop is not running
+        (unit tests that exercise handlers directly) - the behaviour there
+        is identical to the old `asyncio.create_task`."""
+        loop = _bg_loop()
+        if loop is not None and loop.is_running():
+            return asyncio.run_coroutine_threadsafe(coro, loop)
+        try:
+            return asyncio.ensure_future(coro)   # same-loop fallback
+        except RuntimeError:
+            return asyncio.get_event_loop().create_task(coro)
+
+    def stop_bg_loop(self) -> None:
+        """Stop the bridge loop and WAIT for its thread to die.
+
+        The wait matters: a background task that is still running when the
+        next test swaps the config/storage singletons opens the NEW database
+        with the OLD connection - two connections on one file is
+        "database is locked" (the intermittent fixture error the suite
+        showed on 2026-11-11)."""
+        _stop_bg_loop()
+
 
     def init(self) -> None:
         """Heavy imports + singleton wiring. Safe to call once; never raises
@@ -208,14 +396,15 @@ class Runtime:
             # the bridge's QuestionsBroker (question_required event + POST)
             from connectors.builtin.ask_user import set_question_handler
             set_question_handler(self.questions.ask)
-            # automations: the cron scheduler ticks on the bridge's loop
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
+            # automations: the cron scheduler ticks on the BRIDGE's own
+            # loop (not the request's — see Runtime's docstring)
+            self._start_bg_loop()
+            loop = self.bg_loop()
             if loop is not None:
+                # objects that must live on the bridge loop
+                self._followup_lock = asyncio.Lock()
                 from scheduling import get_scheduler
-                get_scheduler().start()
+                loop.call_soon_threadsafe(get_scheduler().start)
             self._sweep_orphaned_goals()
             # pre-warm every installed provider's model list at startup so
             # the model picker is instant — no cache TTL, one probe each
@@ -228,18 +417,13 @@ class Runtime:
             # skipping on it left every later bridge with dead rings. The
             # old task can never run again (its loop is gone); add_event's
             # seq-dedup makes any overlap harmless.
-            global _consumer_task
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None:
-                if _consumer_task is not None:
-                    try:
-                        _consumer_task.cancel()
-                    except Exception:
-                        pass
-                _consumer_task = loop.create_task(_consume_bus_forever())
+            if self.bg_loop() is not None:
+                # the bus consumer feeds every goal's ring from boot —
+                # started on the BRIDGE loop, so it survives the request
+                # that triggered init (audit 2026-11-10: it used to die
+                # with that request's portal, leaving empty rings)
+                self.submit_bg(_consume_bus_forever())
+                self.submit_bg(_prewarm_models())
         except Exception as exc:  # bridge must still serve /api/health
             self.init_error = str(exc)[:300]
 
@@ -287,22 +471,75 @@ def get_runtime() -> Runtime:
 
 
 def reset_runtime_for_tests() -> Runtime:
+    """A fresh runtime for a fresh test.
+
+    The PREVIOUS runtime's background loop must stop first: it keeps
+    running the bus consumer, the schedulers and the memory writer, and
+    those tasks touch the config/storage singletons that the next test is
+    about to replace — a background task hitting a half-reset config is
+    exactly the intermittent "AttributeError in config.py" the suite showed
+    (audit 2026-11-11)."""
     global _runtime
+    try:
+        _runtime.stop_bg_loop()
+    except Exception:
+        pass
+    try:
+        from core.session.event_log import close_handles
+        close_handles()
+    except Exception:
+        pass
     _runtime = Runtime()
     reset_state_for_tests()
     return _runtime
 
 
+async def _run_subconscious() -> None:
+    """The memory writer loop, parked forever on the bridge loop.
+
+    core.memory.subconscious.loop owns the real cadence (it sleeps between
+    passes and yields to any active turn); this coroutine only keeps the
+    loop object alive for the process lifetime and stops it cleanly when
+    the app shuts down."""
+    from core.memory.subconscious.loop import get_loop
+    loop = get_loop()
+    loop.start()
+    try:
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        loop.stop()
+        raise
+
+
+async def _run_bot_scheduler() -> None:
+    """The bots ROUTINE scheduler, parked forever on the bridge loop."""
+    from bots.scheduler import get_scheduler
+    get_scheduler().start()
+    try:
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        try:
+            await get_scheduler().stop()
+        except Exception:
+            pass
+        raise
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     _runtime.init()
+    # Memory: the subconscious writer loop (L2/L3 consolidation) used to be
+    # started ONLY by the CLI REPL, so the desktop app — the product's main
+    # surface — never wrote a single episodic/semantic memory (audit
+    # 2026-11-10, B2a). It runs on the bridge's own loop so a TestClient
+    # request cannot kill it, and it yields to any active turn.
+    _runtime.submit_bg(_run_subconscious())
     # Universe Bots: the ROUTINE scheduler ticks bots.json every 30s and
     # fires due daily/interval/cron schedules (TASK→SKILL→ROUTINE).
-    from bots.scheduler import get_scheduler
-    get_scheduler().start()
+    _runtime.submit_bg(_run_bot_scheduler())
     yield
     try:
-        await get_scheduler().stop()
+        _runtime.stop_bg_loop()
     except Exception:
         pass
     # release pooled provider sockets (AsyncOpenAI connection pools) —
@@ -503,7 +740,10 @@ class GoalPatch(BaseModel):
 
 
 class ProjectCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
+    # the name is OPTIONAL: the bridge derives it from the folder when it is
+    # empty (adding a folder used to name the project after the WHOLE path,
+    # which is what made the sidebar show "D:\...\Galaxy-compter")
+    name: str = Field(default="", max_length=80)
     root: str = ""
 
 
@@ -935,12 +1175,164 @@ def _goal_row(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _session_row(session_id: str) -> dict[str, Any] | None:
+    """The session's own row (the `sessions` table) in the shape the
+    bridge's row helpers expect.
+
+    The session table is the authority for the session containers (the
+    `goals` table only holds the legacy rows and the bridge's task
+    bookkeeping). The SQL maps the session columns onto the old row names
+    so `_goal_row` stays the ONE place that shapes a row for the UI.
+
+    The STATUS comes from the transcript's last turn_end (a session whose
+    last turn failed must not read "active" — audit 2026-11-12), and the
+    ERROR travels with it."""
+    try:
+        row = get_storage().query_one(
+            "SELECT id, title as text, 'active' as status, created_at, "
+            "updated_at as completed_at, '' as final_summary, project_id, "
+            "title, id as parent_goal_id, archived, deleted, pinned, "
+            "'task' as kind FROM sessions WHERE id=?;", (session_id,))
+    except Exception:
+        return None
+    if row is None:
+        return None
+    status = "active"
+    error = ""
+    try:
+        from core.session.store import get_session_store
+        ends = [r for r in get_session_store().transcript(session_id)
+                if r.get("kind") == "turn_end"]
+        if ends:
+            last = ends[-1]
+            status = str(last.get("status") or "active")
+            error = str(last.get("error") or "")
+    except Exception:
+        pass
+    row = dict(row)
+    row["status"] = status
+    row["error"] = error
+    return row
+
+
+def _session_messages(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    """The thread inside one SESSION, rebuilt from its TRANSCRIPT.
+
+    The session transcript (core/session/store.py) is the authority: every
+    user message, every assistant reply, every tool result and every
+    turn_start/turn_end row. The old implementation read the `goals`
+    table's message children — a table the deleted goal engine used to
+    write, so a reopened session came back EMPTY (the events and the
+    messages were simply gone).
+
+    The returned shape is the one the client already consumes:
+    {turn_id, role, text, created_at, ...} plus the tool_history / todos
+    extras the client's fallback rebuild needs.
+    """
+    try:
+        from core.session.store import get_session_store
+        rows = get_session_store().transcript(session_id)
+    except Exception:
+        return []
+    if not rows:
+        return []
+
+    # index the transcript per turn
+    turns: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+
+    def _turn(turn_id: str) -> dict[str, Any]:
+        t = turns.get(turn_id)
+        if t is None:
+            t = {"turn_id": turn_id, "started_at": None, "completed_at": None,
+                 "status": "", "stop_reason": "", "user": None, "agent": None,
+                 "tool_history": [], "todos": [], "todos_idx": None,
+                 "steps": 0, "tool_calls_total": 0, "success": True}
+            turns[turn_id] = t
+            order.append(turn_id)
+        return t
+
+    for row in rows:
+        kind = str(row.get("kind") or "message")
+        turn_id = str(row.get("turn_id") or session_id)
+        t = _turn(turn_id)
+        ts = row.get("ts")
+        if kind == "turn_start":
+            t["started_at"] = t["started_at"] or ts
+            t["status"] = str(row.get("status") or "executing")
+        elif kind == "turn_end":
+            t["completed_at"] = ts
+            t["status"] = str(row.get("status") or t["status"])
+            t["stop_reason"] = str(row.get("stop_reason") or "")
+            try:
+                t["steps"] = int(row.get("steps") or 0)
+            except (TypeError, ValueError):
+                t["steps"] = 0
+            try:
+                t["tool_calls_total"] = int(row.get("tool_calls_total") or 0)
+            except (TypeError, ValueError):
+                t["tool_calls_total"] = 0
+            if t["status"] == "failed":
+                t["success"] = False
+        elif kind == "tool_result":
+            t["tool_history"].append({
+                "tool": str(row.get("tool") or ""),
+                "ok": bool(row.get("ok")),
+                "args": {},
+                "result_preview": str(row.get("content") or "")[:500],
+                "seq": len(t["tool_history"]) + 1,
+                "agent": str(row.get("agent") or "universe"),
+                "duration_ms": 0,
+                "ts": ts,
+            })
+        elif kind == "message":
+            role = str(row.get("role") or "user")
+            if role == "user":
+                if t["user"] is None:
+                    t["user"] = {"turn_id": turn_id, "role": "user",
+                                 "text": str(row.get("content") or ""),
+                                 "created_at": ts}
+            elif role == "assistant":
+                text = str(row.get("content") or "")
+                if text or t["agent"] is None:
+                    t["agent"] = {"turn_id": turn_id, "role": "agent",
+                                  "text": text, "created_at": ts,
+                                  "success": t["success"],
+                                  "steps": [],
+                                  "tool_history": list(t["tool_history"]),
+                                  "todos": list(t["todos"]),
+                                  "todos_idx": t["todos_idx"],
+                                  "started_at": t["started_at"],
+                                  "completed_at": t["completed_at"],
+                                  "elapsed_ms": None,
+                                  "status": t["status"]}
+
+    out: list[dict[str, Any]] = []
+    for turn_id in order:
+        t = turns[turn_id]
+        if t["user"] is not None:
+            out.append(t["user"])
+        if t["agent"] is not None:
+            out.append({**t["agent"], "tool_history": list(t["tool_history"]),
+                        "success": t["success"], "status": t["status"],
+                        "stop_reason": t["stop_reason"]})
+    return out[:limit]
+
+
 def _task_messages(task_id: str, limit: int = 200) -> list[dict[str, Any]]:
     """The thread inside one task: its message goals (kind='message',
-    session_id=task) in creation order, each with role mapping — a user
+    session_id=task) in creation order, each with role mapping - a user
     message renders from `text`, an agent reply from final_summary.reply.
     Legacy pre-v17 tasks fall back to the task row's own text as the single
-    user turn so old chats still open as a thread."""
+    user turn so old chats still open as a thread.
+
+    2026-11-11: the SESSION TRANSCRIPT is the authority now (the goal
+    engine that wrote the `goals` message children is deleted). The goals
+    rows are read only as a LEGACY fallback for chats that predate the
+    transcript — a reopened session must never come back empty."""
+    session_msgs = _session_messages(task_id, limit)
+    if session_msgs:
+        return session_msgs
     st = get_storage()
     rows = st.query_all(
         "SELECT id, text, status, created_at, completed_at, final_summary "
@@ -1064,7 +1456,10 @@ async def sessions(limit: int = 50, project_id: str | None = None,
 
 @app.get("/api/session/{session_id}")
 async def session_detail(session_id: str) -> dict[str, Any]:
-    # Session authority: read from sessions + transcript, fallback to goals
+    """Session authority: read from sessions + transcript (Restored
+    2026-11-10: the P2 cleanup cut this as a duplicate of /api/turn/{id};
+    it is the session-authority thread reader the UI actually calls)."""
+    # Session authority: read from sessions + transcript
     row = get_storage().query_one("SELECT id, title as text, 'active' as status, created_at, updated_at as completed_at, '' as final_summary, project_id, title, '' as parent_goal_id, archived, deleted, pinned, 'task' as kind FROM sessions WHERE id=?;", (session_id,))
     if row:
         item = _goal_row(row)
@@ -1084,62 +1479,11 @@ async def session_detail(session_id: str) -> dict[str, Any]:
         except Exception:
             item["messages"] = _task_messages(session_id)
         return item
-    # fallback to legacy goals
+    # no session row: the task container is a goals row (kind='task')
     return await goal_detail(turn_id=session_id)
-
-@app.get("/api/goals")
-async def goals(limit: int = 50, project_id: str | None = None,
-               include_archived: bool = False, q: str = "") -> dict[str, Any]:
-    limit = max(1, min(limit, 200))
-    # tasks only in the sidebar: message goals (children) are rendered
-    # INSIDE their task thread, never as separate rows. Bot containers
-    # (owner_session_id='bot:<id>') live in the Bots surface only.
-    sql = ("SELECT id, text, status, created_at, completed_at, final_summary, "
-           "project_id, title, owner_session_id AS session_id, archived, "
-           "deleted, pinned, kind "
-           "FROM goals WHERE deleted=0 AND kind='task' "
-           "AND (owner_session_id IS NULL OR owner_session_id NOT LIKE 'bot:%')")
-    params: list[Any] = []
-    if not include_archived:
-        sql += " AND archived=0"
-    if project_id:
-        sql += " AND (project_id=? OR project_id IS NULL)"
-        params += [project_id]
-    if q:
-        sql += " AND (text LIKE ? OR title LIKE ?)"
-        params += [f"%{q}%", f"%{q}%"]
-    sql += " ORDER BY pinned DESC, created_at DESC LIMIT ?;"
-    params.append(limit)
-    rows = get_storage().query_all(sql, params)
-    st = get_state()
-    out = []
-    for r in rows:
-        item = _goal_row(r)
-        # a task's live status = does any of its messages run right now?
-        if any(gt.task_id == r["id"] and gt.status in ("queued", "running")
-               for gt in st.goals.values()):
-            item["status"] = "running"
-        gt = st.get(r["id"])
-        if gt is not None:
-            item["bridge_status"] = gt.status
-        out.append(item)
-    for gt in st.running():                      # bridge goals not yet flushed
-        if getattr(gt, "_bot_owned", False):
-            continue                             # bots live in the Bots surface
-        if not any(o["turn_id"] == gt.turn_id for o in out):
-            # only message-goals whose task row isn't flushed yet surface as
-            # their parent task (never as standalone sidebar rows)
-            if gt.task_id and any(o["turn_id"] == gt.task_id for o in out):
-                continue
-            out.insert(0, {"turn_id": gt.turn_id, "text": gt.text,
-                           "status": "running", "created_at": gt.created_at,
-                           "kind": "task", "source": "bridge",
-                           "bridge_status": gt.status})
-    return {"goals": out}
 
 
 @app.get("/api/turn/{turn_id}")
-@app.get("/api/goal/{goal_id}")
 async def goal_detail(turn_id: str = None, goal_id: str = None) -> dict[str, Any]:
     turn_id = turn_id or goal_id
     row = get_storage().query_one(
@@ -1148,6 +1492,19 @@ async def goal_detail(turn_id: str = None, goal_id: str = None) -> dict[str, Any
         "FROM goals WHERE id=?;", (turn_id,))
     gt = get_state().get(turn_id)
     if row is None and gt is None:
+        # A SESSION (not a goal row): the session engine owns the truth —
+        # the transcript plus the durable event log. There is no goals row
+        # for it any more (the goal engine is deleted), so the old 404 made
+        # every CLI-created session unopenable in the UI.
+        session = _session_row(turn_id)
+        if session is not None:
+            item = _goal_row(session)
+            item["messages"] = _task_messages(turn_id)
+            item["source"] = "session"
+            if session.get("error"):
+                item["error"] = session["error"]
+                item["success"] = False
+            return item
         raise HTTPException(404, "goal not found")
     if row is None:
         out = {"turn_id": turn_id, "text": gt.text if gt else "",
@@ -1201,23 +1558,106 @@ def _ring_events(turn_id: str, after_seq: int) -> list[dict[str, Any]]:
         return []
 
 
+def _durable_session_events(session_id: str,
+                            after_seq: int = 0) -> list[dict[str, Any]]:
+    """The session's durable event log — the authority for a reopened
+    session (audit 2026-11-11).
+
+    Reads `<project>/sessions/<session_id>/events.jsonl`: one append-only
+    JSONL row per bus event, written by the bridge's bus consumer. A
+    reopened session therefore replays the EXACT stream the user watched
+    (thinking, tool calls, plan, subagents, artifacts, the terminal event)
+    instead of the synthesised stub the old goals-table fallback produced.
+
+    Never raises: a missing log is simply an empty list."""
+    if not session_id:
+        return []
+    try:
+        from core.session.event_log import read_events
+        events = read_events(session_id, after_seq)
+        if not events:
+            return []
+        # the session-level counter is the TRUE order (the bus's per-turn
+        # seq restarts at 1 for every turn, and ts is rounded to the
+        # millisecond, so sorting by it would shuffle same-ms rows)
+        events.sort(key=lambda e: _event_order(e))
+        return events
+    except Exception:
+        return []
+
+
+def _event_order(event: dict[str, Any]) -> tuple[int, float, int]:
+    """The replay order of one logged event: the session counter first,
+    then the wall clock, then the per-turn seq."""
+    try:
+        sseq = int(event.get("session_seq") or 0)
+    except (TypeError, ValueError):
+        sseq = 0
+    try:
+        ts = float(event.get("ts") or 0.0)
+    except (TypeError, ValueError):
+        ts = 0.0
+    try:
+        seq = int(event.get("seq") or 0)
+    except (TypeError, ValueError):
+        seq = 0
+    return (sseq, ts, seq)
+
+
+@app.get("/api/session/{session_id}/events")
+async def session_events(session_id: str, after_seq: int = 0) -> dict[str, Any]:
+    """The SESSION's event stream — the explicit name for what the turn
+    route also serves (audit 2026-11-12).
+
+    The session is the unit of work, so the session is what you read:
+    every event of every turn in that session, in order, from the durable
+    log inside the project. `after_seq` filters on the session-level
+    counter, so an incremental refill is exact."""
+    events = _durable_session_events(session_id, after_seq)
+    latest = max((e.get("seq") or 0) for e in events) if events else after_seq
+    return {"turn_id": session_id, "session_id": session_id,
+            "after_seq": after_seq, "latest_seq": latest, "dropped": 0,
+            "events": events, "source": "session_log"}
+
+
 @app.get("/api/turn/{turn_id}/events")
-@app.get("/api/goal/{goal_id}/events")
 async def goal_events(turn_id: str = None, goal_id: str = None, after_seq: int = 0) -> dict[str, Any]:
     turn_id = turn_id or goal_id
-    """Reconnect refill: every ring event past `after_seq` for one goal.
+    """Reconnect refill: every event past `after_seq` for one turn OR one
+    SESSION.
+
+    The SESSION is the authority (audit 2026-11-11): its durable log
+    (`<project>/sessions/<id>/events.jsonl`) holds the complete stream the
+    user watched — thinking, tool calls of every kind, plan rows, subagents,
+    artifacts, the terminal event — so reopening a session replays it
+    verbatim instead of the synthesised stub the old code produced.
+
     `dropped` is the ring-overflow count — a client that sees dropped > 0
-    knows the ring itself has gaps (very old events evicted) and should
-    fall back to the goal log, not just the ring."""
+    knows the LIVE ring has gaps (very old events evicted) and should fall
+    back to the durable log, not just the ring."""
     gt = get_state().get(turn_id)
     if gt is not None:
         events = [e for e in gt.events if e.get("seq", 0) > after_seq]
         return {"turn_id": turn_id, "after_seq": after_seq,
                 "latest_seq": gt.seq, "dropped": gt.dropped, "events": events}
-    # Durable ring replay: a restarted bridge (or a TTL-evicted goal) still
-    # has the goal's full wire stream on disk. A task id replays its own
-    # ring plus every message goal's ring, merged in arrival order — the
-    # reopened timeline is the run the user actually watched.
+    # 1) the DURABLE session log — the authority (a session, or a turn
+    #    whose session log was written)
+    session_events = _durable_session_events(turn_id, after_seq)
+    if session_events:
+        latest = max((e.get("seq") or 0) for e in session_events)
+        return {"turn_id": turn_id, "after_seq": after_seq,
+                "latest_seq": latest, "dropped": 0, "events": session_events,
+                "source": "session_log"}
+    # 1b) the session EXISTS but has not produced an event yet (a brand-new
+    #     task, or a turn that has not reached its first model call). That
+    #     is an EMPTY STREAM, not "no such goal" — the old 404 here made
+    #     the client's refill look like a dead session (audit 2026-11-12).
+    if _session_row(turn_id) is not None:
+        return {"turn_id": turn_id, "after_seq": after_seq,
+                "latest_seq": after_seq, "dropped": 0, "events": [],
+                "source": "session_log"}
+    # 2) Durable ring replay (legacy, per turn): a restarted bridge (or a
+    #    TTL-evicted goal) still has the goal's full wire stream on disk.
     ring_events = _ring_events(turn_id, after_seq)
     if not ring_events:
         try:
@@ -1285,8 +1725,68 @@ async def goal_events(turn_id: str = None, goal_id: str = None, after_seq: int =
     raise HTTPException(404, "goal not known to this bridge session")
 
 
+@app.patch("/api/projects/{pid}")
+async def patch_project(pid: str, req: ProjectPatch) -> dict[str, Any]:
+    import time as _time
+    st = get_storage()
+    row = st.query_one("SELECT id FROM projects WHERE id=?;", (pid,))
+    if row is None:
+        raise HTTPException(404, {"code": "project_not_found",
+                                   "message": f"project {pid!r} unknown"})
+    sets, params = [], []
+    if req.name is not None:
+        sets.append("name=?")
+        params.append(req.name.strip()[:80])
+    if req.root is not None:
+        sets.append("root=?")
+        params.append(req.root)
+    if req.archived is not None:
+        sets.append("archived=?")
+        params.append(1 if req.archived else 0)
+    if sets:
+        sets.append("updated_at=?")
+        params.append(_time.time())
+        params.append(pid)
+        with st.transaction() as conn:
+            conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id=?;",
+                         params)
+    return {"ok": True, "project_id": pid}
+
+
+@app.delete("/api/projects/{pid}")
+async def delete_project(pid: str, hard: bool = False) -> dict[str, Any]:
+    """Soft-delete: keep the project row archived unless hard=true AND it
+    has no chats. Its goals become unassigned (empty project_id) — the UI
+    groups them under the composer's "Select project" slot.
+
+    Restored 2026-11-10: the P2 cleanup cut PATCH+DELETE /api/projects/{pid}
+    as "dormant", which broke the whole Projects page (rename, archive and
+    delete are its only actions)."""
+    st = get_storage()
+    row = st.query_one("SELECT id FROM projects WHERE id=?;", (pid,))
+    if row is None:
+        raise HTTPException(404, {"code": "project_not_found",
+                                   "message": f"project {pid!r} unknown"})
+    n = st.query_one("SELECT COUNT(*) AS c FROM goals WHERE project_id=? "
+                     "AND deleted=0;", (pid,))
+    if hard and (n or {"c": 0})["c"] > 0:
+        raise HTTPException(409, {"code": "project_not_empty",
+                                   "message": "delete its chats first or soft-archive instead"})
+    with st.transaction() as conn:
+        if hard:
+            conn.execute("DELETE FROM projects WHERE id=?;", (pid,))
+            # its goals become unassigned ('') — the UI's "Select project"
+            # slot is where they regroup; no synthetic project is created
+            conn.execute("UPDATE goals SET project_id='' WHERE project_id=?;",
+                         (pid,))
+        else:
+            conn.execute("UPDATE projects SET archived=1, updated_at=? WHERE id=?;",
+                         (time.time(), pid))
+    return {"ok": True, "removed": pid, "hard": hard}
+
+
+
 @app.post("/api/turn")
-@app.post("/api/goal")
 async def start_goal(req: GoalRequest) -> dict[str, Any]:
     _runtime.init()  # lazy + idempotent
     if _runtime.orchestrator is None:
@@ -1366,40 +1866,38 @@ async def start_goal(req: GoalRequest) -> dict[str, Any]:
     # container titled "New task" — never titled after the message text.
     task_id = req.session_id or req.parent_goal_id or req.goal_id or req.turn_id
     if task_id:
-        row = get_storage().query_one(
-            "SELECT id, kind, archived, deleted, project_id FROM goals "
-            "WHERE id=?;", (task_id,))
-        if row is None or row.get("deleted"):
+        # the container is a SESSION (audit 2026-11-11): the sessions table
+        # is the authority. The goals table is read only for chats that
+        # predate the session model.
+        row = _session_row(task_id)
+        legacy = None
+        if row is None:
+            legacy = get_storage().query_one(
+                "SELECT id, kind, archived, deleted, project_id FROM goals "
+                "WHERE id=?;", (task_id,))
+        if row is None and legacy is None:
             raise HTTPException(404, {
                 "code": "turn_not_found",
                 "message": "that task no longer exists"})
-        if row.get("kind") != "task":
-            task_id = row.get("parent_goal_id") or row.get("session_id") or task_id
-        if row.get("archived"):
+        src = row or legacy
+        if src.get("archived"):
             with get_storage().transaction() as conn:
                 conn.execute(
-                    "UPDATE goals SET archived=0 WHERE id=?;", (task_id,))
-        project_id = row.get("project_id") or req.project_id or ""
+                    "UPDATE sessions SET archived=0 WHERE id=?;", (task_id,))
+        project_id = src.get("project_id") or req.project_id or ""
     else:
         task_id = new_id("task-")
         project_id = req.project_id or ""
         with get_storage().transaction() as conn:
+            # ONE container, in the sessions table. The goal engine is gone
+            # (2026-11-10) and so is the goals-table write for new tasks:
+            # the session IS the unit of work and of persistence.
             conn.execute(
-                "INSERT INTO goals(id, text, status, kind, title, project_id, "
-                "created_at, owner_session_id) "
-                "VALUES(?,?,?,?,?,?,?,?);",
-                (task_id, text[:2000], "active", "task", "New task",
-                 project_id, time.time(),
-                 getattr(_runtime, "session_id", "") or "desktop"))
-            # dual-write to sessions for session authority
-            try:
-                conn.execute(
-                    "INSERT OR IGNORE INTO sessions(id, workspace_root, title, created_at, updated_at, project_id, archived, deleted, pinned) "
-                    "VALUES(?,?,?,?,?,?,?,?,?);",
-                    (task_id, "", "New task", time.time(), time.time(), project_id, 0, 0, 0),
-                )
-            except Exception:
-                pass
+                "INSERT OR IGNORE INTO sessions(id, workspace_root, title, "
+                "created_at, updated_at, project_id, archived, deleted, "
+                "pinned) VALUES(?,?,?,?,?,?,?,?,?);",
+                (task_id, "", "New task", time.time(), time.time(),
+                 project_id, 0, 0, 0))
     turn_id = new_id("turn-")
     if req.client_msg_id:
         _seen_client_msgs[req.client_msg_id] = (turn_id, time.time())
@@ -1425,35 +1923,60 @@ async def start_goal(req: GoalRequest) -> dict[str, Any]:
 
     async def _run() -> None:
         try:
-            with bus.bind_goal(turn_id):
-                emit("turn_started", turn_id=turn_id, text=text[:2000],
-                     language=req.language, task_id=task_id,
-                     studio_tool=req.studio_tool or "")
-                summary = await orch.run_turn(
-                    text, language=req.language,
-                    turn_id=turn_id,
-                    owner_session_id=getattr(
-                        _runtime, "session_id", "") or "desktop",
-                    project_id=project_id,
-                    project_root=project_root,
-                    session_id=task_id,
-                    effort=_resolve_effort(req.effort, req.thinking_level),
-                )
+            # bind the SESSION for the whole turn (audit 2026-11-11): every
+            # event of this turn — including the ones the bridge itself
+            # emits (turn_started, the terminal event) — belongs to the
+            # session's durable log inside the project.
+            with bus.bind_session(task_id):
+                with bus.bind_goal(turn_id):
+                    emit("turn_started", turn_id=turn_id, text=text[:2000],
+                         language=req.language, task_id=task_id,
+                         studio_tool=req.studio_tool or "")
+                    summary = await orch.run_turn(
+                        text, language=req.language,
+                        turn_id=turn_id,
+                        owner_session_id=getattr(
+                            _runtime, "session_id", "") or "desktop",
+                        project_id=project_id,
+                        project_root=project_root,
+                        session_id=task_id,
+                        effort=_resolve_effort(req.effort, req.thinking_level),
+                    )
                 gt.result = summary
                 # the contract is the SUMMARY, not the absence of an
                 # exception: success=False with no raise is a soft failure
                 # and must read failed (the old code marked it completed)
-                if isinstance(summary, dict) and not summary.get("success", True):
-                    gt.set_status("failed")
-                    gt.error = str(summary.get("error", ""))[:500]
-                else:
+                ok = isinstance(summary, dict) and summary.get("success", True)
+                if ok:
                     gt.set_status("completed")
                     gt.error = ""
+                else:
+                    gt.set_status("failed")
+                    gt.error = str(summary.get("error", ""))[:500]
+                # the terminal bus event the UI folds on (audit 2026-11-10,
+                # P6): the bridge used to emit NOTHING here — the client's
+                # status strip un-mounted only because its own polling timed
+                # out. turn_completed / turn_failed / turn_cancelled now carry
+                # the summary's own stop reason so the card ends immediately
+                # and honestly.
+                if ok:
+                    emit("turn_completed", turn_id=turn_id,
+                         reply=str(summary.get("reply", "") or "")[:2000],
+                         conversation=True,
+                         stop_reason=str(summary.get("stop_reason") or ""))
+                else:
+                    halted = bool(summary.get("halted"))
+                    emit("provider_halt" if halted else "turn_failed",
+                         turn_id=turn_id,
+                         error=str(summary.get("error", ""))[:300],
+                         reason=str(summary.get("error", ""))[:300],
+                         kind=str(summary.get("error_kind") or ""))
                 # a message goal keeps its task container active (the
                 # conversation stays open); the TASK row itself only
                 # closes when the user archives/deletes it
         except asyncio.CancelledError:
             gt.set_status("cancelled")
+            emit("turn_cancelled", turn_id=turn_id, reason="user")
             raise
         except Exception as exc:
             # the orchestrator already recorded turn_failed in its own
@@ -1498,7 +2021,10 @@ async def start_goal(req: GoalRequest) -> dict[str, Any]:
             except Exception:
                 pass  # a drain hiccup must never break the finished goal
 
-    gt.task = asyncio.create_task(_run())
+    # P4: the turn runs on the BRIDGE's own loop, never on the request's
+    # portal loop — see Runtime's docstring (the request used to own the
+    # fire-and-forget turn and block until it finished).
+    gt.task = _runtime.submit_bg(_run())
     return {"turn_id": turn_id, "task_id": task_id, "status": "running",
             "accepted": True}
 
@@ -1514,12 +2040,13 @@ async def create_task_draft(project_id: str | None = None,
     now = time.time()
     safe_title = (title or "").strip()[:200] or "New task"
     with get_storage().transaction() as conn:
+        # a session, not a goal row (audit 2026-11-11): the sessions table
+        # is the authority for every container the app creates.
         conn.execute(
-            "INSERT INTO goals(id, text, status, kind, title, project_id, "
-            "created_at, owner_session_id) VALUES(?,?,?,?,?,?,?,?);",
-            (task_id, "", "active", "task", safe_title,
-             project_id or "", now,
-             getattr(_runtime, "session_id", "") or "desktop"))
+            "INSERT OR IGNORE INTO sessions(id, workspace_root, title, "
+            "created_at, updated_at, project_id, archived, deleted, pinned) "
+            "VALUES(?,?,?,?,?,?,?,?,?);",
+            (task_id, "", safe_title, now, now, project_id or "", 0, 0, 0))
     return {"ok": True, "task": {"turn_id": task_id, "title": safe_title,
                                  "status": "active", "kind": "task",
                                  "project_id": project_id or "",
@@ -1527,7 +2054,6 @@ async def create_task_draft(project_id: str | None = None,
 
 
 @app.post("/api/turn/{turn_id}/cancel")
-@app.post("/api/goal/{goal_id}/cancel")
 async def cancel_goal(turn_id: str) -> dict[str, Any]:
     gt = get_state().get(turn_id)
     if gt is None:
@@ -1553,7 +2079,6 @@ async def cancel_goal(turn_id: str) -> dict[str, Any]:
 # ---- steer + file serving (M2/M3) ------------------------------------------------
 
 @app.post("/api/turn/{turn_id}/steer")
-@app.post("/api/goal/{goal_id}/steer")
 async def steer_goal(turn_id: str, req: dict[str, Any]) -> dict[str, Any]:
     """Queue a course-correction for a RUNNING goal. The orchestrator drains
     it at the nearest decision point (the boundary between plan steps, never
@@ -1692,18 +2217,6 @@ class BrowserNavigateRequest(BaseModel):
     url: str
     tab: str | None = None
 
-@app.get("/api/browser/state")
-async def browser_state() -> dict[str, Any]:
-    try:
-        from connectors.builtin.browser import _browser, _cdp_browser, _pages, _cdp_pages, _active_tab
-        tabs = []
-        for tid in list(_pages.keys()) + list(_cdp_pages.keys()):
-            tabs.append({"id": tid, "title": tid})
-        active = _active_tab if (_browser or _cdp_browser) else None
-        return {"tabs": tabs, "activeTab": active, "available": bool(_browser or _cdp_browser)}
-    except Exception as e:
-        return {"tabs": [], "activeTab": None, "available": False, "error": str(e)[:200]}
-
 @app.post("/api/browser/navigate")
 async def browser_navigate_api(req: BrowserNavigateRequest) -> dict[str, Any]:
     from connectors.builtin import get_registry
@@ -1711,16 +2224,8 @@ async def browser_navigate_api(req: BrowserNavigateRequest) -> dict[str, Any]:
     res = await reg.call("BrowserNavigate", agent="universe", turn_id="browser-ui", args={"url": req.url, "tab": req.tab or "default"})
     return res
 
-@app.post("/api/browser/tabs")
-async def browser_tabs_api(req: dict[str, Any]) -> dict[str, Any]:
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    res = await reg.call("BrowserTabs", agent="universe", turn_id="browser-ui", args=req)
-    return res
-
 @app.get("/api/usage")
 async def usage_stats(range: str = "7d") -> dict[str, Any]:
-    import datetime as _dt
     from pathlib import Path as _Path
     cfg = get_config()
     log = _Path(cfg.llm_log) if hasattr(cfg, "llm_log") else _Path.home() / ".universe" / "llm_calls.jsonl"
@@ -1756,15 +2261,14 @@ async def usage_stats(range: str = "7d") -> dict[str, Any]:
         pass
     return {"range": range, "totalTokens": {"input": total_in, "output": total_out}, "calls": calls, "byProvider": list(by_provider.values()), "daily": sorted(daily.values(), key=lambda x: x["date"])}
 
-@app.get("/api/indexing/status")
-async def indexing_status() -> dict[str, Any]:
-    cfg = get_config()
-    d = cfg.get("desktop", {}) if isinstance(cfg.get("desktop"), dict) else {}
-    return {"enabled": bool(d.get("indexingEnabled")), "root": d.get("indexingRoot") or cfg.get("project_root", ""), "count": 0}
-
 @app.post("/api/indexing/resync")
 async def indexing_resync() -> dict[str, Any]:
-    return {"ok": True, "indexed": 0, "message": "indexing resync queued"}
+    """Honest no-op: Universe keeps no separate search index — recall is
+    BM25 over the live memory tables (core/memory/layers). The route stays
+    so the Settings button has something real to call, and it SAYS what it
+    does instead of claiming a queued job."""
+    return {"ok": True, "indexed": 0,
+            "message": "nothing to resync — recall reads the live memory tables"}
 
 # ---- first-run setup gate --------------------------------------------------------
 
@@ -1833,7 +2337,13 @@ def _git_branch(root: str) -> "str | None":
 
 
 @app.get("/api/projects")
-async def list_projects() -> dict[str, Any]:
+async def list_projects(include_archived: bool = True) -> dict[str, Any]:
+    """The project list.
+
+    Archived rows are still LISTED (the API contract the Projects page and
+    its tests rely on — the UI filters them itself). What changed on
+    2026-11-12 is the SOURCE of duplicates: adding the same folder twice
+    now returns the SAME project instead of a second row for one folder."""
     rows = get_storage().query_all(
         "SELECT id, name, root, created_at, updated_at, archived FROM projects "
         "ORDER BY archived, name COLLATE NOCASE;")
@@ -1852,74 +2362,51 @@ async def list_projects() -> dict[str, Any]:
 
 @app.post("/api/projects")
 async def create_project(req: ProjectCreate) -> dict[str, Any]:
+    """Add a project (a work folder).
+
+    Audit 2026-11-12 (the project-selection problem, part two): adding the
+    SAME folder twice created TWO project rows with the same root — the
+    sidebar then showed the folder twice and the user could not tell which
+    one was the real one. A root is now UNIQUE: adding it again returns the
+    existing row (and revives it if it had been archived).
+
+    A project with an EMPTY root is refused: it scopes nothing, so every
+    tool would fall back to the global root — a project that silently does
+    not scope is worse than no project."""
     import time as _time
     from core.agent.base_agent import new_id
-    pid = new_id("proj-")
-    now = _time.time()
+    root = str(req.root or "").strip()
+    if not root:
+        raise HTTPException(422, {
+            "code": "project_root_required",
+            "message": "a project needs a folder — pick one from the disk"})
+    name = str(req.name or "").strip()[:80]
+    if not name:
+        name = root.rstrip("\\/").split("\\")[-1].split("/")[-1] or "Project"
     st = get_storage()
+    now = _time.time()
+    # the same folder = the same project
+    existing = st.query_one(
+        "SELECT id, name, root, created_at, updated_at, archived FROM projects "
+        "WHERE root=?;", (root,))
+    if existing is not None:
+        with st.transaction() as conn:
+            conn.execute(
+                "UPDATE projects SET archived=0, name=?, updated_at=? WHERE id=?;",
+                (name, now, existing["id"]))
+        return {"ok": True, "existing": True,
+                "project": {"id": existing["id"], "name": name,
+                            "root": root, "created_at": existing["created_at"],
+                            "updated_at": now, "archived": 0}}
+    pid = new_id("proj-")
     with st.transaction() as conn:
         conn.execute(
             "INSERT INTO projects(id,name,root,created_at,updated_at) "
-            "VALUES(?,?,?,?,?);", (pid, req.name.strip()[:80], req.root, now, now))
-    return {"ok": True, "project": {"id": pid, "name": req.name.strip()[:80],
-                                     "root": req.root, "created_at": now,
-                                     "updated_at": now, "archived": 0}}
-
-
-@app.patch("/api/projects/{pid}")
-async def patch_project(pid: str, req: ProjectPatch) -> dict[str, Any]:
-    import time as _time
-    st = get_storage()
-    row = st.query_one("SELECT id FROM projects WHERE id=?;", (pid,))
-    if row is None:
-        raise HTTPException(404, {"code": "project_not_found",
-                                   "message": f"project {pid!r} unknown"})
-    sets, params = [], []
-    if req.name is not None:
-        sets.append("name=?")
-        params.append(req.name.strip()[:80])
-    if req.root is not None:
-        sets.append("root=?")
-        params.append(req.root)
-    if req.archived is not None:
-        sets.append("archived=?")
-        params.append(1 if req.archived else 0)
-    if sets:
-        sets.append("updated_at=?")
-        params.append(_time.time())
-        params.append(pid)
-        with st.transaction() as conn:
-            conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id=?;",
-                         params)
-    return {"ok": True, "project_id": pid}
-
-
-@app.delete("/api/projects/{pid}")
-async def delete_project(pid: str, hard: bool = False) -> dict[str, Any]:
-    """Soft-delete: keep the project row archived unless hard=true AND it
-    has no chats. Its goals become unassigned (empty project_id) — the UI
-    groups them under the composer's "Select project" slot."""
-    st = get_storage()
-    row = st.query_one("SELECT id FROM projects WHERE id=?;", (pid,))
-    if row is None:
-        raise HTTPException(404, {"code": "project_not_found",
-                                   "message": f"project {pid!r} unknown"})
-    n = st.query_one("SELECT COUNT(*) AS c FROM goals WHERE project_id=? "
-                     "AND deleted=0;", (pid,))
-    if hard and (n or {"c": 0})["c"] > 0:
-        raise HTTPException(409, {"code": "project_not_empty",
-                                   "message": "delete its chats first or soft-archive instead"})
-    with st.transaction() as conn:
-        if hard:
-            conn.execute("DELETE FROM projects WHERE id=?;", (pid,))
-            # its goals become unassigned ('') — the UI's "Select project"
-            # slot is where they regroup; no synthetic project is created
-            conn.execute("UPDATE goals SET project_id='' WHERE project_id=?;",
-                         (pid,))
-        else:
-            conn.execute("UPDATE projects SET archived=1, updated_at=? WHERE id=?;",
-                          (time.time(), pid))
-    return {"ok": True, "removed": pid, "hard": hard}
+            "VALUES(?,?,?,?,?);", (pid, name, root, now, now))
+    return {"ok": True, "existing": False,
+            "project": {"id": pid, "name": name,
+                        "root": root, "created_at": now,
+                        "updated_at": now, "archived": 0}}
 
 
 # ---- automations (Phase C — Universe Automations page) ------------------------------
@@ -2062,10 +2549,17 @@ async def patch_skill(skill_id: str, req: SkillPatch) -> dict[str, Any]:
 # ---- goal lifecycle (chats) --------------------------------------------------------
 
 @app.patch("/api/turn/{turn_id}")
-@app.patch("/api/goal/{goal_id}")
 async def patch_goal(turn_id: str, req: GoalPatch) -> dict[str, Any]:
+    """Rename / pin / archive a session.
+
+    The sessions table is the authority (audit 2026-11-11); the goals table
+    is touched only for chats that predate the session model."""
     st = get_storage()
-    row = st.query_one("SELECT id FROM goals WHERE id=?;", (turn_id,))
+    row = st.query_one("SELECT id FROM sessions WHERE id=?;", (turn_id,))
+    table = "sessions"
+    if row is None:
+        row = st.query_one("SELECT id FROM goals WHERE id=?;", (turn_id,))
+        table = "goals"
     if row is None:
         raise HTTPException(404, {"code": "turn_not_found",
                                    "message": "goal is not in the database (still running?)"})
@@ -2087,29 +2581,39 @@ async def patch_goal(turn_id: str, req: GoalPatch) -> dict[str, Any]:
     if sets:
         params.append(turn_id)
         with st.transaction() as conn:
-            conn.execute(f"UPDATE goals SET {', '.join(sets)} WHERE id=?;", params)
+            conn.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id=?;",
+                         params)
     return {"ok": True, "turn_id": turn_id}
 
 
 @app.delete("/api/turn/{turn_id}")
-@app.delete("/api/goal/{goal_id}")
 async def delete_goal(turn_id: str, hard: bool = False) -> dict[str, Any]:
     """Soft by default (archived+deleted flags). hard=1 also removes the
-    planet + timeline file — used only from an explicit confirm dialog."""
+    session's durable files — used only from an explicit confirm dialog.
+
+    The session is the unit (audit 2026-11-11): the sessions row is the
+    one that is archived/deleted; the goals table is touched only for chats
+    that predate the session model."""
     st = get_storage()
-    row = st.query_one("SELECT id FROM goals WHERE id=?;", (turn_id,))
+    row = st.query_one("SELECT id FROM sessions WHERE id=?;", (turn_id,))
+    table = "sessions"
+    if row is None:
+        row = st.query_one("SELECT id FROM goals WHERE id=?;", (turn_id,))
+        table = "goals"
     if row is None:
         raise HTTPException(404, {"code": "turn_not_found",
                                    "message": "goal is not in the database (still running?)"})
     with st.transaction() as conn:
         if hard:
-            conn.execute("DELETE FROM goals WHERE id=?;", (turn_id,))
-            conn.execute("DELETE FROM planets WHERE turn_id=?;", (turn_id,))
-            conn.execute("DELETE FROM handoffs WHERE turn_id=?;", (turn_id,))
-            conn.execute("DELETE FROM asteroids WHERE turn_id=?;", (turn_id,))
+            conn.execute(f"DELETE FROM {table} WHERE id=?;", (turn_id,))
+            if table == "goals":
+                conn.execute("DELETE FROM planets WHERE turn_id=?;", (turn_id,))
+                conn.execute("DELETE FROM handoffs WHERE turn_id=?;", (turn_id,))
+                conn.execute("DELETE FROM asteroids WHERE turn_id=?;", (turn_id,))
         else:
-            conn.execute("UPDATE goals SET archived=1, deleted=1 WHERE id=?;",
-                         (turn_id,))
+            conn.execute(
+                f"UPDATE {table} SET archived=1, deleted=1 WHERE id=?;",
+                (turn_id,))
     # timeline + durable ring files go only on hard delete
     if hard:
         try:
@@ -2119,37 +2623,57 @@ async def delete_goal(turn_id: str, hard: bool = False) -> dict[str, Any]:
             ( _gc().home / "checkpoints" / f"{turn_id}.json").unlink(missing_ok=True)
         except Exception:
             pass
+        # the session's durable event log (audit 2026-11-11)
+        try:
+            from core.session.event_log import session_events_path
+            session_events_path(turn_id).unlink(missing_ok=True)
+        except Exception:
+            pass
     return {"ok": True, "deleted": turn_id, "hard": hard}
 
 
 @app.post("/api/turn/{turn_id}/branch")
-@app.post("/api/goal/{goal_id}/branch")
 async def branch_goal(turn_id: str) -> dict[str, Any]:
-    """Fork a finished chat (C2 regression fix — this used to be a
-    guaranteed 500 because it queried goals.session_id, a column that
-    never existed).
+    """Fork a finished chat — a SESSION fork (Codex parity).
 
-    Session authority: if the goal row owns a real session, the branch IS
-    a session fork (Codex fork parity) — a new session with a copied
-    transcript and lineage recorded. Otherwise the legacy contract holds:
-    a placeholder task row (kind='task') referencing the parent via
-    parent_goal_id, ready to run or reference."""
+    The session is the unit (audit 2026-11-11): the fork copies the
+    transcript, the durable event log and the session row. The legacy
+    goals-table path stays for chats that predate the session model."""
     from core.agent.base_agent import new_id
     from core.session.store import get_session_store
     st = get_storage()
+    store = get_session_store()
+
+    # 1) the session itself (the normal case)
+    if store.get(turn_id) is not None:
+        forked = store.fork(turn_id)
+        try:
+            from core.session.event_log import (session_events_path)
+            src = session_events_path(turn_id)
+            if src.exists():
+                dst = session_events_path(forked["id"])
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_text(src.read_text(encoding="utf-8"),
+                               encoding="utf-8")
+        except Exception:
+            pass
+        return {"ok": True, "turn_id": forked["id"],
+                "session_id": forked["id"], "parent_session_id": turn_id,
+                "text": ""}
+
+    # 2) a legacy goal row that owns a session
     row = st.query_one(
         "SELECT id, text, project_id, title, owner_session_id FROM goals "
         "WHERE id=?;", (turn_id,))
     if row is None:
         raise HTTPException(404, {"code": "turn_not_found",
                                    "message": "cannot branch an unknown goal"})
-    store = get_session_store()
     src_sid = str(row["owner_session_id"] or "").strip()
     if src_sid and store.get(src_sid) is not None:
         forked = store.fork(src_sid)
         return {"ok": True, "turn_id": row["id"], "session_id": forked["id"],
                 "parent_session_id": src_sid, "text": row["text"]}
-    # Legacy fallback: no session backing this goal — placeholder task row.
+    # 3) legacy fallback: no session backing this goal — placeholder task row.
     new_gid = new_id("goal-")
     with st.transaction() as conn:
         conn.execute(
@@ -2173,10 +2697,13 @@ async def compact_turn(turn_id: str) -> dict[str, Any]:
     context. Returns the approximate token delta for the toast."""
     from core.session.store import get_session_store
     st = get_storage()
-    row = st.query_one(
-        "SELECT owner_session_id FROM goals WHERE id=?;", (turn_id,))
-    sid = str((row or {}).get("owner_session_id") or "").strip() or turn_id
     store = get_session_store()
+    # the session is the unit (audit 2026-11-11): the id IS the session
+    sid = turn_id
+    if store.get(sid) is None:
+        row = st.query_one(
+            "SELECT owner_session_id FROM goals WHERE id=?;", (turn_id,))
+        sid = str((row or {}).get("owner_session_id") or "").strip() or turn_id
     if store.get(sid) is None or not store.transcript(sid):
         return {"ok": True, "compacted": False,
                 "note": "empty — nothing to compact"}
@@ -2195,14 +2722,56 @@ class TruncateRequest(BaseModel):
 
 
 @app.post("/api/turn/{task_id}/truncate")
-@app.post("/api/goal/{goal_id}/truncate")
 async def truncate_task(task_id: str, req: TruncateRequest) -> dict[str, Any]:
-    """Cut a thread at one message: delete that message goal and every
-    later message goal of the task (rows + planets/handoffs/asteroids +
-    per-goal timeline/checkpoint files). Steps exactly like hard delete.
-    Refused while any to-be-deleted turn still runs in the bridge."""
+    """Cut a thread at one message: that message's turn and every later turn
+    leave the session (the transcript rows + the durable event log rows).
+
+    The session is the unit (audit 2026-11-11): the cut is a REWIND of the
+    transcript (everything after the cut keeps nothing) plus the removal of
+    the tail of the session's event log. The legacy goals-row path stays
+    for chats that predate the session model."""
     from config import get_config as _gc
+    from core.session.store import get_session_store
     st = get_storage()
+    store = get_session_store()
+
+    # 1) the session path — the normal case
+    if store.get(task_id) is not None:
+        rows = store.transcript(task_id)
+        cut_seq = None
+        for row in rows:
+            if str(row.get("turn_id") or "") == str(req.message_goal_id):
+                cut_seq = int(row.get("seq") or 0)
+                break
+        if cut_seq is None:
+            return {"ok": True, "removed": 0, "legacy": True}
+        running_ids = {gt.turn_id for gt in get_state().running()}
+        dead_turns = [str(r.get("turn_id") or "") for r in rows
+                      if int(r.get("seq") or 0) >= cut_seq]
+        if running_ids & set(dead_turns):
+            raise HTTPException(
+                409,
+                {"code": "turn_still_running",
+                 "message": "a later turn is still running — wait or stop it first"},
+            )
+        removed = store.rewind(task_id, cut_seq - 1)
+        # the durable event log keeps the tail too — cut it at the same place
+        try:
+            from core.session.event_log import (read_events,
+                                                session_events_path)
+            path = session_events_path(task_id)
+            if path.exists():
+                keep = [e for e in read_events(task_id, 0)
+                        if str(e.get("turn_id") or "") not in set(dead_turns)]
+                path.write_text(
+                    "".join(json.dumps(e, ensure_ascii=False, default=str)
+                            + "\n" for e in keep), encoding="utf-8")
+        except Exception:
+            pass
+        return {"ok": True, "removed": int(removed or 0),
+                "goal_ids": dead_turns}
+
+    # 2) the legacy goals-row path (pre-session chats)
     if st.query_one("SELECT id FROM goals WHERE id=?;", (task_id,)) is None:
         raise HTTPException(404, {"code": "turn_not_found",
                                    "message": "task not found"})
@@ -2334,12 +2903,19 @@ async def mcp_patch(name: str, req: dict[str, Any]) -> dict[str, Any]:
 
 # ---- agents ----------------------------------------------------------------------
 
+# ---- agents ----------------------------------------------------------------------
+
 @app.get("/api/agents")
 async def agents_list() -> dict[str, Any]:
     """The SUBAGENTS only: who they are and which tools they may use. The
     universe agent is the main loop itself, not a peer in this list (it has
     no separate model — subagents inherit the one model set from the chat
-    composer, so per-agent (provider, model) editing is gone from the UI)."""
+    composer, so per-agent (provider, model) editing is gone from the UI).
+
+    Restored 2026-11-10: the P2 cleanup cut this endpoint as "dormant
+    because it always answered empty". It is small, honest and part of the
+    documented agents surface — an empty roster is the truth, not a
+    reason to delete the endpoint."""
     _runtime.init()
     from core.core_agents import ALL_AGENTS, get_agent
     out = []
@@ -2395,12 +2971,22 @@ async def pending_consents() -> dict[str, Any]:
 # ---- structured questions (AskUserQuestion twin) -----------------------------
 
 class QuestionAnswer(BaseModel):
-    answer: str
+    # The ZCode shape (2026-11-12): the answers MAP, keyed by the
+    # question text -> the picked value(s). A multiSelect answer is a
+    # list of values.
+    answers: dict[str, Any] | None = None
+    # the legacy single-answer form (one question, one value)
+    answer: str | None = None
 
 
 @app.post("/api/question/{pending_id}")
 async def answer_question(pending_id: str, req: QuestionAnswer) -> dict[str, Any]:
-    ok = _runtime.questions.answer(pending_id, req.answer)
+    payload = req.answers if req.answers is not None else req.answer
+    if payload is None:
+        raise HTTPException(422, {"code": "answer_required",
+                                  "message": "send `answers` (or the legacy "
+                                             "`answer`) for the question"})
+    ok = _runtime.questions.answer(pending_id, payload)
     if not ok:
         raise HTTPException(404, "question unknown or already answered")
     return {"pending_id": pending_id, "answered": True}
@@ -2758,9 +3344,19 @@ async def add_provider_key(req: ProviderSetupRequest) -> dict[str, Any]:
             "agents_routed": routed}
 
 
+class KeyAddRequest(BaseModel):
+    api_key: str = Field(min_length=1, max_length=400)
+
+
 @app.get("/api/providers/{name}/keys")
 async def list_provider_keys(name: str) -> dict[str, Any]:
-    """Per-key inventory (masked previews only) for the Settings manager."""
+    """Per-key inventory (masked previews only) for the Settings manager.
+
+    Restored 2026-11-10: this route was cut as "dormant" but the Settings
+    key manager and TestKeyEndpoints both call it — deleting it broke
+    multi-key providers (the 404 answered "provider not found" for every
+    key list). It now also reports the effective status per key so the
+    Settings table never shows a disabled key as healthy."""
     _runtime.init()
     from providers.manager import get_provider_manager
     pm = get_provider_manager()
@@ -2774,10 +3370,6 @@ async def list_provider_keys(name: str) -> dict[str, Any]:
         "preview": _mask_secret(_safe_decrypt(k.encrypted_secret)),
         "status": k.status, "disabled": k.alias in disabled,
     } for k in provider.keys]}
-
-
-class KeyAddRequest(BaseModel):
-    api_key: str = Field(min_length=1, max_length=400)
 
 
 @app.post("/api/providers/{name}/keys")
@@ -3077,63 +3669,6 @@ async def write_settings(req: SettingsUpdate) -> dict[str, Any]:
 
 # ---- voice channel (plan §8) -------------------------------------------------
 
-class VoiceCheckRequest(BaseModel):
-    kind: str                 # 'stt' | 'tts'
-    provider: str             # groq / openai / fish-audio / elevenlabs / …
-    api_key: str
-
-
-@app.post("/api/voice/check")
-async def voice_check(req: VoiceCheckRequest) -> dict[str, Any]:
-    """One real request proving a voice key works before it's saved —
-    the same honesty rule as LLM provider keys. Cloud STT keys get a
-    tiny WAV models-list/whoami probe; TTS keys a whoami-style call."""
-    try:
-        if req.kind == "stt" and req.provider == "groq":
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get(
-                    "https://api.groq.com/openai/v1/models",
-                    headers={"Authorization": f"Bearer {req.api_key}"})
-            ok = res.status_code == 200
-            return {"ok": ok,
-                    "error": None if ok else f"HTTP {res.status_code}"}
-        if req.kind == "stt" and req.provider == "openai":
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get(
-                    "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {req.api_key}"})
-            ok = res.status_code == 200
-            return {"ok": ok,
-                    "error": None if ok else f"HTTP {res.status_code}"}
-        if req.kind == "tts" and req.provider == "fish-audio":
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get(
-                    "https://api.fish.audio/v1/models?page_size=1",
-                    headers={"Authorization": f"Bearer {req.api_key}"})
-            ok = res.status_code == 200
-            return {"ok": ok,
-                    "error": None if ok else f"HTTP {res.status_code}"}
-        if req.kind == "tts" and req.provider == "elevenlabs":
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get(
-                    "https://api.elevenlabs.io/v1/user",
-                    headers={"xi-api-key": req.api_key})
-            ok = res.status_code == 200
-            return {"ok": ok,
-                    "error": None if ok else f"HTTP {res.status_code}"}
-        if req.kind == "tts" and req.provider == "openai":
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get(
-                    "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {req.api_key}"})
-            ok = res.status_code == 200
-            return {"ok": ok,
-                    "error": None if ok else f"HTTP {res.status_code}"}
-        return {"ok": False, "error": f"no check for {req.kind}/{req.provider}"}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)[:200]}
-
-
 @app.websocket("/api/voice/stream")
 async def voice_ws(ws: WebSocket) -> None:
     """Mic in (binary PCM16 frames) · wake word · STT · spoken goals · TTS out."""
@@ -3289,22 +3824,17 @@ class ApprovalDecisionReq(BaseModel):
     decision: str = Field(pattern="^(allow_once|always_allow|deny)$")
 
 
-class ImageReq(BaseModel):
-    prompt: str
-    size: str | None = None
-
-
-class MetaTestReq(BaseModel):
-    key: str | None = None
-
-
 # ---- Bots → Universe engine: the SAME orchestrator, tools and timeline -----
 
 def _bot_container(bot: dict[str, Any]) -> str:
     """The bot's task container in the goals table — one per bot, owner
-    'bot:<id>' so it stays out of the Universe sidebar (/api/goals filters
-    it) while every bot message turn streams through the normal event bus
-    and renders in the SAME Universe timeline."""
+    'bot:<id>' so it stays out of the Universe sidebar (GET /api/sessions
+    filters it) while every bot message turn streams through the normal
+    event bus and renders in the SAME Universe timeline.
+
+    The goals table here is only a CONTAINER key (kind='task') for the
+    bridge's own bookkeeping — the goal engine that wrote turn rows into it
+    is deleted; the turn itself lives in the session transcript."""
     from bots import store
     known = store.get_bot(bot["id"]) or {}
     cid = known.get("container_id")
@@ -3355,7 +3885,7 @@ async def _dispatch_bot_turn(
     gt = get_state().create(turn_id, text, task_id=container_id)
     get_state().prune_expired()
     gt.set_status("running")
-    # the /api/goals running-goals sweep must never surface bot turns as
+    # the /api/sessions running-task sweep must never surface bot turns as
     # standalone sidebar rows (their container lives in the Bots surface)
     gt._bot_owned = True  # type: ignore[attr-defined]
     orch = _runtime.orchestrator
@@ -3413,19 +3943,6 @@ async def bots_status() -> dict[str, Any]:
     PATH, and is a Meta API key configured? The Bots page shows Connect to
     Muse Code instead of Add bot when the runtime is absent — never a
     fake ready state."""
-    import glob as _glob
-    import shutil
-
-    def _find_muse() -> str:
-        hit = shutil.which("muse")
-        if hit:
-            return hit
-        # versioned installs ship as muse-bin-<ver> in ~/.local/bin —
-        # accept the newest one; it is the same real CLI
-        hits = sorted(
-            _glob.glob(str(Path.home() / ".local" / "bin" / "muse-bin-*"))
-        )
-        return hits[-1] if hits else ""
 
     muse_bin = _find_muse()
     meta_key = False
@@ -3454,12 +3971,25 @@ _MUSE_COMMON_PATHS = (
 
 
 def _find_muse() -> str:
-    """One real search for the Muse Code CLI: PATH first, then the standard
-    install locations the official installer uses."""
+    """ONE real search for the Muse Code CLI: PATH first, then the versioned
+    install the official installer writes (~/.local/bin/muse-bin-<ver>), then
+    the standard POSIX locations.
+
+    Audit 2026-11-10: this search existed TWICE — a nested copy in the
+    /api/bots/status handler (PATH + the versioned glob) and a module-level
+    one (PATH + POSIX paths only). A versioned install was therefore reported
+    as "installed" by the status route and "not found" by the install route,
+    which then re-ran the installer over an existing install."""
+    import glob as _glob
     import shutil
     hit = shutil.which("muse")
     if hit:
         return hit
+    hits = sorted(
+        _glob.glob(str(Path.home() / ".local" / "bin" / "muse-bin-*"))
+    )
+    if hits:
+        return hits[-1]
     for cand in _MUSE_COMMON_PATHS:
         if Path(cand).is_file() and os.access(cand, os.X_OK):
             return cand
@@ -3763,92 +4293,7 @@ async def bots_shared_files() -> dict[str, Any]:
     return {"path": str(store.shared_dir()), "files": store.shared_files()}
 
 
-class AveActReq(BaseModel):
-    instruction: str
-
-
-class SegmentReq(BaseModel):
-    prompt: str
-    image_url: str
-
-
-@app.get("/api/studio/ave/tools")
-async def studio_ave_tools() -> dict[str, Any]:
-    """Live tool catalog from AVE's MCP server (JSON-RPC tools/list)."""
-    from universe_desktop_bridge import studio_mcp
-    try:
-        tools = await studio_mcp.list_tools()
-        return {"ok": True, "reachable": True, "tools": tools}
-    except studio_mcp.AveMcpError as exc:
-        return {"ok": False, "reachable": exc.reachable, "tools": [],
-                "message": exc.message}
-
-
-@app.post("/api/studio/ave/act")
-async def studio_ave_act(req: AveActReq) -> dict[str, Any]:
-    """Universe drives AVE: a natural-language instruction → the configured
-    LLM picks ONE tool from the LIVE catalog → a real JSON-RPC tools/call.
-    Honest errors when AVE is not running."""
-    from universe_desktop_bridge import studio_mcp
-    try:
-        return await studio_mcp.drive(req.instruction)
-    except studio_mcp.AveMcpError as exc:
-        raise HTTPException(503 if not exc.reachable else 502,
-                            {"code": "ave_mcp", "message": exc.message})
-
-
-@app.post("/api/meta/segment")
-async def meta_segment(req: SegmentReq) -> dict[str, Any]:
-    """SAM 3.1 media segmentation — POST /v1/responses (model "sam-3.1"):
-    a noun-phrase prompt + one input_image; returns the special-token text
-    (one box + one mask per match)."""
-    from providers import meta_media
-    try:
-        key = await meta_media.resolve_key()
-        output = await meta_media.segment(key, req.prompt, req.image_url)
-        return {"output": output}
-    except meta_media.MetaAPIError as exc:
-        raise HTTPException(exc.status if exc.status >= 400 else 502,
-                            {"code": "meta_error", "message": exc.message})
-
-
 # ---- Meta media (real Meta Model API endpoints) -----------------------------
-
-@app.post("/api/meta/test")
-async def meta_test(req: MetaTestReq) -> dict[str, Any]:
-    """Real key test: GET https://api.meta.ai/v1/models with the key."""
-    from providers import meta_media
-    try:
-        key = await meta_media.resolve_key(req.key)
-        models = await meta_media.list_models(key)
-        return {"ok": True, "models": models}
-    except meta_media.MetaAPIError as exc:
-        raise HTTPException(exc.status if exc.status >= 400 else 502,
-                            {"code": "meta_error", "message": exc.message})
-
-
-@app.get("/api/meta/models")
-async def meta_models() -> dict[str, Any]:
-    from providers import meta_media
-    try:
-        key = await meta_media.resolve_key()
-        return {"models": await meta_media.list_models(key)}
-    except meta_media.MetaAPIError as exc:
-        raise HTTPException(exc.status if exc.status >= 400 else 502,
-                            {"code": "meta_error", "message": exc.message})
-
-
-@app.post("/api/meta/image")
-async def meta_image(req: ImageReq) -> dict[str, Any]:
-    """Muse Image — POST /v1/images/generations (model muse-image-1.0)."""
-    from providers import meta_media
-    try:
-        key = await meta_media.resolve_key()
-        return await meta_media.generate_image(key, req.prompt, req.size)
-    except meta_media.MetaAPIError as exc:
-        raise HTTPException(exc.status if exc.status >= 400 else 502,
-                            {"code": "meta_error", "message": exc.message})
-
 
 @app.post("/api/meta/transcribe")
 async def meta_transcribe(audio: "UploadFile" = None) -> dict[str, Any]:  # type: ignore[assignment]
@@ -4062,37 +4507,6 @@ async def design_project_create(req: DesignProjectCreate) -> dict[str, Any]:
     data = await _daemon("POST", "/api/projects", json=body)
     return {"project": data.get("project") if isinstance(data, dict) else data,
             "id": pid}
-
-
-@app.get("/api/studio/design/projects/{pid}/artifacts")
-async def design_project_artifacts(pid: str) -> dict[str, Any]:
-    """Real live-artifact list for one daemon project."""
-    try:
-        return await _daemon("GET", "/api/live-artifacts",
-                             params={"projectId": pid})
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        return {"artifacts": []}
-
-
-@app.get("/api/studio/design/artifacts/{aid}/preview")
-async def design_artifact_preview(aid: str, project_id: str) -> Response:
-    """The daemon's REAL rendered preview for one artifact (proxied bytes)."""
-    import httpx as _hx
-    try:
-        async with _hx.AsyncClient(timeout=8.0) as c:
-            r = await c.get(
-                f"{DESIGN_DAEMON}/api/live-artifacts/{aid}/preview",
-                params={"projectId": project_id})
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(503, {"code": "daemon_unreachable",
-                                  "message": str(exc)[:200]}) from exc
-    if r.status_code >= 400:
-        raise HTTPException(r.status_code, {"code": "daemon_error",
-                                            "message": r.text[:200]})
-    return Response(content=r.content,
-                    media_type=r.headers.get("content-type", "text/html"))
 
 
 @app.get("/api/studio/design/files/{name}/preview")

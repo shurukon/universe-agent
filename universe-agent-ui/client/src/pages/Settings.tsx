@@ -74,7 +74,6 @@ import {
   api,
   BridgeError,
   invalidateModelsCache,
-  type AgentInfo,
   type CatalogProvider,
   type CustomCommand,
   type HookRule,
@@ -1629,6 +1628,7 @@ function VoiceTab() {
   const saveSettings = useChat(s => s.saveSettings);
   const [enabled, setEnabled] = useState(false);
   const [wake, setWake] = useState("");
+  const [stt, setStt] = useState("local");
   const [saving, setSaving] = useState(false);
   const [fieldErr, setFieldErr] = useState<string | null>(null);
   const loaded = settings !== null;
@@ -1637,19 +1637,17 @@ function VoiceTab() {
     if (!settings) return;
     setEnabled(!!settings.voice_enabled);
     setWake(settings.wake_word ?? "");
+    setStt(settings.stt_provider || "local");
   }, [settings]);
 
   const save = async () => {
     setFieldErr(null);
     try {
       setSaving(true);
-      // Meta is the ONE speech provider: the same Meta API key that powers
-      // chat and images powers transcription — the model is picked
-      // automatically (muse-voice-transcribe-1.0, the only one).
       await saveSettings({
         voice_enabled: enabled,
         wake_word: wake.trim() || "wake up Universe",
-        stt_provider: "meta",
+        stt_provider: stt,
       } as Partial<Settings>);
     } catch (e) {
       setFieldErr(e instanceof Error ? e.message : "Save failed");
@@ -1662,9 +1660,10 @@ function VoiceTab() {
     <div className="sx-card">
       <h2>Voice</h2>
       <p className="sx-sub">
-        Speech input runs on Meta — the mic button in the composer talks to
-        Meta Voice Transcribe directly. One Meta API key powers chat, images
-        and speech; add it once in Providers.
+        Speech input runs on the provider you pick below — the mic button in
+        the composer talks to that provider directly. Local transcription
+        (faster-whisper) needs no key; the cloud providers need their own
+        key in Providers.
       </p>
       {!loaded && (
         <p className="sx-muted" role="status">
@@ -1700,13 +1699,27 @@ function VoiceTab() {
           <span className="sx-pill">Recommended</span>
         </span>
         <span className="sx-rowmeta">
-          Meta · muse-voice-transcribe-1.0 — model selected automatically
-          (the only voice model).
+          Pick the transcription provider — local runs on this machine, the
+          cloud ones use your own key.
         </span>
       </div>
+      <Field label="Transcription provider" hint="local = faster-whisper on this machine; the cloud providers need their own key.">
+        <select
+          value={stt}
+          onChange={e => setStt(e.target.value)}
+          aria-label="Transcription provider"
+          className="sx-input"
+          disabled={!loaded}
+        >
+          <option value="local">local — faster-whisper (no key)</option>
+          <option value="meta">Meta — muse-voice-transcribe</option>
+          <option value="openai">OpenAI — whisper</option>
+          <option value="groq">Groq — whisper</option>
+        </select>
+      </Field>
       <p className="sx-muted">
-        Speech recognition uses the Meta Model API key from Providers. There
-        is no second key and nothing else to configure.
+        A cloud provider needs its key in Providers; the local one needs
+        faster-whisper installed. Nothing else to configure.
       </p>
       {fieldErr && (
         <p className="sx-ferr" role="alert">
@@ -1731,55 +1744,19 @@ function VoiceTab() {
 /* ------------------------------------------------------------------ */
 
 function SubagentsTab() {
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [failed, setFailed] = useState(false);
-
-  const load = async () => {
-    setFailed(false);
-    try {
-      const ag = await api.listAgents();
-      setAgents(ag.agents);
-    } catch {
-      setFailed(true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
+  // There is exactly ONE agent ("universe") — the roster endpoint was
+  // removed (it always answered {"agents": []}). The Agent tool spawns
+  // worker missions from it: unspecialised, sharing the universe toolset.
   return (
     <div className="sx-card">
       <h2>Subagents</h2>
       <p className="sx-sub">
-        Specialists the main agent can spawn mid-goal (research, code, review,
-        security, design). They inherit the one model set from the chat composer
-        — there is no per-subagent model.
+        Universe ships one agent: <b>universe</b>. It owns the full toolset and
+        the same model set as the chat composer — there is no per-subagent
+        model. The <b>Agent</b> tool spawns worker missions from it
+        (unspecialised, depth 2, up to 4 per call and 8 per turn); every tool
+        call a mission makes passes through the same Capability Gate.
       </p>
-      {failed && (
-        <div className="sx-err" role="alert">
-          <span>The subagent roster couldn't load.</span>
-          <button className="sx-btn" onClick={() => void load()}>
-            Retry
-          </button>
-        </div>
-      )}
-      {agents.map(a => (
-        <div key={a.name} className="sx-row" style={{ flexWrap: "wrap" }}>
-          <div className="sx-pname">
-            {a.name}
-            <span className="sx-pill">{a.tier}</span>
-          </div>
-          <span className="sx-rowmeta">{a.specialty}</span>
-          <p
-            className="sx-tools"
-            style={{ flexBasis: "100%", marginBottom: 0 }}
-          >
-            tools: {a.tools.slice(0, 10).join(", ")}
-            {a.tools.length > 10 ? ` +${a.tools.length - 10}` : ""}
-          </p>
-        </div>
-      ))}
     </div>
   );
 }

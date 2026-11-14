@@ -24,15 +24,38 @@ pytestmark = pytest.mark.skipif(
     os.name != "nt", reason="computer-use broker is Windows-only")
 
 
+def test_frame_ttl_env_override_wins(monkeypatch, tmp_path):
+    """UNIVERSE_CUA_FRAME_TTL_S overrides the config file — the helper is
+    testable without touching anyone's real ~/.universe/config.json, and
+    the config it DOES read belongs to the active home."""
+    import importlib
+
+    import universe_cua_helper as helper
+    importlib.reload(helper)
+    monkeypatch.setenv("UNIVERSE_CUA_FRAME_TTL_S", "42")
+    assert helper._load_frame_ttl() == 42.0
+    monkeypatch.delenv("UNIVERSE_CUA_FRAME_TTL_S", raising=False)
+    monkeypatch.setenv("UNIVERSE_HOME", str(tmp_path))
+    assert helper._load_frame_ttl() == 15.0  # default when no config
+    assert 1.0 <= helper.FRAME_TTL_S <= 600.0
+
+
 class Broker:
     """Test-side NDJSON client — mirrors _Broker in computer_use.py."""
 
     def __init__(self) -> None:
+        # Hermetic TTL: the helper reads the ACTIVE home's config.json
+        # (UNIVERSE_HOME) — the test must not depend on the developer's
+        # real ~/.universe/config.json. Pin the TTL through the env
+        # override and point the helper at the test home.
+        env = {**os.environ,
+               "UNIVERSE_CUA_FRAME_TTL_S": "15",
+               "UNIVERSE_HOME": os.environ.get("UNIVERSE_HOME", ROOT)}
         self.proc = subprocess.Popen(
             [sys.executable, "-u", "-m", "universe_cua_helper"],
             cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-            errors="replace")
+            errors="replace", env=env)
         self.seq = 0
 
     def __call__(self, op: str, **args) -> dict:

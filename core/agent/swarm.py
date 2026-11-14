@@ -87,7 +87,6 @@ async def spawn(agent: str = "", turn_id: str = "", missions: list | None = None
     exactly like skill.activate. Budget breaches return honest errors the
     calling LLM can adapt to — never exceptions.
     """
-    from core.core_agents.agents import ALL_AGENTS
     from core.memory import get_memory
     from providers.client import get_llm_client
     from security.capability import get_gate

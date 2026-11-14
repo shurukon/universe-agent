@@ -24,25 +24,20 @@ active turn.
 from __future__ import annotations
 
 import asyncio
-import json
-import re
-import time
+import os
+from loguru import logger as log
 from typing import Any
 
 from core.agent.base_agent import (
-    EFFORT_DEFAULT_MAX_TOKENS,
-    EFFORT_MAX_TOKENS,
-    UniverseMeta,
-    HandoffPackage,
-    attach_tool_events,
     new_id,
 )
-from core.acceptance import evaluate_goal
-from core.core_agents import get_agent
-from core.agent.turn_engine import LLMOutputLimitExceeded
 from core.memory import UniverseMemory, get_memory
-from failure.checkpoint import checkpoint, load_checkpoint
 from observability.timeline import record as timeline_record
+from providers.client import LLMClient, get_llm_client
+from providers.manager import get_provider_manager
+from security.capability import get_gate
+from storage.local import get_storage
+
 AGENT_TURN_SYSTEM = """You are {name} — a professional agent (the durable-session agent model):
 a single mind that owns every tool, every skill, and the memory of this
 machine. You talk to the user directly, in {language}.
@@ -147,14 +142,24 @@ def record_provider_halt(turn_id: str, reason: str, *,
                          classification: dict[str, Any] | None = None,
                          handoffs: list[dict[str, Any]] | None = None,
                          planet_id: str = "",
-                         owner_session_id: str = "") -> dict[str, Any]:
-    """ONE choke point for every provider-halt (was: two inline copies with
-    drifting reason formats and emit sequences). Records the timeline, emits
-    provider_halt + turn_failed, fails the DB row, writes the resume
-    checkpoint, and returns the terminal summary dict. Honesty contract
-    (test_provider_routing_e2e): the user-visible error is the RAW provider
-    error — never a re-labeled editorial prelude; the failure class rides
-    the event kwargs (kind), next to it, not inside the text."""
+                         owner_session_id: str = "",
+                         session_id: str = "") -> dict[str, Any]:
+    """ONE choke point for every provider halt (M1, audit 2026-11-10).
+
+    Records the timeline, emits provider_halt + turn_failed on the event
+    bus, appends `turn_end status=failed` to the SESSION TRANSCRIPT (the
+    only durable record left) and returns the terminal summary dict.
+
+    The legacy signature's goal-era parameters (planet_id, handoffs,
+    remaining_plan, owner_session_id) are ACCEPTED AND IGNORED — they
+    described state that no longer exists. Nothing writes `goals` rows or
+    checkpoints any more; a halt that left no transcript row was invisible
+    to the next turn's replay.
+
+    Honesty contract (test_provider_routing_e2e): the user-visible error is
+    the RAW provider error — never a re-labeled editorial prelude; the
+    failure class rides the event kwargs (kind), next to it, not inside the
+    text."""
     timeline_record(turn_id, agent="universe",
                     event="provider_halt", detail=reason)
     try:
@@ -164,32 +169,35 @@ def record_provider_halt(turn_id: str, reason: str, *,
         emit("turn_failed", turn_id=turn_id, error=reason)
     except Exception:
         pass
-    st = get_storage()
-    with st.transaction() as conn:
-        conn.execute(
-            "UPDATE goals SET status='failed', completed_at=?, "
-            "final_summary=? WHERE id=?;",
-            (time.time(), json.dumps({
-                "success": False, "halted": True,
-                "error": reason, "steps": steps or [], "artifacts": []}),
-             turn_id))
-    checkpoint(turn_id, state={"status": "failed", "goal_text": goal_text,
-                               "language": language,
-                               "owner_session_id": owner_session_id,
-                               "classification": classification or {},
-                               "planet_id": planet_id,
-                               "handoffs": handoffs or [],
-                               "remaining_plan": remaining_plan or [],
-                               "error": reason})
+    # the durable row lives in the transcript, not the goals table
+    try:
+        from core.session.store import get_session_store
+        store = get_session_store()
+        sid = str(session_id or owner_session_id or turn_id)
+        if sid:
+            if store.get(sid) is None:
+                try:
+                    store.create(id=sid, title=str(goal_text)[:120])
+                except Exception:
+                    pass
+            store.append(sid, {
+                "kind": "turn_end", "turn_id": turn_id,
+                "status": "failed", "engine": "session",
+                "error": (error or reason)[:500],
+                "stop_reason": "provider_halt",
+                "error_kind": error_kind})
+    except Exception:
+        pass  # a halt must still surface to the caller
     return {"turn_id": turn_id, "goal_text": goal_text,
+            "session_id": session_id or owner_session_id or turn_id,
+            "engine": "session",
             "classification": classification or {}, "success": False,
             "halted": True, "error": reason,
+            # the machine-readable failure class rides the summary too, so a
+            # caller can branch on it without parsing the raw provider prose
+            "error_kind": error_kind,
             "steps": steps or [], "artifacts": [], "elapsed_ms": 0,
             "acceptance": {"success": False, "failure": reason}}
-from providers.client import LLMClient, LLMError, get_llm_client
-from providers.manager import get_provider_manager
-from security.capability import get_gate
-from storage.local import get_storage
 
 # NOTE: Classification/chat routing removed — Universe happy path: every message is a turn.
 # The turn engine itself returns no_tool_calls for pure conversation; no pre-routing needed.
@@ -233,8 +241,8 @@ class UniverseAgent:
         no planets, no gravity — the turn is appended to the transcript,
         replayed as context, and closed with a turn_end event. The tool
         loop still runs on the same Universe turn engine and the Capability
-        Gate still guards every call. GAX_ENGINE=goal restores the legacy
-        goal-state path until it is deleted after the burn-in period.
+        Gate still guards every call. ONE engine: GAX_ENGINE=goal is
+        ignored (the goal engine was deleted 2026-11-10, user order).
 
         This thin binding resolves the session + project root and hands
         off to core.engine.session_loop.run_session_turn — the one and
@@ -267,20 +275,50 @@ class UniverseAgent:
             except Exception:
                 effective_root = ""
 
+        # B2c: live memory recall happens ONCE per turn, in the async body,
+        # so the prompt builder (a sync callback the session loop calls)
+        # only formats. See _recall().
+        recalled = await self._recall(str(text))
+
         def _build(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return self._build_turn_messages(
                 goal_text=str(text), language=str(language or "en"),
-                history=history, l4_skills=[], l3_stars=[],
-                rules=self.memory.active_rules(),
+                history=history,
+                l4_skills=recalled["l4_skills"],
+                l3_stars=recalled["l3_stars"],
+                rules=recalled["active_rules"],
                 project_root=effective_root)
 
         from core.engine.session_loop import run_session_turn
-        return await run_session_turn(
-            text=str(text), session_id=sid, llm_client=self.llm,
-            build_messages=_build,
-            gate=capability_gate or get_gate(),
-            turn_id=turn_id, language=str(language or "en"),
-            effort=str(effort or ""), on_step=on_step)
+        # PROJECT SCOPING (audit 2026-11-12): the selected project must
+        # actually SCOPE the turn. `project_root_ctx` is what the capability
+        # gate and the file/shell/search tools read to decide "is this path
+        # inside the active project" — and since the goal engine was deleted
+        # (2026-11-10) NOTHING set it any more, so every tool was still
+        # scoped against the GLOBAL config root while the prompt announced
+        # the selected project's root. Selecting a project therefore did
+        # nothing: writes inside it were refused as out-of-scope and the
+        # agent worked in the wrong directory.
+        ctx_token = None
+        try:
+            from core.agent.project_context import project_root_ctx
+            ctx_token = project_root_ctx.set(effective_root or None)
+        except Exception:
+            ctx_token = None
+        try:
+            return await run_session_turn(
+                text=str(text), session_id=sid, llm_client=self.llm,
+                build_messages=_build,
+                gate=capability_gate or get_gate(),
+                turn_id=turn_id, language=str(language or "en"),
+                effort=str(effort or ""), on_step=on_step)
+        finally:
+            if ctx_token is not None:
+                try:
+                    from core.agent.project_context import project_root_ctx
+                    project_root_ctx.reset(ctx_token)
+                except Exception:
+                    pass
 
     async def run_turn(self, text: str, *, language: str = "en",
                        turn_id: str | None = None,
@@ -307,481 +345,38 @@ class UniverseAgent:
         named by the user (rename) or stay "New task", never by content.
         The old goal_mode long-horizon variant is DELETED — one engine
         runs every turn."""
-        goal_text = text  # legacy alias support
-        if goal_id and not turn_id:
-            turn_id = goal_id
-        if parent_goal_id and not session_id:
-            session_id = parent_goal_id
         turn_id = turn_id or new_id("turn-")
-        # Engine selection: the session engine is the DEFAULT (the goal
-        # era is over); GAX_ENGINE=goal restores the legacy goal-state
-        # path until it is deleted after the burn-in period.
-        import os as _os_engine
-        engine_mode = (_os_engine.environ.get("GAX_ENGINE", "")
-                       or "session").strip().lower()
-        if engine_mode != "goal":
-            return await self._run_session_turn(
-                text=text, language=language, turn_id=turn_id,
-                on_step=on_step, capability_gate=capability_gate,
-                owner_session_id=owner_session_id, project_id=project_id,
-                project_root=project_root, session_id=session_id,
-                effort=effort)
-        now = time.time()
-        with self._st.transaction() as conn:
-            conn.execute(
-                "INSERT INTO goals(id,text,status,created_at,owner_session_id,"
-                "kind,parent_goal_id) VALUES(?,?,?,?,?,?,?);",
-                (turn_id, goal_text, "running", now, owner_session_id,
-                 "message" if session_id else "task", session_id),
-            )
-            # project/title are best-effort metadata: older schemas may
-            # lack the columns (migration v14 added them) — never fail
-            # the goal for a grouping nicety. Title NEVER falls back to
-            # the message text (v17: sidebar rows are named by users).
-            try:
-                conn.execute(
-                    "UPDATE goals SET project_id=?, title=? WHERE id=?;",
-                    (project_id or "",
-                     (title or "New task")[:200], turn_id),
-                )
-            except Exception:
-                pass
-        self._active_turn_ids.add(turn_id)
-        # setdefault, never overwrite: two run_goal/resume_turn calls with
-        # the same turn_id must serialize on ONE lock, not each mint their
-        # own (the old plain assignment let concurrent runs proceed in
-        # parallel on the same goal — m3 _turn_locks fix)
-        lock = self._turn_locks.setdefault(turn_id, asyncio.Lock())
-        # refcount (audit 2026-09): popping the lock entry while a second
-        # caller still waits on it let a THIRD caller mint a fresh lock and
-        # run concurrently — breaking the very serialization the lock exists
-        # for. The entry is removed only when the last contender exits.
-        self._goal_lock_refs[turn_id] = self._goal_lock_refs.get(turn_id, 0) + 1
-        gate = capability_gate or get_gate()
-        handoffs: list[dict[str, Any]] = []
-        planet = None
-        classification: dict[str, str] = {}
-        # initialized HERE, before the acquire: the except/cancel handlers
-        # below reference them, and a cancellation while WAITING for the
-        # goal lock (or any failure before the plan loop) would otherwise
-        # crash the handler itself with UnboundLocalError, masking the real
-        # outcome
-        remaining_plan_now: list[dict[str, Any]] = []
-        held = False
-        try:
-            await lock.acquire()
-            held = True
-            # ---- THE AGENT TURN (the durable-session agent model) ------
-            # The message IS the input to one professional turn: no
-            # classify call, no keyword router, no media/acceptance
-            # gates, no goal mode. One agent with the full toolset
-            # decides what a turn needs — answering directly for
-            # conversation, acting with tools for real work — inside the
-            # Universe turn engine.
-            classification = {"category": "general", "domain": "general",
-                              "intent": "agent_turn", "complexity": "adaptive"}
-            language = str(language or "en")
-            # Universe happy path: planet (L1) is per TASK, not per turn.
-            task_key = session_id or turn_id
-            existing = self.memory.l1.get_planet_by_goal(task_key)
-            if existing is not None:
-                planet = existing
-            else:
-                planet = self.memory.l1.create_planet(
-                    turn_id=task_key, goal_text=goal_text,
-                    classification={**classification, "mode": "agent_turn"},
-                    language=language, owner_session_id=owner_session_id)
-            turn_started = time.time()
-            timeline_record(turn_id, agent="universe", event="turn_start",
-                            detail=goal_text[:200])
-            checkpoint(turn_id, state={
-                "status": "executing", "goal_text": goal_text,
-                "language": language, "owner_session_id": owner_session_id,
-                "classification": classification, "planet_id": planet.id,
-                "handoffs": [], "remaining_plan": []})
-            if on_step:
-                await self._maybe_call(on_step, {"phase": "agent_turn",
-                                                 "agent": "universe", "step": 0,
-                                                 "instruction": goal_text[:200]})
-            # this task's earlier turns ride along as the session history
-            history = await asyncio.to_thread(
-                self._load_turn_history, session_id, turn_id)
-            # Persist current user turn to session transcript (single authority) - after history load to avoid duplication
-            try:
-                from core.session.store import get_session_store
-                _ss2 = get_session_store()
-                _skey2 = session_id or task_key
-                if _skey2:
-                    if not _ss2.get(_skey2):
-                        try:
-                            _ss2.create(id=_skey2, title=goal_text[:120], workspace_root=effective_root if 'effective_root' in locals() else "")
-                        except Exception:
-                            pass
-                    _ss2.append(_skey2, {"role": "user", "content": goal_text, "kind": "message", "turn_id": turn_id})
-            except Exception:
-                pass
-            # memory recall: the skills index + remembered knowledge join
-            # the system prompt every turn — synchronous SQLite/BM25 work
-            # stays off the event loop
-            l4_hits, l3_hits = await asyncio.to_thread(
-                lambda: (self.memory.search_l4(goal_text, top_k=6),
-                         self.memory.search_l3(goal_text, top_k=5)))
-            if l3_hits:
-                await asyncio.to_thread(self.memory.l3.touch, l3_hits[0].id)
-            # Project root resolution: explicit project_root > lookup via project_id > global config
-            effective_root = ""
-            if project_root:
-                effective_root = str(project_root)
-            elif project_id:
-                try:
-                    from storage.local import get_storage as _gs
-                    _pr = _gs().query_one("SELECT root FROM projects WHERE id=?", (project_id,))
-                    if _pr and _pr.get("root"):
-                        effective_root = str(_pr["root"])
-                except Exception:
-                    pass
-            if not effective_root:
-                try:
-                    from config import get_config
-                    effective_root = str(get_config().get("project_root", "") or "")
-                except Exception:
-                    effective_root = ""
-            # Set ContextVar so all file/shell/capability checks use project root for this turn
-            _ctx_token = None
-            try:
-                from core.agent.project_context import project_root_ctx
-                _ctx_token = project_root_ctx.set(effective_root or None)
-            except Exception:
-                pass
-            cfg_root = effective_root
-            messages = self._build_turn_messages(
-                goal_text=goal_text, language=language, history=history,
-                l4_skills=[s.to_dict() for s in l4_hits],
-                l3_stars=[s.to_dict() for s in l3_hits],
-                rules=self.memory.active_rules(), project_root=cfg_root)
-            from core.agent.steer import take_steer as _take_steer
-            token_budget = EFFORT_MAX_TOKENS.get(
-                str(effort or ""), EFFORT_DEFAULT_MAX_TOKENS)
-            timeline_record(turn_id, agent="universe", event="agent_start",
-                            detail=goal_text[:200])
-            from core.agent.turn_engine import run_turn
-            resp, events, turn_out = await run_turn(
-                llm_client=self.llm, messages=messages, agent="universe",
-                turn_id=turn_id, capability_gate=gate,
-                max_tokens=token_budget,
-                drain_steer=lambda: [str(m.get("text", ""))
-                                     for m in _take_steer(turn_id)])
-            reply = str(resp.text or "").strip()
-            tools_used = sorted({str(e.get("tool", "")) for e in events
-                                 if e.get("tool")})
-            tool_failures: list[dict[str, str]] = []
-            tool_history: list[dict[str, Any]] = []
-            for _ev in events:
-                _tool = str(_ev.get("tool", ""))
-                try:
-                    _args = _ev.get("args") or {}
-                    _res = _ev.get("result")
-                    if not isinstance(_res, dict):
-                        _res = {}
-                    _ok = bool(_res.get("ok"))
-                    _inner = _res.get("result")
-                    if isinstance(_inner, dict) and "ok" in _inner:
-                        _ok = bool(_inner.get("ok"))
-                    _preview = ""
-                    if isinstance(_res.get("result"), str):
-                        _preview = str(_res["result"])[:500]
-                    elif isinstance(_res.get("error"), str):
-                        _preview = str(_res["error"])[:300]
-                    elif isinstance(_res, dict):
-                        _preview = json.dumps(_res, ensure_ascii=False)[:500]
-                    _ap = {k: (str(v)[:200] if isinstance(v, str) else v)
-                           for k, v in (dict(_args) if isinstance(_args, dict) else {}).items()}
-                    _agent = str(_ev.get("agent") or _ev.get("owner_agent") or "universe")
-                    _dur = _ev.get("duration_ms", _ev.get("elapsed_ms", _ev.get("duration", 0)))
-                    try:
-                        _dur = int(_dur or 0)
-                    except Exception:
-                        _dur = 0
-                    tool_history.append({"tool": _tool, "ok": _ok, "args": _ap, "result_preview": _preview, "seq": _ev.get("seq", 0), "agent": _agent, "duration_ms": _dur, "ts": _ev.get("ts", _ev.get("started_at", turn_started))})
-                except Exception:
-                    pass
-                _res2 = _ev.get("result")
-                if not isinstance(_res2, dict):
-                    _res2 = {}
-                _ok2 = bool(_res2.get("ok"))
-                _inner2 = _res2.get("result")
-                if isinstance(_inner2, dict) and "ok" in _inner2:
-                    _ok2 = bool(_inner2.get("ok"))
-                if not _ok2:
-                    tool_failures.append({"tool": _tool, "error": str(_res2.get("error", ""))[:200]})
-            # the same truth envelope the goal engine always used: artifacts
-            # come from VERIFIED tool results, task_success flips on
-            # unrecovered failures — prose never becomes proof
-            pkg = attach_tool_events(
-                HandoffPackage(what_was_done=reply[:1000], agent="universe"),
-                events)
-            # L3 promotion honesty (engine-fix round): the package built
-            # here kept the is_knowledge_based=False default, so gravity's
-            # Confidence Accumulation (avg_conf × kb_ratio) was 0 and every
-            # primary-path turn scored ≤ 0.40 — below both promotion
-            # thresholds (0.45 idle, 0.85 real-time) — while the resume
-            # path (_parse_handoff defaults True) graded the same verified
-            # work ~0.79. Tool-verified output IS knowledge-based: the
-            # events above carry the real evidence.
-            pkg.is_knowledge_based = bool(tools_used) or pkg.is_knowledge_based
-            completed_at = time.time()
-            elapsed_ms = int((completed_at - turn_started) * 1000)
-            # Capture current todos for persistence (Bug 4 replay)
-            _persist_todos = []
-            _persist_todos_idx = None
-            try:
-                from connectors.builtin.todos import _todos as _todo_ledger
-                _persist_todos = list(_todo_ledger.get(turn_id, []))
-                # find in_progress idx
-                for _ti, _t in enumerate(_persist_todos):
-                    if _t.get("status") == "in_progress":
-                        _persist_todos_idx = _ti
-                        break
-            except Exception:
-                pass
-            summary: dict[str, Any] = {
-                "turn_id": turn_id, "goal_text": goal_text,
-                "classification": classification,
-                "success": bool(pkg.task_success),
-                "conversation": True, "reply": reply,
-                "steps": [{"agent": "universe",
-                           "what": "agent turn" + (" with tools" if tools_used else ""),
-                           "success": bool(pkg.task_success),
-                           "tools_used": tools_used}],
-                "artifacts": list(pkg.artifacts_created),
-                "tools_used": tools_used, "tools_failed": tool_failures,
-                "tool_history": tool_history,
-                "todos": _persist_todos,
-                "todos_idx": _persist_todos_idx,
-                "started_at": turn_started,
-                "completed_at": completed_at,
-                "llm_calls": len(self.llm.call_log()),
-                "elapsed_ms": elapsed_ms,
-                "turn": {"steps": turn_out.steps,
-                         "stop_reason": turn_out.stop_reason,
-                         "tool_calls_total": turn_out.tool_calls_total},
-                "acceptance": {"success": bool(pkg.task_success),
-                               "mode": "agent_turn",
-                               "rule": "tool results and the agent's own words are the record"},
-            }
-            if tools_used:
-                # a turn that touched real tools DID work: run the full
-                # memory cycle (gravity, asteroid, promotion, L5) exactly
-                # as work goals always did
-                asteroid = await asyncio.to_thread(
-                    self.memory.complete_task, planet=planet,
-                    handoffs=[pkg.model_dump()],
-                    classification=classification, language=language)
-                summary["gravity_score"] = round(asteroid.gravity_score, 4)
-                summary["gravity_bucket"] = _bucket(asteroid.gravity_score)
-                summary["asteroid_id"] = asteroid.id
-                summary["promoted_to_l3"] = bool(asteroid.promoted_to)
-            else:
-                summary["gravity_score"] = 0.1
-            timeline_record(turn_id, agent="universe", event="agent_complete",
-                            detail=(reply[:220] or "no text"))
-            try:
-                from observability.events import emit
-                emit("chat_reply", turn_id=turn_id, reply=reply,
-                     via="agent_turn")
-            except Exception:
-                pass
-            # the terminal event rides the timeline mirror exactly as work
-            # turns always did (turn_complete -> turn_completed)
-            timeline_record(turn_id, agent="universe", event="turn_complete",
-                            detail=json.dumps({"success": summary["success"],
-                                               "tools": tools_used,
-                                               "steps": turn_out.steps,
-                                               "stop_reason": turn_out.stop_reason}))
-            goal_status = ("completed" if (reply or not tool_failures)
-                           else "failed")
-            with self._st.transaction() as conn:
-                conn.execute(
-                    "UPDATE goals SET status=?, completed_at=?, final_summary=? "
-                    "WHERE id=?;",
-                    (goal_status, time.time(), json.dumps(summary), turn_id))
-                conn.execute(
-                    "UPDATE planets SET status='completed', updated_at=? "
-                    "WHERE turn_id=?;", (time.time(), task_key))
-                checkpoint(turn_id, state={
-                    "status": goal_status, "goal_text": goal_text,
-                    "language": language, "owner_session_id": owner_session_id,
-                    "classification": classification, "planet_id": planet.id,
-                    "handoffs": [], "remaining_plan": [], "summary": summary})
-                # Append assistant turn + tool history to session transcript (single authority)
-                try:
-                    from core.session.store import get_session_store as _gss2
-                    _ss2 = _gss2()
-                    _sk = session_id or session_id or task_key
-                    if _sk and reply:
-                        _ss2.append(_sk, {"role": "assistant", "content": reply, "kind": "message", "turn_id": turn_id})
-                    # naive tool_calls preservation: each tool event as tool result entry
-                    for _ev in events:
-                        if _ev.get("tool"):
-                            _ss2.append(_sk, {"role": "tool", "tool_call_id": str(_ev.get("seq", "")), "content": str((_ev.get("result") or {}).get("result") or (_ev.get("result") or {}).get("error") or "")[:2000], "kind": "tool", "turn_id": turn_id, "tool": _ev.get("tool")})
-                except Exception:
-                    pass
-                if on_step:
-                    await self._maybe_call(on_step, {"phase": "turn_complete",
-                                                     "reply": reply[:200],
-                                                     "status": goal_status})
-                if _ctx_token is not None:
-                    try:
-                        from core.agent.project_context import project_root_ctx as _pc2
-                        _pc2.reset(_ctx_token)
-                    except Exception:
-                        pass
-                return summary
-        except asyncio.CancelledError:
-            try:
-                from observability.events import emit
-                emit("turn_cancelled", turn_id=turn_id, reason="user")
-            except Exception:
-                pass
-            self._mark_goal_cancelled(turn_id)
-            # planet is None when the cancel landed before planet creation
-            # (e.g. during classify) — the old handler dereferenced
-            # planet.id unconditionally, raised AttributeError FROM the
-            # except block, and replaced the CancelledError so the goal
-            # read "failed" instead of "cancelled" (audit 2026-09)
-            checkpoint(turn_id, state={"status": "cancelled", "goal_text": goal_text,
-                                       "classification": classification, "handoffs": handoffs,
-                                       "remaining_plan": remaining_plan_now, "language": language,
-                                       "owner_session_id": owner_session_id,
-                                       "planet_id": planet.id if planet is not None else ""})
-            raise
-        except LLMError as exc:
-            # S1d: a terminal provider failure halts the turn honestly — the
-            # old in-loop sanity guard lived inside the deleted ladder loop.
-            # The RAW provider error is the reason (never re-labeled); the
-            # classified kind rides the provider_halt event kwargs.
-            reason = str(exc)[:500]
-            return record_provider_halt(
-                turn_id, reason, error=str(exc)[:500],
-                error_kind=getattr(exc, "kind", "unknown") or "unknown",
-                goal_text=goal_text, language=language,
-                owner_session_id=owner_session_id)
-        except LLMOutputLimitExceeded as exc:
-            # Universe's model_output_limit_exceeded: the turn is recoverable
-            # provider-side but cannot continue here — surface it as the
-            # provider halt it is.
-            reason = str(exc)[:500]
-            return record_provider_halt(
-                turn_id, reason, error=reason,
-                error_kind="model_output_limit_exceeded",
-                goal_text=goal_text, language=language,
-                owner_session_id=owner_session_id)
-        except Exception as exc:
-            self._mark_goal_failed(turn_id, str(exc))
-            # structured provider-failure signal (m3-4): LLMError.kind carries
-            # no_provider/rate_limit/timeout/provider_down/auth… up from
-            # providers/client.py so summaries can classify the failure
-            # instead of string-matching prose
-            error_kind = getattr(exc, "kind", "")
-            checkpoint(turn_id, state={"status": "failed", "goal_text": goal_text,
-                                       "classification": classification, "handoffs": handoffs,
-                                       "remaining_plan": remaining_plan_now, "error": str(exc),
-                                       "error_kind": error_kind})
-            timeline_record(turn_id, agent="universe", event="turn_failed",
-                            detail=json.dumps({"error": str(exc), "error_kind": error_kind}))
-            raise
-        finally:
-            # Reset project context for next turn
-            try:
-                if _ctx_token is not None:
-                    from core.agent.project_context import project_root_ctx as _pc3
-                    _pc3.reset(_ctx_token)
-            except Exception:
-                pass
-            # the goal is over: any steer still queued can never be applied —
-            # drop it so nothing leaks into a future run of the same id
-            try:
-                from core.agent.steer import clear as _clear_steer
-                _clear_steer(turn_id)
-                from core.agent.swarm import clear as _clear_swarm
-                _clear_swarm(turn_id)
-                # hooks one-shot state (require_facts) is keyed per goal —
-                # clear it here too so the manager never accumulates rows
-                # for ended goals (engine-fix round)
-                from hooks import get_hook_manager
-                get_hook_manager().clear_goal_state(turn_id)
-            except Exception:
-                pass
-            # held-guarded release: `if lock.locked(): release()` released
-            # OTHER holders' locks when this coroutine was cancelled while
-            # waiting (asyncio locks have no owner check)
-            if held:
-                try:
-                    lock.release()
-                except RuntimeError:
-                    pass
-            self._active_turn_ids.discard(turn_id)
-            refs = self._goal_lock_refs.get(turn_id, 1) - 1
-            if refs <= 0:
-                self._goal_lock_refs.pop(turn_id, None)
-                self._turn_locks.pop(turn_id, None)
-            else:
-                self._goal_lock_refs[turn_id] = refs
-
-    def _load_turn_history(self, parent_task_id: str | None,
-                           exclude_goal_id: str) -> list[dict[str, str]]:
-        """Session authority: primary is transcript.jsonl, fallback to goals for legacy."""
-        if not parent_task_id:
-            return []
-        # Try session store first (full authority)
-        try:
-            from core.session.store import get_session_store
-            sess_hist = get_session_store().history_messages(parent_task_id)
-            if sess_hist:
-                # history_messages already returns role/content with tool_calls.
-                # Legacy VIEW bound (goal path only — the session engine replays
-                # the FULL transcript): 100 recent messages / 8k chars, so a
-                # long task container no longer loses its own beginning.
-                out_sess: list[dict[str, str]] = []
-                for m in sess_hist[-100:]:
-                    c = str(m.get("content") or "").strip()
-                    if c:
-                        out_sess.append({"role": str(m.get("role") or "user"), "content": c[:8000]})
-                if out_sess:
-                    return out_sess
-        except Exception:
-            pass
-        try:
-            rows = self._st.query_all(
-                "SELECT text, status, final_summary FROM goals WHERE "
-                "session_id=? AND kind='message' AND id<>? "
-                "ORDER BY created_at ASC;",
-                (parent_task_id, exclude_goal_id))
-        except Exception:
-            return []
-        out: list[dict[str, str]] = []
-        for r in (rows[-24:] if isinstance(rows, list) else rows):
-            text = str(r.get("text") or "").strip()
-            if text:
-                out.append({"role": "user", "content": text[:4000]})
-            reply = ""
-            if r.get("final_summary"):
-                try:
-                    fs = json.loads(r["final_summary"])
-                except Exception:
-                    fs = {}
-                if isinstance(fs, dict):
-                    reply = str(fs.get("reply") or "")
-                    if not reply:
-                        steps = fs.get("steps") or []
-                        if isinstance(steps, list):
-                            reply = "; ".join(
-                                str(st.get("what", "")) for st in steps
-                                if isinstance(st, dict)
-                                and str(st.get("what", "")).strip())
-            if reply.strip():
-                out.append({"role": "assistant", "content": reply[:4000]})
-        return out
+        # ONE engine (P4, user order 2026-11-10): the legacy goal engine was
+        # DELETED — its body, its GAX_ENGINE switch, its `goals` rows, its
+        # planets/checkpoints. The session engine is not the default any
+        # more, it is the ONLY engine. The env var is still read so an old
+        # launcher that sets it gets a loud, honest warning instead of
+        # silently running the wrong engine.
+        engine_mode = (os.environ.get("GAX_ENGINE", "") or "session").strip().lower()
+        if engine_mode == "goal":
+            log.warning(
+                "GAX_ENGINE=goal is IGNORED: the goal engine was deleted "
+                "2026-11-10; the session engine runs this turn")
+        return await self._run_session_turn(
+            text=text, language=language, turn_id=turn_id,
+            on_step=on_step, capability_gate=capability_gate,
+            owner_session_id=owner_session_id, project_id=project_id,
+            project_root=project_root, session_id=session_id,
+            effort=effort)
+    # ---- P4: the goal engine was DELETED (user order 2026-11-10) ----------
+    # What used to live here: the ~400-line goal body — the `goals` row
+    # lifecycle, the per-task L1 planet, the failure/acceptance checkpoints,
+    # the acceptance ladder and _load_turn_history. All of it existed only to
+    # serve the retired long-horizon mode.
+    #
+    # The session transcript (core/session/store.py) is now the ONLY durable
+    # state: a turn is appended, replayed as context, and closed with a
+    # turn_end row. Two things the goal body owned survive, in the session
+    # path:
+    #   * provider_halt  -> record_provider_halt() above (transcript row +
+    #     bus events; no goals row, no checkpoint)
+    #   * turn locking    -> core.engine.session_loop.run_session_turn
+    # resume_turn now replays the transcript instead of a checkpoint (M5).
 
     @staticmethod
     def _build_turn_messages(*, goal_text: str, language: str,
@@ -845,161 +440,40 @@ class UniverseAgent:
         return messages
 
 
-    def _mark_goal_failed(self, turn_id: str, error: str) -> None:
-        with self._st.transaction() as conn:
-            conn.execute("UPDATE goals SET status=?, completed_at=?, final_summary=? WHERE id=?;",
-                         ("failed", time.time(), json.dumps({"error": error}), turn_id))
-
-    def _mark_goal_cancelled(self, turn_id: str) -> None:
-        # a cancelled goal must read 'cancelled' in the durable row too:
-        # writing 'failed' here fought the bridge's live 'cancelled' status
-        # and the row flipped once the bridge TTL-evicted the live entry
-        with self._st.transaction() as conn:
-            conn.execute("UPDATE goals SET status=?, completed_at=?, final_summary=? WHERE id=?;",
-                         ("cancelled", time.time(),
-                          json.dumps({"error": "cancelled by user",
-                                      "cancelled": True}), turn_id))
-
     async def resume_turn(self, turn_id: str, *, on_step: Any = None,
                           capability_gate=None,
                           effort: str | None = None) -> dict[str, Any]:
-        """Resume a cancelled/failed goal from its checkpoint.
+        """Re-run a turn from its SESSION TRANSCRIPT — the only durable
+        record the session engine leaves (audit 2026-11-10, M5).
 
-        The retired multi-step ladder stored `remaining_plan` steps to
-        replay; in the single-agent architecture nothing populates it, so
-        resume now re-runs the goal as ONE fresh universe-agent run with the
-        prior attempt's real evidence (artifacts, decisions, failures)
-        injected as the starting handoff. The goal moves again instead of
-        being refused by an empty-plan guard that could never pass
-        (audit 2026-09: resume was doubly dead — a nonexistent
-        _record_partial_handoff call crashed it, and every checkpoint the
-        current code writes carries remaining_plan: [])."""
-        cp = load_checkpoint(turn_id)
-        if not cp:
-            raise ValueError(f"no checkpoint for {turn_id}")
-        goal_text = str(cp.get("goal_text") or "")
-        if not goal_text:
-            raise ValueError(f"checkpoint for {turn_id} has no goal text")
-        if str(cp.get("status") or "") == "completed":
-            # resume_from (failure/checkpoint.py) repeats this exact refusal
-            # for the CLI path — a deliberate double-check on the shared
-            # entry point (engine-fix round: one truth lives in each
-            # caller; keep the two in sync if the policy ever changes)
-            raise ValueError(f"goal {turn_id} already completed")
-        planet = self.memory.l1.get_planet_by_goal(turn_id)
-        if planet is None:
-            raise ValueError(f"planet for {turn_id} not found")
-        classification = dict(cp.get("classification")
-                              or planet.session_context.get("classification", {}))
-        language = str(cp.get("language")
-                       or planet.session_context.get("language", "en"))
-        prior_handoffs = list(cp.get("handoffs") or [])
-        prior_summary = dict(cp.get("summary") or {})
-        gate = capability_gate or get_gate()
+        The old implementation loaded a checkpoint and then required an L1
+        planet for the turn: a planet this engine never creates, so every
+        resume raised "planet not found" and the whole path was dead code.
+        Resume now re-issues the session's last user message as a fresh turn
+        with the transcript (which already carries the prior attempt's
+        evidence) as its context. Refusals stay explicit."""
+        from core.session.store import get_session_store
 
-        # continuation handoff: the prior attempt's durable evidence
-        prior_failures = [str(h.get("what_was_done", ""))[:200]
-                          for h in prior_handoffs
-                          if not h.get("task_success", True)]
-        handoff = HandoffPackage(
-            what_was_done=str(prior_summary.get("reply")
-                              or prior_summary.get("what_was_done") or
-                              ("prior attempt stopped (" +
-                               str(cp.get("status") or "unknown") + ")")),
-            key_decisions=[f"resuming goal previously {cp.get('status', 'stopped')}"],
-            artifacts_created=[a for h in prior_handoffs
-                               for a in (h.get("artifacts_created") or [])][:20],
-            avoid_these=prior_failures[:5],
-            context_for_memory={"resumed_from": turn_id,
-                                "prior_error": str(cp.get("error") or "")[:500]},
-            next_agent_focus="Continue and finish the goal",
-            agent="universe",
-        )
-        handoffs = list(prior_handoffs)
-        self._active_turn_ids.add(turn_id)
-        lock = self._turn_locks.setdefault(turn_id, asyncio.Lock())
-        self._goal_lock_refs[turn_id] = self._goal_lock_refs.get(turn_id, 0) + 1
-        held = False
-        try:
-            await lock.acquire()
-            held = True
-            checkpoint(turn_id, state={"status": "resuming", "goal_text": goal_text,
-                                       "language": language, "classification": classification,
-                                       "planet_id": planet.id, "handoffs": handoffs,
-                                       "remaining_plan": []})
-            if on_step:
-                await self._maybe_call(on_step, {"phase": "resume_agent_start",
-                                                 "agent": "universe"})
-            # memory recall joins the context off the event loop — same
-            # to_thread discipline run_goal uses (engine-fix round)
-            def _recall() -> dict[str, Any]:
-                return {
-                    "l4_skills": [s.to_dict() for s in self.memory.search_l4(
-                        goal_text, category=classification.get("category", ""),
-                        domain=classification.get("domain", ""), top_k=5)],
-                    "l3_stars": [s.to_dict() for s in self.memory.search_l3(
-                        goal_text, top_k=3)],
-                    "active_rules": self.memory.active_rules(),
-                }
-            recalled = await asyncio.to_thread(_recall)
-            context = {**recalled,
-                       "handoff": handoff.model_dump(),
-                       "classification": classification, "untrusted": [],
-                       "effort": effort}
-            pkg = await get_agent("universe").run(
-                memory=self.memory, llm_client=self.llm, goal_text=goal_text,
-                classification=classification, handoff=handoff, context=context,
-                capability_gate=gate, turn_id=turn_id)
-            handoffs.append(pkg.model_dump())
-            acceptance = await asyncio.to_thread(
-                evaluate_goal, goal_text=goal_text, classification=classification,
-                handoffs=handoffs)
-            self._apply_acceptance(handoffs, acceptance, turn_id=turn_id)
-            meta = UniverseMeta(category=classification.get("category", "general"),
-                              domain=classification.get("domain", "general"),
-                              intent=classification.get("intent", "write"),
-                              complexity=classification.get("complexity", "medium"),
-                              classification=classification)
-            asteroid = await asyncio.to_thread(
-                self.memory.complete_task, planet=planet, handoffs=handoffs,
-                classification=classification, language=language)
-            summary = self._build_summary(turn_id, goal_text, asteroid, handoffs, meta, acceptance)
-            with self._st.transaction() as conn:
-                conn.execute("UPDATE goals SET status=?, completed_at=?, final_summary=? WHERE id=?;",
-                             ("completed" if asteroid.task_success else "failed", time.time(),
-                              json.dumps(summary), turn_id))
-            checkpoint(turn_id, state={"status": "completed" if summary["success"] else "failed",
-                                       "goal_text": goal_text, "language": language,
-                                       "classification": classification, "planet_id": planet.id,
-                                       "handoffs": handoffs, "remaining_plan": [], "summary": summary})
-            return summary
-        finally:
-            # goal over: drop the per-goal in-memory state exactly as
-            # run_goal does (steer queue, swarm bookkeeping + mailboxes,
-            # hook one-shots) — resume previously leaked all three
-            try:
-                from core.agent.steer import clear as _clear_steer
-                _clear_steer(turn_id)
-                from core.agent.swarm import clear as _clear_swarm
-                _clear_swarm(turn_id)
-                from hooks import get_hook_manager
-                get_hook_manager().clear_goal_state(turn_id)
-            except Exception:
-                pass
-            if held:
-                try:
-                    lock.release()
-                except RuntimeError:
-                    pass
-            self._active_turn_ids.discard(turn_id)
-            refs = self._goal_lock_refs.get(turn_id, 1) - 1
-            if refs <= 0:
-                self._goal_lock_refs.pop(turn_id, None)
-                self._turn_locks.pop(turn_id, None)
-            else:
-                self._goal_lock_refs[turn_id] = refs
+        store = get_session_store()
+        rows = store.transcript(turn_id)
+        user_rows = [r for r in rows if r.get("role") == "user"
+                     and r.get("kind", "message") == "message"]
+        ends = [r for r in rows if r.get("kind") == "turn_end"]
+        if ends and str(ends[-1].get("status") or "") == "completed":
+            raise ValueError(f"turn {turn_id} already completed")
+        if not user_rows:
+            raise ValueError(
+                f"no transcript for {turn_id}: nothing to resume "
+                "(a resume needs the session's transcript on disk)")
+        text = str(user_rows[-1].get("content") or "").strip()
+        if not text:
+            raise ValueError(f"turn {turn_id} has no user message to resume")
+        return await self.run_turn(
+            text, turn_id=turn_id, on_step=on_step,
+            capability_gate=capability_gate, effort=effort,
+            session_id=turn_id)
 
-    # ---- default plan -----------------------------------------------------
+    @staticmethod
     @staticmethod
     def _apply_acceptance(handoffs: list[dict[str, Any]], acceptance: dict[str, Any], *, turn_id: str = "") -> None:
         """Make acceptance and lifecycle evidence authoritative over model prose.
@@ -1033,42 +507,59 @@ class UniverseAgent:
             # complete_task may let the acceptance contract carry the goal.
             final.setdefault("context_for_memory", {})["acceptance_success"] = True
 
-    def _build_summary(self, turn_id: str, goal_text: str, asteroid, handoffs,
-                       meta: UniverseMeta, acceptance: dict[str, Any] | None = None) -> dict[str, Any]:
-        in_t, out_t = self.llm.session_tokens()
-        artifacts: list[dict[str, Any]] = []
-        for h in handoffs:
-            artifacts.extend(h.get("artifacts_created") or [])
-        return {
-            "turn_id": turn_id,
-            "goal_text": goal_text,
-            "classification": meta.classification,
-            "success": asteroid.task_success,
-            "gravity_score": round(asteroid.gravity_score, 4),
-            "gravity_bucket": _bucket(asteroid.gravity_score),
-            "steps": [{"agent": h.get("agent"), "what": h.get("what_was_done", "")[:120],
-                       # a step whose own text starts with "failed:" is a
-                       # failure no matter what any later phase claimed
-                       "success": bool(h.get("task_success"))
-                                  and not str(h.get("what_was_done", "")).startswith("failed:"),
-                       "tools_used": h.get("tools_used", [])} for h in handoffs],
-            "artifacts": artifacts,
-            "promoted_to_l3": bool(asteroid.promoted_to),
-            "asteroid_id": asteroid.id,
-            "llm_calls": len(self.llm.call_log()),
-            "input_tokens": in_t,
-            "output_tokens": out_t,
-            "elapsed_ms": sum(h.get("elapsed_ms", 0) for h in handoffs),
-            "acceptance": acceptance or {"success": bool(asteroid.task_success)},
-        }
-
-    # ---- chat removed — Universe: every message is a turn (no_tool_calls is conversation)
     async def chat(self, text: str, **kwargs):
         """Compat shim: routes chat through run_turn (no_tool_calls is conversation)."""
         res = await self.run_turn(text, **kwargs)
         return str(res.get("reply", ""))
 
     # ---- helpers ----------------------------------------------------------
+    def _recall(self, goal_text: str) -> dict[str, Any]:
+        """Live memory recall for a turn: the skills index (L4) plus
+        remembered knowledge (L3), ranked off the event loop.
+
+        B2c (audit 2026-11-10): the session path passed EMPTY lists into the
+        prompt builder, so the five-tier memory contributed nothing to any
+        turn — the recall existed only on the deleted goal path. One method,
+        called from the prompt builder; L3's top hit is touched so the
+        `last_recalled` watermark is real."""
+        import asyncio
+
+        async def _async() -> dict[str, Any]:
+            def _work() -> dict[str, Any]:
+                hits = {
+                    "l4_skills": [s.to_dict() for s in self.memory.search_l4(
+                        goal_text, top_k=6)],
+                    "l3_stars": [s.to_dict() for s in self.memory.search_l3(
+                        goal_text, top_k=5)],
+                    "active_rules": self.memory.active_rules(),
+                }
+                if hits["l3_stars"]:
+                    try:
+                        self.memory.l3.touch(hits["l3_stars"][0]["id"])
+                    except Exception:
+                        pass
+                return hits
+            return await asyncio.to_thread(_work)
+
+        try:
+            asyncio.get_running_loop()
+            return _async()  # caller awaits it
+        except RuntimeError:
+            # sync context (a worker thread or a CLI caller): run inline
+            hits = {
+                "l4_skills": [s.to_dict() for s in self.memory.search_l4(
+                    goal_text, top_k=6)],
+                "l3_stars": [s.to_dict() for s in self.memory.search_l3(
+                    goal_text, top_k=5)],
+                "active_rules": self.memory.active_rules(),
+            }
+            if hits["l3_stars"]:
+                try:
+                    self.memory.l3.touch(hits["l3_stars"][0]["id"])
+                except Exception:
+                    pass
+            return hits
+
     async def _maybe_call(self, fn, arg) -> None:
         import inspect
         if inspect.iscoroutinefunction(fn):

@@ -73,7 +73,7 @@ export function toolFamily(tool: string): ToolFamily {
     return "explore";
   }
   // terminal / shell surface: the exact registry names the fold gets
-  // (Bash, BashUnsandboxed, CodeExecute, shell.exec) plus the legacy
+  // (Bash, CodeExecute, shell.exec) plus the legacy
   // prefixes — Universe's "Terminal" row
   if (
     tool.startsWith("Bash") ||

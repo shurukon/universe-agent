@@ -12,7 +12,6 @@ import json
 import time
 from types import SimpleNamespace
 
-import pytest
 
 
 # ---- root #2: the empty-name guard -------------------------------------------

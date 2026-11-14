@@ -254,6 +254,29 @@ export interface ConsentPrompt {
   created_at: number;
 }
 
+/** one choice inside a question (the ZCode option shape) */
+export interface QuestionOption {
+  /** the stable answer value the model receives */
+  value: string;
+  /** what the user reads (falls back to `value`) */
+  label: string;
+  /** one line of extra context under the label */
+  description?: string;
+}
+
+/** one question of an AskUserQuestion call (the ZCode shape) */
+export interface QuestionSpec {
+  question: string;
+  /** a short category chip shown above the question */
+  header?: string;
+  options: QuestionOption[];
+  /** several answers may be picked */
+  multiSelect?: boolean;
+}
+
+/** the answers map: question text -> the picked value(s) */
+export type QuestionAnswers = Record<string, string | string[]>;
+
 /** one desktop.hooks[] rule (Phase 3 — editable from Settings → Hooks) */
 export interface HookRule {
   /** pre_tool | pre_shell | pre_write | post_tool (post = announce-only v1) */
@@ -391,15 +414,6 @@ export interface McpServerInfo {
   declared_hosts: string[];
 }
 
-// /api/agents row (subagents only — the universe agent is the main loop and
-// is never listed; subagents inherit the one model set from the chat chip)
-export interface AgentInfo {
-  name: string;
-  specialty: string;
-  tools: string[];
-  tier: string;
-}
-
 // /api/automations row (Phase C — schedule.AutomationScheduler)
 export interface Automation {
   id: string;
@@ -515,6 +529,8 @@ export interface BridgeEvent {
   /** question_required / question_decided (ask_user) */
   question?: string;
   options?: string[];
+  /** the ZCode shape: every question of the call */
+  questions?: QuestionSpec[];
   allow_free_text?: boolean;
   timeout_s?: number;
   /** permission_mode_changed — the mode chip stays live */
@@ -572,10 +588,6 @@ export const api = {
       memory_error?: string;
       permission_mode_error?: string;
     }>("/api/status-parity"),
-  agentRoster: () =>
-    request<{ agents: Array<{ name: string; specialty: string }> }>(
-      "/api/agents"
-    ),
   exportTranscript: (turnId: string) =>
     request<{ ok: boolean; path: string; messages: number }>("/api/export", {
       method: "POST",
@@ -782,6 +794,9 @@ export const api = {
     request<{
       pending: Array<{
         pending_id: string;
+        /** the ZCode shape: a LIST of questions, each with options */
+        questions: QuestionSpec[];
+        /** the legacy flat fields (the first question) */
         question: string;
         options: string[];
         allow_free_text: boolean;
@@ -789,12 +804,12 @@ export const api = {
       }>;
     }>("/api/question/pending"),
 
-  answerQuestion: (pendingId: string, answer: string) =>
+  answerQuestion: (pendingId: string, answers: QuestionAnswers) =>
     request<{ pending_id: string; answered: boolean }>(
       `/api/question/${encodeURIComponent(pendingId)}`,
       {
         method: "POST",
-        body: JSON.stringify({ answer }),
+        body: JSON.stringify({ answers }),
       }
     ),
 
@@ -896,12 +911,6 @@ export const api = {
    *  makes every list feel instant without going stale. */
   getProviderModels: (name: string) => providerModels(name),
 
-  /** one API key row list for an installed provider (masked previews) */
-  getProviderKeys: (name: string) =>
-    request<{ provider: string; keys: ProviderKeyInfo[] }>(
-      `/api/providers/${encodeURIComponent(name)}/keys`
-    ),
-
   /** add ONE more key to an installed provider (probed live first;
    *  unlimited per provider). 422 = the key failed its live check. */
   addProviderKey: (name: string, apiKey: string) =>
@@ -916,13 +925,6 @@ export const api = {
       `/api/providers/${encodeURIComponent(name)}/keys/${keyId}`,
       { method: "DELETE" }
     ),
-
-  /** one real request proving a voice key works before it's saved */
-  checkVoiceKey: (kind: "stt" | "tts", provider: string, apiKey: string) =>
-    request<{ ok: boolean; error: string | null }>("/api/voice/check", {
-      method: "POST",
-      body: JSON.stringify({ kind, provider, api_key: apiKey }),
-    }),
 
   switchProviderModel: (name: string, model: string) =>
     request<{
@@ -973,26 +975,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, root }),
     }),
-
-  patchProject: (
-    pid: string,
-    patch: { name?: string; root?: string; archived?: boolean }
-  ) =>
-    request<{ ok: boolean; project_id: string }>(
-      `/api/projects/${encodeURIComponent(pid)}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      }
-    ),
-
-  deleteProject: (pid: string, hard = false) =>
-    request<{ ok: boolean; removed: string }>(
-      `/api/projects/${encodeURIComponent(pid)}?hard=${hard}`,
-      {
-        method: "DELETE",
-      }
-    ),
 
   patchGoal: (
     turnId: string,
@@ -1085,10 +1067,6 @@ export const api = {
       }
     ),
 
-  // ---- agents -----------------------------------------------------------------
-
-  listAgents: () => request<{ agents: AgentInfo[] }>("/api/agents"),
-
   // ---- automations (Phase C — the standalone Automations page) ------------------
 
   listAutomations: () =>
@@ -1143,31 +1121,16 @@ export const api = {
       }>;
       daily: Array<{ date: string; input: number; output: number }>;
     }>(`/api/usage?range=${encodeURIComponent(range)}`),
-  getIndexingStatus: () =>
-    request<{ enabled: boolean; root: string; count: number }>(
-      `/api/indexing/status`
-    ),
   resyncIndexing: () =>
     request<{ ok: boolean; indexed: number; message: string }>(
       `/api/indexing/resync`,
       { method: "POST" }
     ),
-  getBrowserState: () =>
-    request<{
-      tabs: Array<{ id: string; title: string }>;
-      activeTab: string | null;
-      available: boolean;
-    }>(`/api/browser/state`),
   navigateBrowser: (url: string, tab?: string) =>
     request<{ ok: boolean; result?: unknown; error?: string }>(
       `/api/browser/navigate`,
       { method: "POST", body: JSON.stringify({ url, tab }) }
     ),
-  browserTabs: (args: Record<string, unknown>) =>
-    request<{ ok: boolean; result?: unknown }>(`/api/browser/tabs`, {
-      method: "POST",
-      body: JSON.stringify(args),
-    }),
 
   patchSkill: (id: string, enabled: boolean) =>
     request<{ ok: boolean; skill_id: string; enabled: boolean }>(

@@ -28,7 +28,11 @@ BUILTIN_HOOKS: list[dict] = [
     {
         "hook_id": "builtin-factguard-shell",
         "event": "pre_shell",
-        "matcher": "Bash",
+        # "*" not "Bash": the shell fact-gate must cover EVERY shell tool
+        # the registry routes to pre_shell (Bash, PowerShell, CodeExecute,
+        # Monitor) — matcher "Bash" left the other three unguarded
+        # (audit 2026-11-10).
+        "matcher": "*",
         "action": "require_facts",
         "message": SHELL_FACTS_MESSAGE,
         "enabled": True,

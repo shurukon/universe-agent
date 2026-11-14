@@ -1533,11 +1533,15 @@
 
 /* ---- shell: the workspace surface that holds the crumb band ---------- */
 .zc-shell {
-  max-width: 780px;
-  max-width: 672px;
+  /* the composer shell follows the CHAT COLUMN (user order 2026-11-12:
+     "I still don't see the chat getting wider"). It used to be pinned to
+     672px here AND with an !important on the card below — that pin is
+     why widening the column changed nothing visible: the composer card
+     kept its old width in the empty state, and the shell band in every
+     state. */
+  max-width: var(--chat-col, 789px);
   margin: 0 auto;
-}
-.zc-shell.has-head {
+}.zc-shell.has-head {
   /* --color-surface = #ffffff0d → tuned +1/255 so the composited band
      reads #222 (34) over the #161616 canvas, as in the reference */
   background: rgba(255, 255, 255, 0.055);
@@ -1548,19 +1552,18 @@
     0 20px 25px -5px rgba(0, 0, 0, 0.05),
     0 8px 10px -6px rgba(0, 0, 0, 0.05);
 }
-/* the card fills the shell edge to edge (redesign.css pins
-   `.composer-wrap.centered .composer` to 640px — the measured width is
-   max-w-2xl = 672px, the same as the wrapper) */
+/* the card fills the shell edge to edge (the shell now follows the chat
+   column, so the composer and the messages share one width) */
 .zc-shell > .composer {
-  max-width: 672px !important;
+  max-width: 100% !important;
   width: 100%;
   transition: max-width 250ms ease;
 }
 .main--expanded .zc-shell {
-  max-width: 874px;
+  max-width: var(--chat-col-expanded, 932px);
 }
 .main--expanded .zc-shell > .composer {
-  max-width: 874px !important;
+  max-width: 100% !important;
 }
 
 /* ---- the crumb band (6px pad + 28px crumbs = 40px) ------------------- */

@@ -23,6 +23,30 @@
   --sp-5: 20px;
   --sp-6: 24px;
 
+  /* ---- the chat column (ONE source of truth) --------------------------
+     The conversation column is the app's main working surface. The ladder
+     the user walked it through, by eye (2026-11-11 / 2026-11-12):
+
+       990px  → the original
+       1160px → +17% (user order, 2026-11-11) — INVISIBLE: the column is a
+                 max-width and the window was 1456px, so it clamped; and the
+                 composer card was pinned to 672px with an !important, so
+                 the empty state never changed at all
+       1392px → +20% of 1160 (user order, 2026-11-12) — visible now, but
+                 "too wide, over the limit"
+       974px  → −30% of 1392 (user order, 2026-11-12)
+       877px  → −10% of 974 (user order, 2026-11-12)
+       789px  → −10% of 877 (user order, 2026-11-12) — ships
+
+     The expanded (rail-collapsed) column follows the same ratio (932).
+     Every element that must line up with the column (the composer, the
+     hint line, the project bar, the steer tag, the consent banner, the
+     composer shell) reads these variables instead of hardcoding a number —
+     the old duplicated literals had already drifted apart (990 / 672 / 780
+     / 874 / 1170 all meant "the chat column"). */
+  --chat-col: 789px;
+  --chat-col-expanded: 932px;
+
   /* ---- chrome heights ------------------------------------------------- */
   --tb-h: 56px;           /* single strip chrome (Universe 3.12.1, measured) */
   --sb-w: var(--ds-sidebar-w, 264px); /* matches the sidebar sheet */
@@ -544,44 +568,144 @@
 }
 .rail-capsule:hover { color: var(--ink, #d4d4d4); }
 
-/* ---- question banner (ask_user options inline, consent-line language) ------- */
+/* ---- question card (AskUserQuestion — the ZCode shape) ---------------------
+   The card is docked above the composer (the consent banner's sibling),
+   never a modal: the conversation stays readable behind it. The visual
+   language follows ZCode's ask surface: a short header chip, the
+   question, option ROWS (label + one line of description) and a free
+   "Other" line — not a row of tiny pills. */
 
-.q-banner {
+.q-card {
+  max-width: var(--chat-col, 789px);
+  width: 100%;
+  margin: 0 auto 8px;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-3);
-  margin: 0 var(--sp-3) var(--sp-2);
+  gap: var(--sp-3);
   background: var(--ds-surface-1, #2b2b2b);
   border: 1px solid var(--ds-line, #414141);
   border-radius: 12px;
+  padding: var(--sp-4);
+  animation: rdx-rise .2s var(--ease-out);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
 }
-.q-banner .q-text { font-size: 13px; color: var(--ink, #d4d4d4); }
-.q-opts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.q-opt {
-  border: 1px solid var(--chip-line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--chip-ink);
-  font-size: 12.5px;
-  padding: 6px 12px;
-}
-.q-opt:hover { border-color: var(--accent-cyan, #2b5c9b); color: var(--ink, #d4d4d4); }
-.q-free {
-  display: flex;
-  gap: var(--sp-2);
-}
-.q-free input {
-  flex: 1;
-  min-width: 120px;
+
+.q-head { display: flex; align-items: center; gap: var(--sp-2); }
+.q-glyph { color: var(--accent-cyan, #2b5c9b); display: flex; }
+.q-header-chip {
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--ink3, #999);
   background: var(--chip-bg);
   border: 1px solid var(--chip-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-step {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink3, #999);
+  font-variant-numeric: tabular-nums;
+}
+
+.q-question {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink, #d4d4d4);
+}
+
+.q-options { display: flex; flex-direction: column; gap: 6px; }
+
+.q-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: 1px solid var(--ds-line, #414141);
+  border-radius: 9px;
+  background: var(--ds-surface-2, #363636);
+  color: var(--ink2, #d4d4d4);
+  transition: border-color .14s, background .14s, color .14s;
+}
+.q-option:hover { border-color: var(--ink3, #999); color: var(--ink, #d4d4d4); }
+.q-option.cursor { border-color: var(--accent-cyan, #2b5c9b); }
+.q-option.picked {
+  border-color: var(--accent-cyan, #2b5c9b);
+  background: color-mix(in srgb, var(--accent-cyan, #2b5c9b) 14%, transparent);
+  color: var(--ink, #d4d4d4);
+}
+
+.q-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  color: var(--accent-cyan, #2b5c9b);
+}
+.q-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1px solid var(--ink3, #999);
+}
+.q-box {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  border: 1px solid var(--ink3, #999);
+}
+
+.q-opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.q-opt-label { font-size: 13px; line-height: 1.35; }
+.q-opt-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink3, #999);
+}
+
+.q-other { display: flex; }
+.q-other-input {
+  flex: 1;
+  min-width: 120px;
+  background: var(--ds-surface-2, #363636);
+  border: 1px solid var(--ds-line, #414141);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   color: var(--ink, #d4d4d4);
   font-size: 12.5px;
 }
-.q-free input:focus { outline: none; border-color: var(--accent-cyan, #2b5c9b); }
+.q-other-input:focus { outline: none; border-color: var(--accent-cyan, #2b5c9b); }
+.q-other-input::placeholder { color: var(--ink3, #999); }
+
+.q-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.q-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 7px 13px;
+  border: 1px solid var(--ds-line, #414141);
+  transition: .14s;
+}
+.q-btn.ghost { background: none; color: var(--ink2, #d4d4d4); }
+.q-btn.ghost:hover { color: var(--ink, #d4d4d4); border-color: var(--ink3, #999); }
+.q-btn.primary {
+  background: var(--accent-cyan, #2b5c9b);
+  border-color: var(--accent-cyan, #2b5c9b);
+  color: #fff;
+}
+.q-btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.q-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ---- tool-row additions (Universe rows: hooks badge + events counter) --------- */
 
@@ -700,7 +824,7 @@
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(var(--chat-w, 780px), calc(100vw - 32px));
+  width: min(var(--chat-w, var(--chat-col, 789px)), calc(100vw - 32px));
   height: 30px;
   display: flex;
   align-items: center;

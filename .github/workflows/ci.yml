@@ -2,9 +2,11 @@
 #
 # Matrix is deliberately lean (windows 3.11 + ubuntu 3.11); add 3.12 after
 # the first green runs. The pytest invocation is verified locally:
-#   pytest -m "not llm" -x -q
-# collects ~550 tests (the llm-marked ones deselect honestly — they need
-# UNIVERSE_TEST_* real-provider credentials).
+#   pytest -m "not llm" -q
+# collects the non-LLM suite (the llm-marked ones deselect honestly — they
+# need UNIVERSE_TEST_* real-provider credentials). The collected count is
+# printed by the run itself; the number in README.md is the same count.
+# -x is deliberately NOT used: one failure must not hide the rest.
 name: CI
 
 on:
@@ -50,7 +52,15 @@ jobs:
           # per-test via fresh_home; a process-level default keeps any
           # stray client from tripping the fail-closed gate
           UNIVERSE_BRIDGE_TOKEN: dev
-        run: pytest -m "not llm" -x -q
+          UNIVERSE_HOME: ${{ runner.temp }}/universe-home
+        run: pytest -m "not llm" -q --junitxml=pytest-report.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ matrix.os }}
+          path: pytest-report.xml
 
   lint:
     runs-on: ubuntu-latest

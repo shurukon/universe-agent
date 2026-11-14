@@ -55,52 +55,59 @@ def test_prune_expired_keeps_running(fresh_home):
     assert st.get("g-run") is not None
 
 
-def test_run_turn_persists_project_meta(fresh_home, monkeypatch):
+def test_session_turn_carries_project_meta_in_the_transcript(fresh_home,
+                                                              monkeypatch):
+    """P4 (2026-11-10): project/title/owner meta no longer rides a goals row
+    (the goal engine and its table are gone) — the session transcript is the
+    authority, and the bridge still passes project_id through so the sidebar
+    grouping keeps working."""
     import asyncio
-    # goals-row persistence is the LEGACY goal-state path (GAX_ENGINE=goal);
-    # the default session engine writes zero goals rows by contract.
-    monkeypatch.setenv("GAX_ENGINE", "goal")
     from core.agent.orchestrator import get_orchestrator
+    from core.session.store import get_session_store
     orch = get_orchestrator()
 
     async def go():
-        # classification will fail (no provider) -> provider_halt path,
-        # which still proves the INSERT+UPDATE wrote project/title first
+        # no provider -> provider halt, which still proves the session was
+        # created and the turn closed with an honest failed row
         return await orch.run_turn("meta probe", project_id="proj-1",
                                    title="My Title",
-                                   owner_session_id="sess-test")
+                                   owner_session_id="sess-test",
+                                   session_id="sess-meta")
     out = asyncio.new_event_loop().run_until_complete(go())
     assert out["success"] is False
-    from storage.local import get_storage
-    row = get_storage().query_one(
-        "SELECT project_id, title, owner_session_id FROM goals "
-        "WHERE id=?;", (out["turn_id"],))
-    assert row["project_id"] == "proj-1"
-    assert row["title"] == "My Title"
-    assert row["owner_session_id"] == "sess-test"
+    rows = get_session_store().transcript("sess-meta")
+    assert any(r.get("kind") == "turn_start" for r in rows), rows
+    ends = [r for r in rows if r.get("kind") == "turn_end"]
+    assert ends and ends[-1]["status"] == "failed"
 
 
-def test_provider_halt_single_choke_point(fresh_home):
-    import json
-    import time
-    from storage.local import get_storage
-    # production order: run_turn INSERTs the row, halt UPDATEs it
-    with get_storage().transaction() as conn:
-        conn.execute(
-            "INSERT INTO goals(id,text,status,created_at,owner_session_id) "
-            "VALUES(?,?,?,?,?);", ("g-halt", "t", "running", time.time(), "s"))
+def test_provider_halt_single_choke_point_session(fresh_home):
+    """P4 (2026-11-10): the ONE halt choke point now writes the transcript
+    (the goals table is gone) — a failed turn_end row with the raw error,
+    plus the halted summary. No checkpoint, no goals row."""
     from core.agent.universe_agent import record_provider_halt
+    from core.session.store import get_session_store
+    store = get_session_store()
+    store.create(id="s-halt")
     out = record_provider_halt("g-halt", "halt reason", error="root cause",
-                               goal_text="t", owner_session_id="s")
+                               goal_text="t", owner_session_id="s",
+                               session_id="s-halt")
     assert out["success"] is False and out["halted"] is True
-    from storage.local import get_storage
-    row = get_storage().query_one(
-        "SELECT status, final_summary FROM goals WHERE id='g-halt';")
+    rows = [r for r in store.transcript("s-halt")
+            if r.get("kind") == "turn_end"]
+    assert rows, "a halt must leave a durable close-out row"
+    row = rows[-1]
     assert row["status"] == "failed"
-    assert json.loads(row["final_summary"])["error"] == "halt reason"
-    from failure.checkpoint import load_checkpoint
-    cp = load_checkpoint("g-halt")
-    assert cp is not None
+    assert row["stop_reason"] == "provider_halt"
+    assert "halt reason" in str(row.get("error", "")) or \
+           "root cause" in str(row.get("error", "")), (
+           "the halt row carries the error the caller surfaced")
+    # the goals table is no longer the authority and is not written
+    from storage.local import get_storage
+    legacy = get_storage().query_one(
+        "SELECT status FROM goals WHERE id='g-halt';")
+    assert legacy is None, "no turn may write a goals row any more"
+
 
 
 def test_sweep_scoped_to_own_session(fresh_home):

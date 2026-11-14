@@ -18,9 +18,7 @@ import {
   BadgeCheck,
   BookOpen,
   Boxes,
-  Braces,
   Brain,
-  Bug,
   Calendar,
   CalendarClock,
   CalendarPlus,
@@ -37,22 +35,17 @@ import {
   CloudSun,
   Coins,
   Container,
-  Contrast,
   Copy,
   Database,
   Eye,
   FileClock,
   FileCode,
-  FileCode2,
   FileJson,
   FilePenLine,
   FilePlus2,
-  FileSearch,
   FileText,
-  FlaskConical,
   Folder,
   FolderSearch,
-  Gauge,
   GitBranch,
   GitCommitHorizontal,
   GitCompare,
@@ -61,7 +54,6 @@ import {
   Globe,
   History,
   Image as ImageIcon,
-  KeyRound,
   Keyboard,
   LayoutGrid,
   Link2,
@@ -80,14 +72,12 @@ import {
   Notebook,
   OctagonX,
   Package,
-  PackageSearch,
   PanelsTopLeft,
   Pause,
   Plug,
   PlugZap,
   ReceiptText,
   Rocket,
-  RotateCcw,
   ScanEye,
   ScanText,
   ScrollText,
@@ -95,7 +85,6 @@ import {
   SearchCode,
   Send,
   Server,
-  Shapes,
   ShieldCheck,
   Ship,
   Slack,
@@ -211,10 +200,7 @@ export function toolIconFor(name: string | null): ReactNode {
   if (t === "notebookedit") return <Notebook {...ICO} />;
   if (t === "archive") return <Archive {...ICO} />;
   if (t === "openapiparser") return <FileJson {...ICO} />;
-  if (t === "svggen") return <Shapes {...ICO} />;
   if (t === "readsessioncontext") return <ScrollText {...ICO} />;
-  if (t === "codeanalyzer") return <FileSearch {...ICO} />;
-  if (t === "staticanalysis") return <FileCode2 {...ICO} />;
   /* ---- web ---- */
   if (t === "websearch") return <Search {...ICO} />;
   if (t === "toolsearch") return <ListTree {...ICO} />;
@@ -222,7 +208,7 @@ export function toolIconFor(name: string | null): ReactNode {
   if (t === "webresearch" || t === "wikipediasearch" || t === "arxivsearch")
     return <BookOpen {...ICO} />;
   /* ---- shell / ops ---- */
-  if (t === "bash" || t === "bashunsandboxed" || t === "powershell" ||
+  if (t === "bash" || t === "powershell" ||
       t === "codeexecute" || t.startsWith("shell") || t === "terminal")
     return <SquareTerminal {...ICO} />;
   if (t === "ssh") return <Server {...ICO} />;
@@ -232,10 +218,6 @@ export function toolIconFor(name: string | null): ReactNode {
   if (t === "cronlist") return <Calendar {...ICO} />;
   if (t === "cronupdate") return <CalendarClock {...ICO} />;
   if (t === "crondelete") return <CalendarX2 {...ICO} />;
-  /* ---- node REPL family ---- */
-  if (t === "js") return <SquareTerminal {...ICO} />;
-  if (t === "jsreset") return <RotateCcw {...ICO} />;
-  if (t === "jsaddnodemoduledir") return <Package {...ICO} />;
   /* ---- plan / task ledger ---- */
   if (t === "enterplanmode") return <SquarePen {...ICO} />;
   if (t === "exitplanmode") return <CircleCheckBig {...ICO} />;
@@ -258,15 +240,8 @@ export function toolIconFor(name: string | null): ReactNode {
   if (t === "pandasquery") return <Table {...ICO} />;
   if (t === "datavalidate") return <BadgeCheck {...ICO} />;
   if (t === "charting") return <ChartColumn {...ICO} />;
-  if (t === "coveragereport") return <Gauge {...ICO} />;
-  if (t === "testrunner") return <FlaskConical {...ICO} />;
-  if (t === "dependencyaudit") return <PackageSearch {...ICO} />;
   if (t === "pypipackageinfo" || t === "npmpackageinfo" || t === "cratespackageinfo")
     return <Package {...ICO} />;
-  if (t === "secretscanner") return <KeyRound {...ICO} />;
-  if (t === "vulnscanner") return <Bug {...ICO} />;
-  if (t === "csscolor" || t === "csstools") return <Braces {...ICO} />;
-  if (t === "colorcontrastcheck") return <Contrast {...ICO} />;
   if (t === "dockerbuild") return <Container {...ICO} />;
   if (t === "dockerps") return <Boxes {...ICO} />;
   if (t === "dockerrun") return <Ship {...ICO} />;

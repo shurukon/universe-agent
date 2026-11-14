@@ -118,11 +118,13 @@ class ToolRegistry:
         # consent/handler phase; a blocked call never runs the handler.
         # Shell-adjacent tools all fire pre_shell (audit 2026-10: only the
         # tool literally named "Bash" used to fire it, so PowerShell,
-        # CodeExecute, Monitor and the unsandboxed shell bypassed user
-        # pre_shell hooks and the builtin fact-guard entirely).
-        _SHELL_TOOLS = {"Bash", "BashUnsandboxed", "PowerShell",
-                        "CodeExecute", "Monitor"}
-        _WRITE_TOOLS = {"Write", "Edit", "ApplyPatch", "NotebookEdit"}
+        # CodeExecute and Monitor bypassed user pre_shell hooks and the
+        # builtin fact-guard entirely — audit 2026-11: the sets lived in
+        # TWO files and drifted; hooks/manager.py is now the single source
+        # of truth and the registry imports them).
+        from hooks.manager import PRE_SHELL_TOOLS, PRE_WRITE_TOOLS
+        _SHELL_TOOLS = set(PRE_SHELL_TOOLS)
+        _WRITE_TOOLS = set(PRE_WRITE_TOOLS)
         hook_event = ("pre_shell" if name in _SHELL_TOOLS
                       else "pre_write" if name in _WRITE_TOOLS
                       else "pre_tool")
@@ -171,8 +173,8 @@ class ToolRegistry:
                                        turn_id=turn_id, args=call_args)
             # a successful file write/edit is a live artifact — the chat
             # surface gets its chip the moment the file lands, not at goal end
-            # (any Write-capability tool: Write/Edit/ApplyPatch/NotebookEdit/SvgGen)
-            if tool.capability == "Write" or name in ("Write", "Edit", "ApplyPatch", "NotebookEdit", "SvgGen", "CssTools"):
+            # (any Write-capability tool: Write/Edit/ApplyPatch/NotebookEdit)
+            if tool.capability == "Write" or name in ("Write", "Edit", "ApplyPatch", "NotebookEdit"):
                 inner = result.get("result")
                 if isinstance(inner, dict) and (inner.get("path") or inner.get("file") or args.get("path") or args.get("file")):
                     _apath = str(inner.get("path") or inner.get("file") or args.get("path") or args.get("file") or "")[:400]
@@ -278,12 +280,20 @@ def _register_builtins(reg: ToolRegistry) -> None:
         "MemoryQuery": 15, "Skill": 15, "ToolSearch": 15, "CapabilityCatalog": 10,
         "WebSearch": 30, "WebFetch": 30, "WebResearch": 60, "wikipedia_search": 30, "arxiv_search": 30,
         "TodoRead": 10, "TodoWrite": 10, "GoalRead": 10, "ReadSessionContext": 10,
-        "AskUserQuestion": 30, "EnterPlanMode": 5, "ExitPlanMode": 5,
+        # AskUserQuestion waits for a HUMAN, not for a machine: the broker's
+        # own auto-continue timeout is 300 s by default (the desktop
+        # setting auto_continue_questions_s allows up to 3600 s), so a 30 s
+        # tool timeout cut the question off while the user was still reading
+        # it - the agent then reported "the question timed out" and the
+        # user answered into the void (live 2026-11-12). The tool timeout
+        # is the BACKSTOP above the broker's ceiling: the broker always
+        # resolves first (answered, or auto-continued at its own timeout).
+        "AskUserQuestion": 3660, "EnterPlanMode": 5, "ExitPlanMode": 5,
         # writes: 60s
         "Write": 60, "Edit": 60, "Delete": 30, "ApplyPatch": 60, "NotebookEdit": 60,
         "GitCommit": 60, "GitPush": 60,
         # exec / network / browser: 60-600s
-        "Bash": 600, "PowerShell": 600, "BashUnsandboxed": 600, "CodeExecute": 600, "Monitor": 600,
+        "Bash": 600, "PowerShell": 600, "CodeExecute": 600, "Monitor": 600,
         "DockerBuild": 600, "DockerRun": 600, "DockerPs": 30,
         "BrowserNavigate": 30, "BrowserClick": 30, "BrowserFill": 30, "BrowserSnapshot": 30,
         "BrowserScreenshot": 30, "BrowserExtract": 30, "BrowserConsole": 30, "BrowserTabs": 30,

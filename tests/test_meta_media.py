@@ -85,31 +85,6 @@ def _last_request() -> dict:
     return _RecordingClient.requests[-1]
 
 
-def test_list_models_hits_official_endpoint(recording, fresh_home):
-    recording({"data": [{"id": "muse-wonder-1.0"}, {"id": "muse-spark-1.3"}]})
-    models = asyncio.run(meta_media.list_models("key-1"))
-    req = _last_request()
-    assert req["url"] == "https://api.meta.ai/v1/models"
-    assert req["headers"]["Authorization"] == "Bearer key-1"
-    assert "muse-wonder-1.0" in models
-
-
-def test_generate_image_official_contract(recording, fresh_home):
-    recording({"created": 1784584435,
-               "data": [{"b64_json": "QUJD"}],
-               "output_format": "webp"})
-    out = asyncio.run(
-        meta_media.generate_image("key-1", "a blue spiral galaxy"))
-    req = _last_request()
-    assert req["url"] == "https://api.meta.ai/v1/images/generations"
-    payload = json.loads(req["content"])
-    assert payload["model"] == "muse-image-1.0"
-    assert payload["prompt"] == "a blue spiral galaxy"
-    assert payload["response_format"] == "b64_json"
-    assert req["headers"]["Authorization"] == "Bearer key-1"
-    assert out == {"b64": "QUJD", "output_format": "webp"}
-
-
 def test_transcribe_official_contract(recording, fresh_home):
     recording({"text": "hello universe"})
     text = asyncio.run(
@@ -128,5 +103,6 @@ def test_transcribe_official_contract(recording, fresh_home):
 def test_auth_failure_is_explicit(recording, fresh_home):
     recording({"error": "bad key"}, status=401)
     with pytest.raises(meta_media.MetaAPIError) as exc:
-        asyncio.run(meta_media.list_models("wrong"))
+        asyncio.run(meta_media.transcribe("wrong", b"RIFF....",
+                                         filename="audio.wav"))
     assert exc.value.status == 401

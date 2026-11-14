@@ -44,7 +44,8 @@ class FakeLLM:
 
     async def complete(self, *, agent, messages, max_tokens=1024,
                        temperature=0.0, response_format=None, tools=None,
-                       tool_choice=None, tier_hint=None) -> LLMResponse:
+                       tool_choice=None, tier_hint=None,
+                       on_delta=None) -> LLMResponse:
         user = ""
         for m in messages:
             if m.get("role") == "user":
@@ -104,8 +105,42 @@ def thread_client(monkeypatch, fresh_home):
             return []
 
     monkeypatch.setattr(pm, "best_available", _FakePM().best_available)
-    with TestClient(app_mod.app) as c:
-        yield c
+    # BOUNDED HARNESS: do NOT enter the app lifespan. The lifespan starts
+    # the bots scheduler, the automations scheduler, the model pre-warm and
+    # the bus-consumer loop, and its shutdown waits on turn tasks that never
+    # settle — the fixture HANGS at teardown. The bridge initialises lazily
+    # inside the first request, so every route still works without it.
+    client = TestClient(app_mod.app)
+    try:
+        yield client
+    finally:
+        # Cancel every turn the bridge started through the bridge's OWN
+        # cancel route: it runs inside the app's event loop, so the
+        # fire-and-forget task actually observes the cancellation. Marking
+        # `task.cancel()` from this thread does not deliver it, and
+        # starlette's TestClient teardown joins its portal thread — a still
+        # pending task never returns and the fixture hangs forever
+        # (the 2026-11-10 hang).
+        from universe_desktop_bridge.state import get_state
+        for turn_id in list(get_state().goals.keys()):
+            for path in (f"/api/turn/{turn_id}/cancel",):
+                try:
+                    client.post(path, json={})
+                except Exception:
+                    pass
+        client.close()
+
+
+def _wait_for(predicate, timeout_s: float = 10.0):
+    """Bounded wait: a stalled background turn fails the test in
+    timeout_s instead of blocking the suite."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.02)
+    return None
 
 
 def _msg_rows(task_id: str) -> list[dict[str, Any]]:
@@ -117,24 +152,18 @@ def _msg_rows(task_id: str) -> list[dict[str, Any]]:
 
 
 def _wait_task_row(task_id: str) -> dict[str, Any] | None:
-    for _ in range(60):
-        row = get_storage().query_one(
-            "SELECT id, kind, title, status FROM goals WHERE id=?;",
-            (task_id,))
-        if row is not None:
-            return row
-        time.sleep(0.05)
-    return None
+    """The task container is a SESSION row (audit 2026-11-11): the goal
+    engine is gone, so the app creates its containers in the sessions
+    table and never writes a goals row."""
+    return _wait_for(lambda: get_storage().query_one(
+        "SELECT id, title, 'task' as kind, 'active' as status FROM sessions "
+        "WHERE id=?;", (task_id,)))
 
 
 def _wait_msg_count(task_id: str, n: int) -> list[dict[str, Any]]:
     """run_turn appends the message turn asynchronously — poll until the
     transcript holds n user messages (or time out with whatever exists)."""
-    for _ in range(60):
-        msgs = _msg_rows(task_id)
-        if len(msgs) >= n:
-            return msgs
-        time.sleep(0.05)
+    _wait_for(lambda: len(_msg_rows(task_id)) >= n)
     return _msg_rows(task_id)
 
 
@@ -165,9 +194,10 @@ class TestTaskThreading:
         body2 = r2.json()
         assert body2["task_id"] == task_id  # SAME container
         assert body2["turn_id"] != body2["task_id"]  # new message goal
-        # exactly one task row, two transcript user messages
-        tasks = get_storage().query_all("SELECT id FROM goals WHERE kind='task';")
-        assert len(tasks) == 1
+        # exactly ONE session container, two transcript user messages
+        # (the goal engine is gone: nothing is written to the goals table)
+        tasks = get_storage().query_all("SELECT id FROM sessions;")
+        assert len(tasks) == 1, tasks
         msgs = _wait_msg_count(task_id, 2)
         assert len(msgs) == 2
         assert msgs[1]["content"].startswith("second message")
@@ -207,11 +237,13 @@ class TestTaskThreading:
         assert body["task"]["title"] == "New task"
         assert body["task"]["kind"] == "task"
         row = get_storage().query_one(
-            "SELECT kind, title, text, status FROM goals WHERE id=?;",
+            "SELECT title, 'task' as kind FROM sessions WHERE id=?;",
             (body["task"]["turn_id"],))
+        assert row is not None
         assert row["kind"] == "task"
         assert row["title"] == "New task"
-        assert row["text"] == ""  # no message text involved
+        # a session row carries no message text at all — the draft is
+        # empty by construction (the session model has no `text` column)
 
     def test_duplicate_client_msg_id_is_ignored(self, thread_client):
         payload = {"text": "only once please", "client_msg_id": "cmid-123"}
@@ -256,15 +288,15 @@ class TestTaskThreading:
         task_id = r.json()["task_id"]
         _wait_task_row(task_id)
         task = get_storage().query_one(
-            "SELECT title FROM goals WHERE id=?;", (task_id,))
+            "SELECT title FROM sessions WHERE id=?;", (task_id,))
+        assert task is not None, "the container is a session row"
         assert task["title"] == "New task"
         # archived task unarchives when a continuation message arrives
-        from universe_desktop_bridge.app import get_storage as _gs  # noqa: F401
         get_storage().execute(
-            "UPDATE goals SET archived=1 WHERE id=?;", (task_id,))
+            "UPDATE sessions SET archived=1 WHERE id=?;", (task_id,))
         r2 = thread_client.post("/api/turn", json={
             "text": "revive", "turn_id": task_id})
         assert r2.status_code == 200
         row = get_storage().query_one(
-            "SELECT archived FROM goals WHERE id=?;", (task_id,))
+            "SELECT archived FROM sessions WHERE id=?;", (task_id,))
         assert row["archived"] == 0

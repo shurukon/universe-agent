@@ -24,14 +24,11 @@ import asyncio
 import json
 import threading
 import time
-import urllib.request
 
-import pytest
 import uvicorn
 
 from core.agent.orchestrator import Orchestrator
 from core.acceptance import evaluate_goal
-from providers.client import LLMError
 from providers.manager import get_provider_manager
 from storage.local import get_storage
 
@@ -262,12 +259,21 @@ def test_dead_provider_fails_fast_before_any_work(fresh_home):
     try:
         orch = Orchestrator()
         sid = "sess-dead-provider-probe"
-        with pytest.raises(LLMError) as ei:
-            asyncio.run(orch.run_turn(
-                "write a small python script that renames files by date",
-                turn_id=f"turn-halt-{_os.urandom(3).hex()}",
-                session_id=sid))
-        assert ei.value.kind == "provider_down", str(ei.value)
+        turn_id = f"turn-halt-{_os.urandom(3).hex()}"
+        summary = asyncio.run(orch.run_turn(
+            "write a small python script that renames files by date",
+            turn_id=turn_id,
+            session_id=sid))
+        # M1 (2026-11-10): a terminal provider failure now HALTS through the
+        # one choke point and returns an honest halted summary — it does not
+        # raise out of run_turn. The provider error class rides the summary,
+        # and nothing is burned and nothing fabricated either way.
+        assert summary["success"] is False
+        assert summary["halted"] is True
+        # the halt summary carries the raw provider error and its class
+        assert summary.get("stop_reason") in (None, "provider_halt")
+        assert summary.get("error_kind") == "provider_down", summary
+        assert "provider_down" in str(summary.get("acceptance", {}))
         # the failure is durable: the transcript carries the failed turn_end
         from core.session.store import get_session_store
         entries = get_session_store().transcript(sid)

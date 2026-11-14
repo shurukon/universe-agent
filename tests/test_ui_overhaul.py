@@ -69,9 +69,15 @@ def test_setup_complete_defaults_name(client):
 
 # ---- projects ------------------------------------------------------------------
 
-def test_project_crud_and_goal_count(client):
+def test_project_crud_and_goal_count(client, tmp_path):
     from storage.local import get_storage
-    pid = client.post("/api/projects", json={"name": "Apollo"}).json()["project"]["id"]
+    # a project is a WORK FOLDER: it must have a root, or it scopes nothing
+    # (audit 2026-11-12 — the bridge refuses a root-less project).
+    root = tmp_path / "apollo"
+    root.mkdir()
+    pid = client.post("/api/projects",
+                      json={"name": "Apollo", "root": str(root)}
+                      ).json()["project"]["id"]
     st = get_storage()
     with st.transaction() as conn:
         for i in range(3):

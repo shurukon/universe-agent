@@ -24,7 +24,6 @@ def mock_llm():
     session. The previous module-scoped copies raced each other's teardown:
     a module saw the port alive while the previous server was still exiting,
     skipped starting its own, and the next LLM call hit a dead socket."""
-    import time as _t
     import urllib.request as _u
 
     def _alive(port: int) -> bool:
@@ -98,6 +97,33 @@ def pytest_configure(config):
 def fresh_home(monkeypatch):
     """A fresh ~/.universe pointing at a temp dir, with migrations applied."""
     tmp = Path(tempfile.mkdtemp(prefix="gax-test-"))
+    # STOP every process-global background worker BEFORE the config/storage
+    # switch (audit 2026-11-12). A scheduler tick, a memory writer or a
+    # bridge background task that wakes up DURING the switch opens the NEW
+    # database with the OLD connection - two connections on one file is
+    # "database is locked", and the next test's WAL pragma fails with it.
+    try:
+        from scheduling import reset_scheduler_for_tests
+        reset_scheduler_for_tests()
+    except Exception:
+        pass
+    try:
+        import core.memory.subconscious.loop as _loop_mod
+        if getattr(_loop_mod, "_loop", None) is not None:
+            _loop_mod._loop.stop()
+        _loop_mod._loop = None
+    except Exception:
+        pass
+    # The desktop bridge owns a long-lived background loop (audit
+    # 2026-11-11). It must be STOPPED before this fixture swaps the config
+    # and storage singletons: a background task that opens the NEW database
+    # with the OLD connection is what made the next test's WAL pragma fail
+    # with "database is locked".
+    try:
+        from universe_desktop_bridge.app import reset_runtime_for_tests
+        reset_runtime_for_tests()
+    except Exception:
+        pass
     from config import get_config
     cfg = get_config()
     cfg.reset_for_tests(tmp)

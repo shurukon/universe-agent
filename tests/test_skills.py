@@ -8,7 +8,6 @@
 # boot contract. The security semantics (signatures, quarantine, the v20
 # toggle) are kept meaningful; no fake 1,000-skill library is recreated.
 """tests/test_skills.py — ingestion pipeline, confidence levels, signing."""
-import pytest
 
 
 def test_trusted_sources_load_at_correct_confidence(fresh_home_with_skills):

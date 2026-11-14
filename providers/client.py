@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -85,12 +86,25 @@ def _supports_response_format(provider_name: str) -> bool:
     """Catalog-driven: providers whose endpoint rejects the OpenAI
     response_format transport field declare supports_response_format=False
     in providers/catalog.py. Unknown providers (user-added base_urls) are
-    assumed compatible — the failure mode is a malformed error we already
+    assumed compatible - the failure mode is a malformed error we already
     classify, not silent prompt degradation."""
     from providers.catalog import PROVIDER_CATALOG
     for preset in PROVIDER_CATALOG:
         if preset.name == provider_name:
             return preset.supports_response_format
+    return True
+
+
+def _supports_stream_usage(provider_name: str) -> bool:
+    """Catalog-driven twin for stream_options (audit 2026-11-10, A7): the
+    client never ASKED for streamed usage, so every streamed completion
+    carried usage=None and the accounting recorded zero tokens for the
+    live-thinking path. Presets that reject the field declare
+    supports_stream_usage=False; user-added endpoints are assumed OK."""
+    from providers.catalog import PROVIDER_CATALOG
+    for preset in PROVIDER_CATALOG:
+        if preset.name == provider_name:
+            return getattr(preset, "supports_stream_usage", True)
     return True
 
 
@@ -127,6 +141,38 @@ _RETRY_BASE_S = 0.5
 _RETRY_MAX = 4
 
 
+def _attempt_timeout_s() -> float:
+    """How long ONE provider request may take before it is called a hang.
+
+    Audit 2026-11-12: the OpenAI SDK's default read timeout is 600 s, so a
+    provider that accepts the connection and then never answers held the
+    turn hostage for ten minutes (the user saw "working for 10m" and the
+    retry ladder only started after that). The default here is 75 s — long
+    enough for a slow free tier, short enough that a hung link is retried
+    while the user still cares. Override with UNIVERSE_PROVIDER_TIMEOUT_S."""
+    try:
+        return max(5.0, float(os.environ.get(
+            "UNIVERSE_PROVIDER_TIMEOUT_S", "75")))
+    except (TypeError, ValueError):
+        return 75.0
+
+
+def _chain_timeout_s() -> float:
+    """The wall-clock budget for the WHOLE ladder (all entries + retries).
+
+    Audit 2026-11-12: without it, a dead primary plus a dead fallback
+    meant 2 x (1 + 4) attempts x the SDK's own timeout — over half an
+    hour of "working". The budget is checked BEFORE every attempt, so the
+    ladder never starts work it cannot finish: a dead provider gives up
+    after two attempts (~2.5 minutes with the default attempt timeout).
+    Override with UNIVERSE_PROVIDER_CHAIN_TIMEOUT_S."""
+    try:
+        return max(10.0, float(os.environ.get(
+            "UNIVERSE_PROVIDER_CHAIN_TIMEOUT_S", "150")))
+    except (TypeError, ValueError):
+        return 150.0
+
+
 @dataclass
 class LLMResponse:
     text: str
@@ -148,7 +194,20 @@ async def _stream_completion(client: Any, kwargs: dict[str, Any],
     Raises on any provider hiccup; the caller falls back to the proven
     non-streaming call."""
     from types import SimpleNamespace
-    stream = await client.chat.completions.create(**kwargs, stream=True)
+    try:
+        stream = await client.chat.completions.create(**kwargs, stream=True)
+    except Exception as exc:
+        # A7: an endpoint that rejects stream_options (older OpenAI-compatible
+        # servers) must not turn a working streamed call into a hard provider
+        # error. One retry without the field, then let the failure surface.
+        msg = str(exc)
+        if "stream_options" in msg or "stream option" in msg.casefold() or "include_usage" in msg:
+            retry_kwargs = {k: v for k, v in kwargs.items()
+                            if k != "stream_options"}
+            stream = await client.chat.completions.create(
+                **retry_kwargs, stream=True)
+        else:
+            raise
     text_parts: list[str] = []
     tc_acc: dict[int, dict] = {}
     finish_reason = "stop"
@@ -264,15 +323,52 @@ class LLMClient:
         # user configured), with the rest appended as "tried also" — a dead
         # emergency-tail model must never masquerade as the user's failure.
         errors: list[LLMError] = []
+        # the CHAIN deadline (audit 2026-11-12): a provider that never
+        # answers must not hang the turn forever. Measured live: a free
+        # NIM model accepted the connection and then never returned a byte,
+        # so the SDK's own 600 s timeout was the only thing that ended the
+        # attempt — the turn sat "working" for ten minutes and then retried,
+        # five times over. The whole ladder now has a wall-clock budget
+        # (UNIVERSE_PROVIDER_CHAIN_TIMEOUT_S, default 240 s): when it runs
+        # out the chain STOPS and the raw error surfaces.
+        chain_deadline = time.monotonic() + _chain_timeout_s()
         for idx, (provider_name, model) in enumerate(chain):
             attempt = 0
             while True:
+                # the budget is checked BEFORE an attempt, so the ladder
+                # never starts work it cannot finish inside the window
+                if time.monotonic() >= chain_deadline:
+                    break
                 try:
-                    return await self._call_once(
-                        provider_name, model, agent, messages,
-                        max_tokens, temperature, response_format, tools, tool_choice,
-                        on_delta,
+                    return await asyncio.wait_for(
+                        self._call_once(
+                            provider_name, model, agent, messages,
+                            max_tokens, temperature, response_format, tools,
+                            tool_choice, on_delta,
+                        ),
+                        timeout=_attempt_timeout_s(),
                     )
+                except asyncio.TimeoutError:
+                    # a provider that hung: a timeout is a TRANSIENT kind —
+                    # the chain moves on (or retries), and the turn ends
+                    # honestly instead of hanging.
+                    e = LLMError(
+                        f"{provider_name} did not answer within "
+                        f"{_attempt_timeout_s():.0f}s",
+                        kind="timeout", provider=provider_name, model=model)
+                    errors.append(e)
+                    try:
+                        from observability.events import emit
+                        emit("provider_retry", agent=agent,
+                             provider=provider_name, model=model,
+                             attempt=attempt + 1, max_retries=_RETRY_MAX,
+                             kind="timeout")
+                    except Exception:
+                        pass
+                    attempt += 1
+                    if attempt > _RETRY_MAX or time.monotonic() >= chain_deadline:
+                        break
+                    continue
                 except LLMError as e:
                     errors.append(e)
                     if e.kind in TRANSIENT_KINDS and attempt < _RETRY_MAX:
@@ -290,8 +386,12 @@ class LLMClient:
                         await asyncio.sleep(
                             _RETRY_BASE_S * (2 ** (attempt - 1))
                             + (time.time_ns() % 100_000_000) / 1e9 * 0.1)  # ≤100ms jitter
+                        if time.monotonic() >= chain_deadline:
+                            break
                         continue
                     break
+            if time.monotonic() >= chain_deadline:
+                break
         err = errors[0] if errors else LLMError(
             NO_PROVIDER_MESSAGE, kind="no_provider")
         if len(errors) > 1:
@@ -439,6 +539,12 @@ class LLMClient:
                 kwargs["tools"] = safe_tools
             if tool_choice:
                 kwargs["tool_choice"] = tool_choice
+            # A7: ask the provider to report usage on the stream (OpenAI
+            # sends it on a final usage-only chunk). Without this field the
+            # streamed path had usage=None forever, so every live-thinking
+            # call accounted 0 tokens in llm_calls.
+            if _supports_stream_usage(provider_name):
+                kwargs["stream_options"] = {"include_usage": True}
             resp = None
             if on_delta is not None:
                 # M5 live thinking: stream when the provider supports it;

@@ -22,6 +22,7 @@ import {
   ipcMain,
   net,
   protocol,
+  screen,
   session,
   shell,
 } from "electron";
@@ -352,9 +353,22 @@ function bootstrapDesktop(): void {
   }
 
   async function createWindow(): Promise<void> {
+    // The window opens as wide as the screen allows: the chat column is a
+    // MAX-width (1392px), so a narrow window clamps it and the widening
+    // becomes invisible (user order, 2026-11-12: "I don't see the chat
+    // getting wider"). The work area is what the user can actually use.
+    let winW = 1440;
+    let winH = 900;
+    try {
+      const area = screen.getPrimaryDisplay().workAreaSize;
+      winW = Math.max(1440, Math.min(area.width - 16, 1800));
+      winH = Math.max(780, Math.min(area.height - 16, 1000));
+    } catch {
+      /* keep the defaults */
+    }
     mainWindow = new BrowserWindow({
-      width: 1440,
-      height: 900,
+      width: winW,
+      height: winH,
       minWidth: 1024,
       minHeight: 700,
       backgroundColor: "#161616", // Universe canvas tone (docs/shell-tokens.md)

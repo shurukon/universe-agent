@@ -15,13 +15,19 @@ from typing import Any
 HOOK_EVENTS = ("pre_tool", "pre_shell", "pre_write", "post_tool")
 HOOK_ACTIONS = ("require_facts", "block")
 
-# which concrete tools an event covers (the event narrows the domain; the
-# matcher only picks within it). pre_shell covers ALL shell-adjacent tools:
-# Bash, PowerShell (the v23 parity tool) and CodeExecute — a pre_shell hook
-# or the builtin fact-guard used to fire for Bash only (engine-fix round).
+# Which concrete tools an event covers (the event narrows the domain; the
+# matcher only picks within it). SINGLE SOURCE OF TRUTH: the registry
+# (connectors/builtin/__init__.py) imports these tuples to pick the event,
+# and _event_applies() reads them to decide coverage. The sets used to be
+# duplicated in both files and drifted — the registry routed Monitor /
+# ApplyPatch / NotebookEdit to pre_shell / pre_write while this manager
+# rejected them, so the builtin fact-guard and every user hook were
+# silently bypassed by exactly those tools (audit 2026-11-10).
+PRE_SHELL_TOOLS = ("Bash", "PowerShell", "CodeExecute", "Monitor")
+PRE_WRITE_TOOLS = ("Write", "Edit", "ApplyPatch", "NotebookEdit")
 _EVENT_TOOLS: dict[str, tuple[str, ...]] = {
-    "pre_shell": ("Bash", "PowerShell", "CodeExecute"),
-    "pre_write": ("Write", "Edit"),
+    "pre_shell": PRE_SHELL_TOOLS,
+    "pre_write": PRE_WRITE_TOOLS,
 }
 
 

@@ -29,6 +29,19 @@ class ProviderPreset:
     # transport field (the model can still follow an in-prompt JSON
     # instruction). client.py reads this instead of hardcoding provider names.
     supports_response_format: bool = True
+    # False = this endpoint rejects stream_options={include_usage:true} on a
+    # streaming request. Streaming usage was silently unavailable before
+    # (the client never asked for it, so resp.usage stayed None and every
+    # streamed call accounted 0 tokens). Unknown/user-added providers keep
+    # the default True — a genuine rejection is already classified as a
+    # malformed error, and the caller retries non-streamed.
+    supports_stream_usage: bool = True
+    # The model context window in tokens for THIS provider's lineup
+    # (None = unknown → security.capability._context_window_for falls back
+    # to its family heuristic and flags the value as an estimate). The
+    # catalog used to carry no window at all, so the meter and the
+    # compaction layers both guessed (audit 2026-11-10, A6).
+    context_window: int | None = None
     note: str = ""
     # URL template placeholders the user must fill (e.g. ("account_id",)).
     # Empty = base_url is used as-is. catalog_payload() exposes this so the
@@ -45,6 +58,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"],
         key_url="https://console.groq.com/keys",
         note="Very fast inference, generous free tier.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Google AI Studio",
@@ -53,6 +67,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
         key_url="https://aistudio.google.com/apikey",
         note="Gemini models through the OpenAI-compatible endpoint.",
+    context_window=1000000,
     ),
     ProviderPreset(
         name="OpenRouter",
@@ -63,6 +78,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "deepseek/deepseek-chat-v3-0324:free"],
         key_url="https://openrouter.ai/keys",
         note="Aggregates hundreds of models; the ':free' suffix ones cost nothing.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Mistral",
@@ -71,6 +87,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["mistral-small-latest", "mistral-medium-latest", "open-mistral-nemo"],
         key_url="https://console.mistral.ai/api-keys",
         note="La Plateforme free tier.",
+    context_window=32000,
     ),
     ProviderPreset(
         name="Cerebras",
@@ -79,6 +96,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["llama-3.3-70b", "llama3.1-8b"],
         key_url="https://cloud.cerebras.ai/",
         note="Wafer-scale inference — extremely fast, free daily quota.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="NVIDIA NIM",
@@ -90,6 +108,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         key_url="https://build.nvidia.com/",
         note="Free API credits — VL model needs supports_response_format=False.",
         supports_response_format=False,
+    context_window=128000,
     ),
     ProviderPreset(
         name="Kilo Gateway",
@@ -101,6 +120,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         key_url="https://kilo.ai/",
         supports_response_format=False,
         note="Gateway to many models with free options.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="OpenCode Zen",
@@ -115,6 +135,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         key_url="https://opencode.ai/auth",
         supports_response_format=False,
         note="OpenCode's curated model gateway — free tier with GLM/Kimi/Qwen.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Cloudflare Workers AI",
@@ -126,6 +147,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         key_url="https://dash.cloudflare.com/profile/api-tokens",
         url_fields=("account_id",),
         note="Free daily quota; needs your Cloudflare Account ID in the URL.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="GitHub Models",
@@ -135,6 +157,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "mistral/Mistral-large-2411"],
         key_url="https://github.com/settings/personal-access-tokens",
         note="Fine-grained PAT with the Models scope; free monthly allowance.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="SambaNova",
@@ -143,6 +166,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["DeepSeek-V3.2", "Llama-3.3-70B-Instruct", "Qwen3-32B"],
         key_url="https://cloud.sambanova.ai/apis",
         note="Rapid inference, generous free credits.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Featherless",
@@ -152,6 +176,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "deepseek-ai/DeepSeek-V3.2-Exp"],
         key_url="https://featherless.ai/settings",
         note="Hosts 10k+ open-weight models, free tier included.",
+    context_window=128000,
     ),
     # ---- paid cloud --------------------------------------------------------
     ProviderPreset(
@@ -166,6 +191,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         key_url="https://dev.meta.ai/",
         note="Meta Model API — OpenAI-compatible. Also powers Muse Code "
              "(bots runtime), Muse Image and Voice Transcribe.",
+    context_window=1000000,
     ),
     ProviderPreset(
         name="OpenAI",
@@ -173,6 +199,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         category="paid",
         models=["gpt-4o", "gpt-4o-mini", "o3", "gpt-4.1"],
         key_url="https://platform.openai.com/api-keys",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Anthropic",
@@ -181,6 +208,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"],
         key_url="https://console.anthropic.com/settings/keys",
         note="Claude models through Anthropic's OpenAI-compatible endpoint.",
+    context_window=200000,
     ),
     ProviderPreset(
         name="xAI",
@@ -188,6 +216,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         category="paid",
         models=["grok-4", "grok-3", "grok-3-mini"],
         key_url="https://console.x.ai",
+    context_window=256000,
     ),
     ProviderPreset(
         name="DeepSeek",
@@ -196,6 +225,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["deepseek-chat", "deepseek-reasoner"],
         key_url="https://platform.deepseek.com/api_keys",
         note="Very cheap per-token pricing.",
+    context_window=64000,
     ),
     ProviderPreset(
         name="Together.ai",
@@ -204,6 +234,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["meta-llama/Llama-3.3-70B-Instruct-Turbo",
                 "Qwen/Qwen2.5-72B-Instruct-Turbo"],
         key_url="https://api.together.ai/settings/api-keys",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Fireworks",
@@ -211,6 +242,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         category="paid",
         models=["accounts/fireworks/models/llama-v3p3-70b-instruct"],
         key_url="https://fireworks.ai/api-keys",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Cohere",
@@ -234,6 +266,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         category="paid",
         models=["meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
         key_url="https://huggingface.co/settings/tokens",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Z.ai (GLM)",
@@ -242,6 +275,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["glm-4.6", "glm-4.5", "glm-4.5-air"],
         key_url="https://z.ai/manage-apikey/apikey-list",
         note="Zhipu AI's GLM family — OpenAI-compatible v4 API.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Qwen (Alibaba Cloud)",
@@ -250,6 +284,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["qwen-plus", "qwen-max", "qwen3-coder-plus", "qwq-32b"],
         key_url="https://bailian.console.aliyun.com/?apiKey=1",
         note="Qwen models through DashScope's OpenAI-compatible endpoint.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Moonshot (Kimi)",
@@ -259,6 +294,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "moonshot-v1-128k"],
         key_url="https://platform.moonshot.ai/console/api-keys",
         note="Kimi long-context models.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="MiniMax",
@@ -267,6 +303,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["MiniMax-M2", "MiniMax-Text-01"],
         key_url="https://www.minimax.io/platform/interface-management",
         note="MiniMax M2 agentic coding model.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Azure OpenAI",
@@ -285,6 +322,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "meta-llama/Llama-3.3-70B-Instruct"],
         key_url="https://app.hyperbolic.xyz/settings",
         note="GPU-cloud inference of open models.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="DeepInfra",
@@ -295,6 +333,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "Qwen/Qwen3-235B-A22B-Thinking-2507"],
         key_url="https://deepinfra.com/dash/api_keys",
         note="Serverless open models, per-token pricing.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Nebius",
@@ -305,6 +344,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "deepseek-ai/DeepSeek-V3"],
         key_url="https://tokenfactory.nebius.com/my/api-keys",
         note="Token Factory AI inference endpoint.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="Scaleway",
@@ -313,6 +353,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["llama-3.3-70b-instruct", "deepseek-r1-distill-llama-70b"],
         key_url="https://console.scale.com/iam/api-keys",
         note="Generative Agents API — EU-hosted.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="StepFun",
@@ -321,6 +362,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
         models=["step-3.5-flash", "step-1-8k"],
         key_url="https://platform.stepfun.com/interface-key",
         note="StepFun's OpenAI-compatible API.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="SiliconFlow",
@@ -331,6 +373,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "moonshotai/Kimi-K2-Instruct-0905"],
         key_url="https://cloud.siliconflow.com/account/apikey",
         note="High-throughput open-model serving.",
+    context_window=128000,
     ),
     ProviderPreset(
         name="AIMLAPI",
@@ -340,6 +383,7 @@ PROVIDER_CATALOG: list[ProviderPreset] = [
                 "meta-llama/llama-3.3-70b-instruct"],
         key_url="https://aimlapi.com/app/keys",
         note="One key for hundreds of models across families.",
+    context_window=128000,
     ),
     # ---- local (no key, no internet) ----------------------------------------
     ProviderPreset(

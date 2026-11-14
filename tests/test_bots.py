@@ -89,14 +89,20 @@ def test_risky_task_requires_approval():
 
 
 def test_safe_task_does_not_require_approval():
-    bot = store.create_bot("Researcher", "summarize the repo state")
+    created = store.create_bot("Researcher", "summarize the repo state")
+    assert created is not None
     assert runtime.is_risky("summarize the repo state") is False
 
 
 def test_muse_event_digest_real_fixture():
-    """The parser must survive the REAL `muse exec --json` wire stream —
-    the fixture is a genuine capture (echo provider, task-level failure)."""
-    lines = [l for l in FIXTURE.read_text(encoding="utf-8").splitlines() if l.strip()]
+    """The parser must survive the `muse exec --json` wire stream.
+
+    The fixture is a SYNTHESIZED capture in the real MSP shape (it was
+    never committed to the repo, so the parser had no wire-level fixture
+    to guard against). It carries the two shapes the digest must handle:
+    a run.lifecycle.started milestone and a run.lifecycle.failed with a
+    provider-side reason."""
+    lines = [ln for ln in FIXTURE.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) >= 20
     error = None
     saw_start = False

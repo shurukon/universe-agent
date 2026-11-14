@@ -92,13 +92,23 @@ _PLAN_MODE_STATIC = frozenset({
 })
 
 def _is_plan_allowed(tool_name: str) -> bool:
-    """Dynamic plan-mode allowlist: Tool.allow_in_plan wins, else static fallback."""
+    """Dynamic plan-mode allowlist: an explicit Tool.allow_in_plan=True wins;
+    otherwise the static list decides.
+
+    Audit 2026-11-10: this used to be "Tool.allow_in_plan wins" with a
+    dataclass default of False, and NO builtin declared the field — so the
+    dynamic check answered False for every registered tool and plan mode
+    blocked the exit door itself (ExitPlanMode reported
+    blocked_by=plan_mode, leaving the agent locked inside plan mode with no
+    way out). A missing declaration is NOT a denial: fall through to the
+    static research/plan-ux list, which is what the comment above always
+    said the line was."""
     try:
         from connectors.builtin import get_registry
         reg = get_registry()
         tool = reg.get(tool_name)
-        if tool is not None:
-            return bool(getattr(tool, 'allow_in_plan', False))
+        if tool is not None and bool(getattr(tool, "allow_in_plan", False)):
+            return True
     except Exception:
         pass
     return tool_name in _PLAN_MODE_STATIC
@@ -110,11 +120,11 @@ PLAN_MODE_ALLOWED_TOOLS = _PLAN_MODE_STATIC
 # writes flow without the per-goal prompt — exactly CC's auto sitting
 # between acceptEdits and bypassPermissions. These capability sets express
 # the classifier in Universe terms: capability "Write" covers the file
-# write/edits (Write/Edit/SvgGen…); named destructive tools stay on the
-# build ladder; every command/network/connector/dangerous-explicit tool
-# consents exactly as it would in build mode.
+# write/edits (Write/Edit/ApplyPatch/NotebookEdit); named destructive
+# tools stay on the build ladder; every command/network/connector/
+# dangerous-explicit tool consents exactly as it would in build mode.
 AUTO_MODE_LIFTED_CAPS = frozenset({"Write"})
-AUTO_MODE_NEVER_LIFT = frozenset({"Delete", "Archive", "VulnScanner"})
+AUTO_MODE_NEVER_LIFT = frozenset({"Delete", "Archive"})
 
 
 # Dynamic consent escalation (audit 2026-10). Some tools' real risk depends
@@ -193,21 +203,47 @@ def _glob_match(value: str, pattern: str) -> bool:
 
 
 # Context-window sizes by model family for the context meter. The provider
-# catalog carries no window field (audit 2026-09), so the meter works from
-# this family heuristic and flags every value as an estimate — the UI must
-# show it as "~" never as a hard limit.
+# catalog is the AUTHORITATIVE source (audit 2026-11-10, A6: presets now
+# carry context_window); this table is only the documented fallback for
+# unknown models and user-added endpoints, and every value it produces is
+# flagged is_estimate=True so the UI shows "~" rather than a hard limit.
 _CONTEXT_WINDOWS = (  # (substring in model name, window tokens)
     ("gemini", 1_000_000), ("claude", 200_000), ("gpt", 400_000),
     ("llama", 128_000), ("mixtral", 32_000), ("mistral", 32_000),
     ("qwen", 128_000), ("deepseek", 64_000),
+    ("grok", 256_000), ("kimi", 128_000), ("glm", 128_000),
 )
 _CONTEXT_WINDOW_FALLBACK = 32_000
 
 
 def _context_window_for(model: str) -> tuple[int, bool]:
-    """(window_tokens, is_estimate) for a model name. Every value here is a
-    heuristic — is_estimate is always True today."""
-    m = (model or "").lower()
+    """(window_tokens, is_estimate) for a model name.
+
+    Resolution order: a provider preset's declared context_window (exact
+    model match first, then the preset default for that provider's lineup)
+    → the family table above (estimate) → 32_000 (estimate)."""
+    m = (model or "").strip().lower()
+    if not m:
+        return _CONTEXT_WINDOW_FALLBACK, True
+    try:
+        from providers.catalog import PROVIDER_CATALOG
+        for preset in PROVIDER_CATALOG:
+            for listed in getattr(preset, "models", ()) or ():
+                if str(listed).strip().lower() == m:
+                    w = getattr(preset, "context_window", None)
+                    if w:
+                        return int(w), False
+        # no exact match: the preset that owns this model id (gateway ids
+        # carry a provider prefix, e.g. "meta-llama/llama-3.3-70b-instruct")
+        for preset in PROVIDER_CATALOG:
+            for listed in getattr(preset, "models", ()) or ():
+                if m in str(listed).strip().lower(
+                ) or str(listed).strip().lower() in m:
+                    w = getattr(preset, "context_window", None)
+                    if w:
+                        return int(w), False
+    except Exception:
+        pass
     for key, window in _CONTEXT_WINDOWS:
         if key in m:
             return window, True

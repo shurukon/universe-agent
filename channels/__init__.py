@@ -13,7 +13,6 @@ and the process keeps running without it.
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Callable
 
 from loguru import logger

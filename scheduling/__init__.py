@@ -217,14 +217,33 @@ class AutomationScheduler:
     # -- lifecycle ------------------------------------------------------------
 
     def start(self) -> None:
-        """Start the tick loop on the running event loop (idempotent)."""
-        if self._task is not None and not self._task.done():
-            return
+        """Start the tick loop on the running event loop (idempotent).
+
+        Loop-safe (audit 2026-11-10): a singleton scheduler that was started
+        on a loop that has since CLOSED (a starlette TestClient's per-request
+        portal, a finished asyncio.run) would look "not done" forever and
+        never restart — and stopping it then raised "Event loop is closed"
+        inside unrelated tests. A task whose loop is gone is dead: drop it and
+        start fresh on the loop we are ON."""
+        task = self._task
+        if task is not None and not task.done():
+            task_loop = task.get_loop()
+            if task_loop is not None and not task_loop.is_closed():
+                return
         self._task = asyncio.get_running_loop().create_task(self._loop())
 
     def stop(self) -> None:
-        if self._task is not None:
-            self._task.cancel()
+        task = self._task
+        if task is not None:
+            loop = task.get_loop()
+            if loop is not None and loop.is_closed():
+                # dead loop: the task can never run or be cancelled again
+                self._task = None
+                return
+            try:
+                task.cancel()
+            except Exception:
+                pass
             self._task = None
 
 

@@ -74,6 +74,15 @@ RAPID_REFILL_TOOL_TURN_THRESHOLD = 3
 # forever; set 0 explicitly for Universe-style unbounded.
 TOOL_STEP_LIMIT_ENV = "GAX_TOOL_MAX_ROUNDS"
 
+# Empty-reply re-ask (audit 2026-11-10): a response carrying neither text nor
+# tool calls is a provider hiccup, not a completed turn. Ask ONE bounded time
+# before closing the turn honestly as "model_empty_reply".
+EMPTY_REPLY_MAX_ATTEMPTS = 2
+EMPTY_REPLY_PROMPT = (
+    "Your previous reply was empty — no text and no tool call. Answer the "
+    "user's request directly. If you need a tool, call it; if you are done, "
+    "write the answer as plain text. Never reply with an empty message.")
+
 
 class LLMOutputLimitExceeded(Exception):
     """Universe's model_output_limit_exceeded: the model hit the output-token
@@ -87,6 +96,13 @@ class LLMOutputLimitExceeded(Exception):
 # validation finding: a free model re-issuing failing calls burned 26+
 # rounds; the breaker ends the turn honestly).
 CONSECUTIVE_FAILURE_CAP = 5
+
+# Upper bound on tools running at once (audit 2026-11-10). Grouping was
+# the only limit before, and a group is "consecutive concurrent-safe
+# reads" — a model that emits twenty Read calls in one step would open
+# twenty provider/file handles at once. The reference engine caps its
+# worker pool the same way; safe reads past the cap wait their turn.
+MAX_PARALLEL_TOOLS = 4
 
 
 # ---------------------------------------------------------------------------
@@ -154,35 +170,57 @@ class ScheduleResult:
                 "executionOrder": self.execution_order}
 
 
-# Capabilities that are pure reads (consent="auto" + these = parallel-safe
-# reads). Everything mutating (per_turn/explicit consent, or a write/exec/
-# network capability) runs alone — never parallel with anything.
+# Capabilities that are PURE READS, in the capability namespace the registry
+# actually declares (audit 2026-11-10: the old set mixed tool NAMES —
+# "VisionAnalyze" — into a set of capability strings, so every real read
+# tool fell outside it and the scheduler marked even a `file.read` as
+# mutating — concurrency was effectively dead). A call is only
+# parallel-safe when it is auto-consent AND declares one of these.
 READ_CAPABILITIES = frozenset({
-    "Read", "Search", "Vision", "Memory", "WebSearch", "VisionAnalyze",
+    "Read", "file.read", "git.read", "memory.read", "automation.read",
+    "ToolSearch",
 })
+
+# Capability → the plane it touches (for sideEffectScope), again using the
+# real namespace (network.req, not "NetworkReq").
+_CAPABILITY_SCOPE = {
+    "Write": "files",
+    "Read": "none",
+    "file.read": "none",
+    "git.read": "none",
+    "git.write": "files",
+    "memory.read": "none",
+    "automation.read": "none",
+    "automation.write": "config",
+    "ToolSearch": "none",
+    "Bash": "process",
+    "machine.control": "process",
+    "network.req": "network",
+    "connector.run": "external",
+    "universe:agents": "process",
+}
 
 
 def _classify_tool_call(tool_name: str, registry_tool: Any) -> dict[str, Any]:
     """Universe scheduler metadata for one call: {dependsOn, readOnly,
     destructive, concurrentSafe, sideEffectScope}. Sourced from the tool's
-    own consent/capability declaration — the same contract the gate uses."""
+    own consent/capability declaration — the same contract the gate uses.
+
+    dependsOn stays []: the model's serialization order is the only real
+    dependency signal available here, and the scheduler already honours it
+    by grouping only CONSECUTIVE safe calls (a later call can never jump
+    ahead of an earlier one it could depend on). Declaring a dependency
+    graph the registry does not publish would be a guess."""
     consent = str(getattr(registry_tool, "consent", "per_turn") or "per_turn")
     capability = str(getattr(registry_tool, "capability", "") or "")
     destructive = consent == "explicit"
     read_only = (consent == "auto" and capability in READ_CAPABILITIES)
-    mutating = (consent != "auto") or (capability not in READ_CAPABILITIES
-                                       and bool(capability))
-    if capability in ("Execute", "Write"):
-        scope = "process" if capability == "Execute" else "files"
-    elif capability in ("Network", "NetworkReq"):
-        scope = "network"
-    else:
-        scope = "none" if read_only else "mixed"
+    scope = _CAPABILITY_SCOPE.get(capability, "none" if read_only else "mixed")
     return {
         "dependsOn": [],
         "readOnly": read_only,
         "destructive": destructive,
-        "concurrentSafe": not mutating,
+        "concurrentSafe": read_only and not destructive,
         "sideEffectScope": scope,
     }
 
@@ -226,10 +264,25 @@ class CompactTracking:
     reactive_attempted_in_step: bool = False
 
     def reset(self) -> None:
+        """Restart the measurement after a SUCCESSFUL compaction.
+
+        `consecutive_rapid_refills` is deliberately NOT cleared here: it
+        counts compactions IN A ROW that re-filled too fast, so clearing it
+        at every compaction makes the breaker untrippable — which is exactly
+        what it was (audit 2026-11-10: reset() existed but had no caller at
+        all, and when one is added it must only zero the tool-turn counter).
+        The streak is cleared by check_rapid_refill() when real work happens."""
         self.tool_turns_since_compact = 0
+
+    def clear_refill_streak(self) -> None:
+        """A compaction followed by a HEALTHY run of tool turns: the streak
+        is broken and the breaker starts from a clean slate."""
         self.consecutive_rapid_refills = 0
 
     def note_tool_turn(self) -> None:
+        """One MODEL STEP's worth of tools (not one batch group: a step with
+        three groups is one tool turn, otherwise a single step could trip the
+        threshold by itself)."""
         self.tool_turns_since_compact += 1
 
     def check_rapid_refill(self) -> None:
@@ -245,7 +298,7 @@ class CompactTracking:
                     f"{self.consecutive_rapid_refills} times in a row — "
                     "the workload does not fit the context window")
         else:
-            self.consecutive_rapid_refills = 0
+            self.clear_refill_streak()
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +378,7 @@ async def run_turn(
     last_resp: Any = None
     last_text = ""
     delta_state: dict[str, Any] = {"text": "", "at": 0.0}
+    empty_reply_attempts = 0
 
     def _flush_delta() -> None:
         payload = str(delta_state["text"]).strip()
@@ -411,6 +465,9 @@ async def run_turn(
                 summarized = False
             messages = compact_messages(messages, keep_recent=6,
                                         keep_system=True)
+            # the breaker measures tool turns SINCE the last compaction —
+            # reset after it lands, or it can never fire (audit 2026-11-10)
+            compact_tracking.reset()
             if summarized:
                 # Universe todo_reminder parity: re-ground after the summary
                 messages.append({
@@ -521,10 +578,32 @@ async def run_turn(
 
         # ---- 6. no tool calls → the turn completes (Universe: complete) ---
         if not calls:
+            # A8 (audit 2026-11-10): a reply with NO text and NO tool calls
+            # used to end the turn as stop_reason="no_tool_calls" with an
+            # empty text, and the caller then recorded success=False with no
+            # error at all — a silent no-op turn. Ask the model to actually
+            # answer (bounded: EMPTY_REPLY_MAX_ATTEMPTS), then close honestly
+            # as "model_empty_reply".
+            if not last_text.strip() and empty_reply_attempts < EMPTY_REPLY_MAX_ATTEMPTS:
+                empty_reply_attempts += 1
+                ev("model_empty_reply", attempt=empty_reply_attempts,
+                   max_attempts=EMPTY_REPLY_MAX_ATTEMPTS,
+                   finish_reason=finish_reason)
+                messages.append({
+                    "role": "user",
+                    "content": EMPTY_REPLY_PROMPT,
+                })
+                step_index += 1
+                continue
+            if not last_text.strip():
+                ev("model_empty_reply_exhausted",
+                   attempts=empty_reply_attempts,
+                   finish_reason=finish_reason)
             turn_machine.complete("success")
             result = TurnResult(
                 text=last_text, events=events, steps=step_index + 1,
-                stop_reason="no_tool_calls",
+                stop_reason=("model_empty_reply" if not last_text.strip()
+                             else "no_tool_calls"),
                 tool_calls_total=tool_calls_total)
             return resp, events, result
 
@@ -564,10 +643,7 @@ async def run_turn(
                success_count=ok_n,
                error_count=len(batch) - ok_n)
             # reset duplicate counter on success so retry after fix is allowed
-            for r in batch:
-                if r.get("ok"):
-                    # successful call clears its signature count
-                    pass
+            # (the pop happens inside _run_one, where the signature is known)
             # consecutive-failure breaker (kept from the old engine)
             batch_failures = [r for r in batch if not r.get("ok")]
             if batch_failures:
@@ -576,7 +652,10 @@ async def run_turn(
                     break
             else:
                 consecutive_failures = 0
-            compact_tracking.note_tool_turn()
+        # ONE tool turn per model step (audit 2026-11-10): the counter used
+        # to tick once per scheduler GROUP, so a step with three read groups
+        # burned three of the threshold's three tool turns on its own.
+        compact_tracking.note_tool_turn()
 
         # ---- commit results: the context invariant — every tool_call the
         # model made carries its tool-role result message. (2026-10-28: this
@@ -701,11 +780,18 @@ async def _execute_batch(
     group: list[str], by_id: dict[str, dict[str, Any]], registry: Any,
     agent: str, turn_id: str, repeated_calls: dict[str, int],
     events: list[dict[str, Any]], ev: Callable[[str, dict[str, Any]], None],
+    max_parallel: int = MAX_PARALLEL_TOOLS,
 ) -> list[dict[str, Any]]:
     """One scheduler batch: parallel for concurrent-safe members (they are
     grouped only when consecutive + safe), each through registry.call with
-    the per-call timeout. Unknown tool → synthetic tool_result error
-    (reference engine). Bad arguments → honest tool error, no crash."""
+    the per-call timeout, bounded by max_parallel worker slots. Unknown
+    tool → synthetic tool_result error (reference engine). Bad arguments →
+    honest tool error, no crash.
+
+    Results are ALWAYS returned in the group's declaration order (the
+    caller zips them against call ids), and every member yields a row —
+    a timeout or cancellation is an honest failed row, never a hole in the
+    transcript."""
     from context.compaction import compact_tool_output
     from security.secret_filter import redact_dict
 
@@ -721,13 +807,15 @@ async def _execute_batch(
             result = {"ok": False, "error": f"invalid tool arguments: {exc}"}
             args = {}
         else:
+            # the duplicate signature is computed here (not only inside the
+            # registry branch) so the success path can clear it below
+            signature = name + ":" + json.dumps(
+                args, sort_keys=True, ensure_ascii=False)
             registry_tool = registry.get(name)
             if registry_tool is None:
                 result = {"ok": False,
                           "error": f"No such tool available: {name}"}
             else:
-                signature = name + ":" + json.dumps(
-                    args, sort_keys=True, ensure_ascii=False)
                 repeated_calls[signature] = repeated_calls.get(signature, 0) + 1
                 if (repeated_calls[signature] > 4
                         and name not in POLLING_TOOLS):
@@ -756,8 +844,23 @@ async def _execute_batch(
                         logger_turn.warning(
                             "tool timeout: %s after %.0fs (agent=%s, turn=%s)",
                             name, timeout_s, agent, turn_id)
-                    except asyncio.CancelledError:
-                        raise
+                    except asyncio.CancelledError as exc:
+                        # A9 (audit 2026-11-10): cancelling one member of a
+                        # batch used to RE-RAISE through asyncio.gather (no
+                        # return_exceptions), which killed the whole turn AND
+                        # discarded every sibling result — the turn ended with
+                        # no record of what actually ran. A cancelled member
+                        # is now an honest failed result, so its tool_call_id
+                        # still gets committed below and the caller decides
+                        # what cancellation means for the turn.
+                        result = {
+                            "ok": False,
+                            "error": (f"tool {name!r} was cancelled before "
+                                      f"it finished: {exc}" if str(exc)
+                                      else f"tool {name!r} was cancelled "
+                                           "before it finished"),
+                            "cancelled": True,
+                        }
                     except Exception as exc:
                         # a raising tool/adapter is an honest tool error in a
                         # parallel batch — never a crash that would discard
@@ -770,17 +873,69 @@ async def _execute_batch(
         result_ok = bool(isinstance(result, dict) and result.get("ok")
                          and (not isinstance(inner, dict)
                               or inner.get("ok", True)))
+        if result_ok:
+            # A3 (audit 2026-11-10): the dead `pass` here claimed to "reset
+            # the duplicate counter on success so a retry after a fix is
+            # allowed". It does NOT — and must not: the cap exists to stop a
+            # model re-issuing the SAME call with the SAME arguments over and
+            # over. A genuine retry after a fix has DIFFERENT arguments, so
+            # it lands on a different signature and starts from one. Clearing
+            # the count on every success would let an identical call repeat
+            # forever (the very loop the cap stops).
+            pass
         ev("tool_result_committed", tool_call_id=call_id, tool=name,
            success=result_ok)
         llm_result = redact_dict(result) if isinstance(result, dict) else result
+        # A1: the tool-driven turn stop. A handler announces it inside its
+        # result (raw["turn_control"] or raw["result"]["turn_control"]); it
+        # is lifted here to the top level of this row, because the engine
+        # reads it from the row and NOTHING ever put it there (audit
+        # 2026-11-10: `r.get("turn_control")` over a dict whose keys are
+        # {call_id,name,ok,raw,llm_content} → turn_control was dead code and
+        # the stop signal from ExitPlanMode vanished).
+        turn_control = None
+        if isinstance(result, dict):
+            raw_tc = result.get("turn_control")
+            if raw_tc is None and isinstance(inner, dict):
+                raw_tc = inner.get("turn_control")
+            if isinstance(raw_tc, dict) and raw_tc.get("stop_after_result"):
+                turn_control = dict(raw_tc)
+                turn_control.setdefault("tool_call_id", call_id)
+                turn_control.setdefault("tool", name)
         return {
             "call_id": call_id, "name": name, "ok": result_ok,
             "raw": result, "llm_content": compact_tool_output(
                 json.dumps(llm_result, ensure_ascii=False, default=str),
                 max_chars=8000),
+            "turn_control": turn_control,
         }
 
-    return list(await asyncio.gather(*[_run_one(cid) for cid in group]))
+    # A9: return_exceptions=True so one poisoned member cannot discard the
+    # rest of the batch; a real CancelledError (the turn itself is being
+    # cancelled) still propagates after the results are in hand.
+    sem = asyncio.Semaphore(max(1, int(max_parallel)))
+
+    async def _guarded(cid: str) -> dict[str, Any]:
+        async with sem:
+            return await _run_one(cid)
+
+    gathered = await asyncio.gather(
+        *[_guarded(cid) for cid in group], return_exceptions=True)
+    out: list[dict[str, Any]] = []
+    for cid, item in zip(group, gathered):
+        if isinstance(item, BaseException):
+            if isinstance(item, asyncio.CancelledError):
+                raise
+            call = by_id.get(cid) or {}
+            name = str((call.get("function") or {}).get("name", ""))
+            out.append({
+                "call_id": cid, "name": name, "ok": False,
+                "raw": {"ok": False, "error": str(item)[:500]},
+                "llm_content": f"[tool {name} failed: {str(item)[:300]}]",
+                "turn_control": None})
+        else:
+            out.append(item)
+    return out
 
 
 def _tool_schemas_for(agent: str,

@@ -8,7 +8,15 @@
  */
 import { create } from "zustand";
 import { toast } from "sonner";
-import { api, BridgeEvent, ConsentPrompt, Goal, Settings } from "@/lib/api";
+import {
+  api,
+  BridgeEvent,
+  ConsentPrompt,
+  Goal,
+  QuestionAnswers,
+  QuestionSpec,
+  Settings,
+} from "@/lib/api";
 import type { WsState } from "@/lib/ws";
 
 export type TaskStatus =
@@ -41,9 +49,12 @@ export interface ChatMessage {
   ts?: number;
 }
 
-/** ask_user question in flight (Phase 1 broker; surfaced Phase 2) */
+/** ask_user question in flight (the ZCode shape: a LIST of questions) */
 export interface PendingQuestion {
   pending_id: string;
+  /** every question of the call — the model may ask several at once */
+  questions: QuestionSpec[];
+  /** the legacy flat fields (the FIRST question) */
   question: string;
   options: string[];
   allow_free_text: boolean;
@@ -145,7 +156,7 @@ interface ChatStore {
   decideConsent: (pendingId: string, approve: boolean) => Promise<void>;
   refreshConsents: () => Promise<void>;
   /** ask_user: answer a pending question through the broker */
-  answerQuestion: (pendingId: string, answer: string) => Promise<void>;
+  answerQuestion: (pendingId: string, answers: QuestionAnswers) => Promise<void>;
   /** re-sync questions stuck from before this surface loaded */
   refreshQuestions: () => Promise<void>;
   /** switch the permission mode (plan/build/edit/yolo) on the bridge */
@@ -347,6 +358,20 @@ export const useChat = create<ChatStore>((set, get) => ({
           .filter(p => !known.has(p.pending_id))
           .map(p => ({
             pending_id: p.pending_id,
+            questions:
+              p.questions && p.questions.length
+                ? p.questions
+                : p.question
+                  ? [
+                      {
+                        question: p.question,
+                        options: (p.options ?? []).map(o => ({
+                          value: o,
+                          label: o,
+                        })),
+                      },
+                    ]
+                  : [],
             question: p.question,
             options: p.options ?? [],
             allow_free_text: !!p.allow_free_text,
@@ -360,12 +385,12 @@ export const useChat = create<ChatStore>((set, get) => ({
     }
   },
 
-  answerQuestion: async (pendingId, answer) => {
+  answerQuestion: async (pendingId, answers) => {
     set(s => ({
       questions: s.questions.filter(q => q.pending_id !== pendingId),
     }));
     try {
-      await api.answerQuestion(pendingId, answer);
+      await api.answerQuestion(pendingId, answers);
     } catch {
       // already answered (timeout race) — gone from the surface either way
     }
@@ -1120,10 +1145,27 @@ export const useChat = create<ChatStore>((set, get) => ({
         next.consents = s.consents.filter(c => c.pending_id !== ev.pending_id);
       }
 
-      // --- ask_user questions (Phase-1 broker, surfaced Phase 2)
+      // --- ask_user questions (the ZCode shape: a LIST of questions)
       if (ev.type === "question_required" && ev.pending_id) {
+        // the event carries the normalized question list; the legacy flat
+        // fields are the fallback for a bridge that still speaks them
+        const questions: QuestionSpec[] = Array.isArray(ev.questions)
+          ? (ev.questions as QuestionSpec[])
+          : [];
+        const flat: QuestionSpec[] = ev.question
+          ? [
+              {
+                question: ev.question,
+                options: (ev.options ?? []).map(o => ({
+                  value: o,
+                  label: o,
+                })),
+              },
+            ]
+          : [];
         const q: PendingQuestion = {
           pending_id: ev.pending_id,
+          questions: questions.length ? questions : flat,
           question: ev.question ?? "",
           options: ev.options ?? [],
           allow_free_text: !!ev.allow_free_text,

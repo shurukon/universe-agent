@@ -418,7 +418,7 @@
 /* centered composer while empty: same dock, wider stage */
 .composer-wrap.centered { padding: 0 26px 8px; }
 .composer-wrap.centered .composer,
-.composer-wrap.centered .composer-hint { max-width: 640px; }
+.composer-wrap.centered .composer-hint { max-width: var(--chat-col, 789px); }
 .composer-wrap.centered .composer-hint { display: none; }
 
 /* ------------------------------------------------------------------ */

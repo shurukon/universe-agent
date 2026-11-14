@@ -1,17 +1,15 @@
 /**
  * lib/studioApi.ts — typed client for the Universe Studio surface.
  *
- * Two concerns live here:
- *   1. Tool services (open-design, AVE, Blender MCP) — list/start/stop with
- *      live status, driven by the bridge's /api/studio/services endpoints.
- *   2. Muse — the bridge's text→image endpoint (/api/meta/image), used by
- *      the Studio Muse Image card.
+ * One concern lives here: the tool services (open-design, AVE, Blender MCP)
+ * — list/start/stop with live status, driven by the bridge's
+ * /api/studio/services endpoints.
  *
  * Requests ride the same base URL + bearer token as lib/api.ts: the config
  * is resolved once through bridgeConfig() and every call carries
  * `Authorization: Bearer <token>` when a token is present. Server error
  * bodies ({message|error|detail}) are surfaced verbatim so toasts stay
- * honest — e.g. a missing image-provider key reads through as-is.
+ * honest.
  */
 
 import { bridgeConfig } from "@/lib/api";
@@ -33,11 +31,6 @@ export interface StudioService {
   port: number;
   status: StudioServiceStatus;
   detail?: string;
-}
-
-export interface ImageResult {
-  b64?: string;
-  url?: string;
 }
 
 const STATUSES: readonly StudioServiceStatus[] = [
@@ -123,29 +116,6 @@ function asService(payload: unknown): StudioService {
   throw new StudioError("Unexpected response from the bridge", 0);
 }
 
-function pickImage(rec: Record<string, unknown>): ImageResult | null {
-  const b64 = typeof rec["b64"] === "string" ? rec["b64"] : undefined;
-  const url = typeof rec["url"] === "string" ? rec["url"] : undefined;
-  if (b64 === undefined && url === undefined) return null;
-  const out: ImageResult = {};
-  if (b64 !== undefined) out.b64 = b64;
-  if (url !== undefined) out.url = url;
-  return out;
-}
-
-function asImage(payload: unknown): ImageResult {
-  if (typeof payload === "object" && payload !== null) {
-    const rec = payload as Record<string, unknown>;
-    const direct = pickImage(rec);
-    if (direct) return direct;
-    if (typeof rec["image"] === "object" && rec["image"] !== null) {
-      const nested = pickImage(rec["image"] as Record<string, unknown>);
-      if (nested) return nested;
-    }
-  }
-  throw new StudioError("The image provider returned nothing usable", 0);
-}
-
 // ---- endpoints -------------------------------------------------------------
 
 /** GET /api/studio/services — every tool service with its live status. */
@@ -177,65 +147,6 @@ export async function stopService(id: StudioServiceId): Promise<StudioService> {
       method: "POST",
     })
   );
-}
-
-/** POST /api/meta/image — Muse text→image (webp b64 or a hosted URL). */
-export async function generateImage(
-  prompt: string,
-  size?: string
-): Promise<ImageResult> {
-  const body: { prompt: string; size?: string } = { prompt };
-  if (size !== undefined) body.size = size;
-  return asImage(
-    await studioRequest<unknown>("/api/meta/image", {
-      method: "POST",
-      body: JSON.stringify(body),
-    })
-  );
-}
-
-/* ---- AVE MCP driving (Universe edits the timeline from chat) --------------- */
-
-export interface AveTool {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}
-
-export interface AveDriveResult {
-  tool: string | null;
-  arguments?: Record<string, unknown>;
-  result?: { isError?: boolean; data?: unknown; structured?: unknown };
-  reason?: string;
-  raw?: string;
-}
-
-export async function listAveTools(): Promise<{
-  ok: boolean;
-  reachable: boolean;
-  tools: AveTool[];
-  message?: string;
-}> {
-  return studioRequest("/api/studio/ave/tools");
-}
-
-export async function driveAve(instruction: string): Promise<AveDriveResult> {
-  return studioRequest("/api/studio/ave/act", {
-    method: "POST",
-    body: JSON.stringify({ instruction }),
-  });
-}
-
-/* ---- SAM 3.1 segmentation (Meta Model API /v1/responses) ------------------ */
-
-export async function segmentImage(
-  prompt: string,
-  imageUrl: string,
-): Promise<{ output: string }> {
-  return studioRequest("/api/meta/segment", {
-    method: "POST",
-    body: JSON.stringify({ prompt, image_url: imageUrl }),
-  });
 }
 
 /* ---- Design workspace (real open-design daemon surfaces) ------------------ */

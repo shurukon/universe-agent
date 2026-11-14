@@ -371,14 +371,9 @@ export default function Composer({
         }
       })();
     } else if (action === "agents") {
-      void (async () => {
-        try {
-          const t = await api.agentRoster();
-          toast(t.agents.map(a => a.name).join(", "));
-        } catch {
-          toast("Could not read the agent roster");
-        }
-      })();
+      // one agent: the roster endpoint is gone — Universe ships exactly one
+      // agent ("universe"); the Agent tool spawns worker missions from it.
+      toast("universe — one agent, 121 tools; the Agent tool spawns worker missions");
     } else if (action === "export") {
       void (async () => {
         try {

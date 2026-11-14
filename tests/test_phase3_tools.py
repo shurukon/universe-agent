@@ -17,8 +17,6 @@ Every test exercises real behavior:
   * k8s enforces the plan-before-apply safety pattern
   * log_tail reads the last N lines of a real log file
 """
-import sys
-import textwrap
 
 import pytest
 
@@ -156,24 +154,6 @@ def test_code_execute_rejects_unsupported_language(fresh_home):
 
 # ---- Review Agent tools -------------------------------------------------
 
-def test_coverage_report_runs_real_pytest(fresh_home, tmp_path):
-    """coverage_report: invokes a real pytest run (against a tiny fixture
-    test) and returns the real return code + stdout. The test fixture is
-    planted on disk; pytest actually runs it."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    # plant a tiny test file pytest will run
-    (tmp_path / "test_micro.py").write_text(textwrap.dedent("""
-        def test_pass():
-            assert 1 + 1 == 2
-    """), encoding="utf-8")
-    r = reg.get("CoverageReport").handler(
-        command=f"{sys.executable} -m pytest test_micro.py -q --no-header",
-        cwd=str(tmp_path))
-    # the test passed
-    assert "passed" in (r.get("stdout", "") + r.get("stderr", ""))
-
-
 # ---- Design Agent tools -------------------------------------------------
 
 def test_vision_analyze_returns_real_image_properties(fresh_home, tmp_path):
@@ -198,86 +178,6 @@ def test_vision_analyze_returns_real_image_properties(fresh_home, tmp_path):
     # white should be in the dominant colours
     hexes = [c["hex"].lower() for c in r["dominant_colours"]]
     assert "#ffffff" in hexes or "#f0f0f0" in hexes  # quantised
-
-
-def test_css_tools_lints_real_css_and_finds_unbalanced_braces(fresh_home):
-    """css_tools lint: real CSS with an unbalanced brace produces a real
-    finding — not a fake 'ok'."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    broken_css = "body { color: red;\n.btn { color: blue; }\n"  # missing closing } for body
-    r = reg.get("CssTools").handler(action="lint", css=broken_css)
-    assert r["ok"] is True  # the call succeeded
-    assert r["finding_count"] >= 1
-    kinds = [f["rule"] for f in r["findings"]]
-    assert "balanced_braces" in kinds
-
-
-def test_css_tools_extracts_real_design_tokens(fresh_home):
-    """css_tools tokens: real CSS produces a real structured token inventory
-    — colours, fonts, custom properties, z-indexes — not a stub."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    css = textwrap.dedent("""
-        :root {
-            --color-primary: #6B21A8;
-            --color-bg: #FFFFFF;
-            --font-sans: "Inter", sans-serif;
-            --space-md: 16px;
-        }
-        body {
-            color: var(--color-primary);
-            background: var(--color-bg);
-            font-family: var(--font-sans);
-        }
-        .modal { z-index: 1000; }
-        .overlay { z-index: 500; }
-        @media (max-width: 768px) { body { font-size: 14px; } }
-    """)
-    r = reg.get("CssTools").handler(action="tokens", css=css)
-    assert r["ok"] is True
-    assert r["custom_properties"]["color-primary"] == "#6B21A8"
-    assert "#6B21A8" in r["colours"]
-    assert "#FFFFFF" in r["colours"]
-    assert 1000 in r["z_indexes"]
-    assert 500 in r["z_indexes"]
-    assert any("Inter" in f for f in r["font_families"])
-    assert len(r["media_queries"]) >= 1
-
-
-def test_color_contrast_check_verifies_white_on_black_is_21(fresh_home):
-    """color_contrast_check: pure-math WCAG. The maximum possible ratio is
-    white-on-black = 21.0 — this is a deterministic check that the math is
-    correct, not a vague range assertion."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    r = reg.get("ColorContrastCheck").handler(
-        foreground="#FFFFFF", background="#000000")
-    assert r["ok"] is True
-    # WCAG 2.1 maximum contrast = (1.0 + 0.05) / (0.0 + 0.05) = 21.0
-    assert abs(r["contrast_ratio"] - 21.0) < 0.01
-    assert r["wcag_aa_pass"] is True
-    assert r["wcag_aaa_pass"] is True
-    assert r["verdict"] == "pass"
-
-
-def test_color_contrast_check_flags_low_contrast(fresh_home):
-    """color_contrast_check: a mid-grey on white (~3.5 ratio) fails AA for
-    normal text (needs 4.5) but passes AA for large text (needs 3.0) — the
-    per-size logic is real. #888888 vs white = ratio ~3.55."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    r = reg.get("ColorContrastCheck").handler(
-        foreground="#888888", background="#FFFFFF", font_size_px=16)
-    assert r["ok"] is True
-    # ~3.55 is between 3.0 (AA large) and 4.5 (AA normal)
-    assert 3.0 <= r["contrast_ratio"] < 4.5, f"ratio was {r['contrast_ratio']}"
-    assert r["wcag_aa_pass"] is False  # 3.55 < 4.5 for normal text
-    assert r["verdict"] == "fail"
-    # but for large text it would pass
-    r2 = reg.get("ColorContrastCheck").handler(
-        foreground="#888888", background="#FFFFFF", font_size_px=24)
-    assert r2["wcag_aa_pass"] is True  # 3.55 >= 3.0 for large text
 
 
 # ---- Data Agent tools ---------------------------------------------------
@@ -503,55 +403,3 @@ def test_graphql_client_introspection_runs_real_query(fresh_home, monkeypatch):
             srv.shutdown()
 
 
-# ---- Security Agent tools -----------------------------------------------
-
-def test_secret_scanner_finds_real_planted_secrets(fresh_home, tmp_path):
-    """secret_scanner: plant real secrets in real source files and verify the
-    scanner finds them by pattern name and file path."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    (tmp_path / "config.py").write_text(
-        'AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n'
-        'GITHUB_TOKEN = "ghp_' + "A" * 36 + '"\n'
-        'OPENAI_KEY = "sk-' + "B" * 40 + '"\n',
-        encoding="utf-8")
-    (tmp_path / "app.js").write_text(
-        'const password = "supersecret123"\n',
-        encoding="utf-8")
-    r = reg.get("SecretScanner").handler(path=str(tmp_path))
-    assert r["ok"] is True
-    assert r["files_scanned"] >= 2
-    patterns_found = {f["pattern"] for f in r["findings"]}
-    assert "aws_access_key_id" in patterns_found
-    assert "github_token" in patterns_found or "github_token_legacy" in patterns_found
-    assert "openai_key" in patterns_found
-    # the redacted match must NOT contain the actual secret
-    for f in r["findings"]:
-        assert "EXAMPLE" not in f["match"]  # aws example string
-        assert "BBBB" not in f["match"]  # openai key body
-
-
-def test_dependency_audit_parses_real_manifests(fresh_home, tmp_path):
-    """dependency_audit: plant real requirements.txt + package.json + go.mod +
-    Cargo.toml files and verify the SBOM counts are real."""
-    from connectors.builtin import get_registry
-    reg = get_registry()
-    (tmp_path / "requirements.txt").write_text(
-        "requests==2.31.0\nnumpy\n", encoding="utf-8")
-    (tmp_path / "package.json").write_text(
-        '{"dependencies": {"express": "^4.18.0"}, "devDependencies": {"jest": "29.0.0"}}',
-        encoding="utf-8")
-    (tmp_path / "go.mod").write_text(
-        "module x\n\ngo 1.21\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.0\n)\n",
-        encoding="utf-8")
-    (tmp_path / "Cargo.toml").write_text(
-        "[dependencies]\nserde = \"1.0\"\nreqwest = { version = \"0.11\", features = [\"json\"] }\n",
-        encoding="utf-8")
-    r = reg.get("DependencyAudit").handler(path=str(tmp_path))
-    assert r["ok"] is True
-    assert r["counts"]["python"] == 2  # requests + numpy
-    assert r["counts"]["node"] == 2    # express + jest
-    assert r["counts"]["go"] == 1      # gin
-    assert r["counts"]["rust"] == 2    # serde + reqwest
-    # numpy has no version pin — that should be a warning
-    assert any("numpy" in w for w in r["warnings"])

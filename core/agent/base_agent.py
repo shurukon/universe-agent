@@ -156,6 +156,13 @@ class Tool:
     timeout_s: float | None = None
     # shell parity: whether this tool is allowed in plan mode (read-only research)
     allow_in_plan: bool = False
+    # An explicit JSON schema for this tool's parameters. The signature-derived
+    # schema (see _schema_for_handler) describes FLAT parameters well, but a
+    # tool whose contract is a nested structure (AskUserQuestion's
+    # questions[].options[].{value,label,description}) needs the real shape
+    # advertised to the model — a bare "array" invites the model to guess the
+    # item fields. When set, this schema is used verbatim.
+    schema: dict[str, Any] | None = None
 
 
 CORE_SKILL_TOOLS = ["Skill"]
@@ -415,7 +422,11 @@ class BaseAgent:
                     # signature: the model sees exactly the parameters the
                     # tool accepts (and their types), not one universal
                     # 14-property blob that invites hallucinated args.
-                    "parameters": _schema_for_handler(tool.handler),
+                    # A tool with a NESTED contract declares its own
+                    # schema verbatim (Tool.schema).
+                    "parameters": (tool.schema
+                                   if tool.schema is not None
+                                   else _schema_for_handler(tool.handler)),
                 },
             })
         return schemas

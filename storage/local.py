@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -47,7 +48,21 @@ class LocalStorage:
                 timeout=30.0,
             )
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL;")
+            # WAL is an OPTIMISATION, not a requirement. Switching the
+            # journal mode needs a brief exclusive lock, and a database
+            # that another connection is touching (a background worker
+            # waking up mid-switch, a second bridge process) makes the
+            # PRAGMA fail with "database is locked" — which used to abort
+            # the CALLER (a whole test fixture) instead of just losing the
+            # optimisation. Retry briefly, then carry on in the default
+            # journal mode: the connection still works, and the busy
+            # timeout below covers the concurrent writers.
+            for _attempt in range(5):
+                try:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    break
+                except sqlite3.OperationalError:
+                    time.sleep(0.1)
             conn.execute("PRAGMA synchronous=NORMAL;")
             conn.execute("PRAGMA foreign_keys=ON;")
             conn.execute("PRAGMA busy_timeout=30000;")

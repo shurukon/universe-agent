@@ -50,6 +50,11 @@ class EventBus:
         # even when the caller doesn't pass it
         self._current_goal: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "universe_current_goal", default=None)
+        # the SESSION whose durable log receives every emission inside the
+        # bound block (audit 2026-11-11) — the session is the unit of work
+        # and the unit of persistence; there is no goal table any more.
+        self._current_session: contextvars.ContextVar[str | None] = (
+            contextvars.ContextVar("universe_current_session", default=None))
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -95,9 +100,18 @@ class EventBus:
         Goal events are stamped with a per-goal monotonic seq HERE, at the
         single source, so every consumer (ring buffer, live socket,
         reconnect refill) shares one numbering and the UI's seq-dedup can
-        never miss a re-fed duplicate."""
+        never miss a re-fed duplicate.
+
+        When the emission happens inside a SESSION context
+        (`bus.bind_session(id)` — the session engine binds it for the whole
+        turn), the event is ALSO written to the session's DURABLE log
+        (`<project>/sessions/<id>/events.jsonl`). That log is the authority
+        for a reopened session: the live ring is per turn and in memory, so
+        without this the thinking, the tool calls and the plan rows were
+        simply gone the next time the user opened the session
+        (audit 2026-11-11)."""
         try:
-            if not self._subs:
+            if not self._subs and not self._current_session.get():
                 return
             if turn_id is None:
                 turn_id = self._current_goal.get()
@@ -110,6 +124,10 @@ class EventBus:
                 event["seq"] = self.goal_seq(turn_id)
             event.update(fields)
             event = _sanitize(event)
+            session_id = self._current_session.get()
+            if session_id:
+                event["session_id"] = session_id
+                self._persist_session_event(session_id, event)
             for sub_id, q in self._subs.items():
                 try:
                     q.put_nowait(event)
@@ -124,6 +142,42 @@ class EventBus:
                         pass
         except Exception:
             # observability must never break the work being observed
+            pass
+
+    @staticmethod
+    def _persist_session_event(session_id: str, event: dict[str, Any]) -> None:
+        """Write one event to the session's durable log (best-effort).
+
+        A failure here must never break the turn that produced the event —
+        the log is observability, not the product."""
+        try:
+            from core.session.event_log import append_event
+            append_event(session_id, event)
+        except Exception:
+            pass
+
+    def bind_session(self, session_id: str | None) -> Any:
+        """Context-manager: bind the SESSION whose durable log every
+        emission inside the block belongs to (the session engine binds it
+        for the whole turn)."""
+        return _SessionBinder(self, session_id)
+
+    def push_session(self, session_id: str | None) -> Any:
+        """Bind the session for the CURRENT task (explicit form).
+
+        The session engine uses this instead of the context manager: the
+        binding must cover the WHOLE turn — the opening `turn_start`, the
+        engine's events, the closing `turn_completed` and `chat_reply` —
+        not just the engine call. Returns the token for pop_session()."""
+        return self._current_session.set(session_id)
+
+    def pop_session(self, token: Any) -> None:
+        """Release a binding taken by push_session()."""
+        if token is None:
+            return
+        try:
+            self._current_session.reset(token)
+        except Exception:
             pass
 
     def bind_goal(self, turn_id: str | None) -> Any:
@@ -145,6 +199,24 @@ class _GoalBinder:
     def __exit__(self, *_: Any) -> None:
         if self._token is not None:
             self._bus._current_goal.reset(self._token)
+
+
+class _SessionBinder:
+    """Binds the session id whose durable log receives every emission
+    inside the block (audit 2026-11-11)."""
+
+    def __init__(self, bus: EventBus, session_id: str | None) -> None:
+        self._bus = bus
+        self._session_id = session_id
+        self._token: contextvars.Token | None = None
+
+    def __enter__(self) -> "_SessionBinder":
+        self._token = self._bus._current_session.set(self._session_id)
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        if self._token is not None:
+            self._bus._current_session.reset(self._token)
 
 
 class Subscription:

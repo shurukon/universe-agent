@@ -21,11 +21,10 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from core.agent.orchestrator import Orchestrator, get_orchestrator
 from storage.local import get_storage
-from test_honesty_fixes import _MockOpenAI, _install_mock_provider
+from test_honesty_fixes import _install_mock_provider
 
 
 # ---------------------------------------------------------------- mock LLM

@@ -100,6 +100,13 @@ async def test_duplicate_cap_blocks_and_polling_tools_exempt(fresh_home):
 
     _register_tool("CountOnce", dup_handler)
     _register_tool("Monitor", poll_handler)
+    # audit 2026-11-10: the builtin fact-guard now covers EVERY shell tool
+    # (Monitor used to slip past it), so its first-call block would eat one
+    # of this test's Monitor calls. Disarm the builtin — this test measures
+    # the duplicate cap, not hook coverage (that is tests/test_hooks_coverage.py).
+    from hooks import get_hook_manager
+    get_hook_manager()._hooks = [h for h in get_hook_manager()._hooks
+                                 if not h.get("builtin")]
     from core.agent.base_agent import POLLING_TOOLS
     assert POLLING_TOOLS == frozenset({"TaskOutput", "Monitor"})
     # tool calls are whitelist-scoped to registered agents (fail-closed)
@@ -249,8 +256,16 @@ def test_pre_shell_event_covers_all_shell_tools(fresh_home):
 
 
 def test_hook_blocks_powershell(fresh_home):
+    """A user pre_shell hook must cover PowerShell.
+
+    Audit 2026-11-10: the builtin fact-guard now fires for EVERY shell tool
+    (its matcher used to be "Bash"), so it is hit FIRST on the first call
+    for a goal. These tests exercise the USER hook, so the builtin is
+    disarmed first — the builtin's own coverage is pinned in
+    tests/test_hooks_coverage.py."""
     from hooks.manager import HookManager
     hm = HookManager()
+    hm._hooks = [h for h in hm._hooks if not h.get("builtin")]
     hm._hooks.append({"hook_id": "test-block", "event": "pre_shell",
                       "matcher": "*", "action": "block",
                       "message": "no shell for you", "enabled": True,
@@ -258,15 +273,21 @@ def test_hook_blocks_powershell(fresh_home):
     block = hm.check("pre_shell", "PowerShell", agent="test",
                      turn_id="g-hook", args={})
     assert block is not None and block.action == "block"
-    # and the builtin Bash guard keeps firing for Bash
+    # and the same hook covers every other shell tool
     bash_block = hm.check("pre_shell", "Bash", agent="test",
                           turn_id="g-hook", args={})
     assert bash_block is not None
+    ce_block = hm.check("pre_shell", "CodeExecute", agent="test",
+                        turn_id="g-hook", args={})
+    assert ce_block is not None
 
 
 def test_require_facts_one_shot_and_clear_goal_state(fresh_home):
     from hooks.manager import HookManager
     hm = HookManager()
+    # the builtin fact-guard also answers require_facts for shell tools
+    # (audit 2026-11-10): drop it so this test measures the USER hook
+    hm._hooks = [h for h in hm._hooks if not h.get("builtin")]
     hm._hooks.append({"hook_id": "test-facts", "event": "pre_shell",
                       "matcher": "*", "action": "require_facts",
                       "message": "state your facts", "enabled": True,

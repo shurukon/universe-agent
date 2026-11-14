@@ -96,6 +96,12 @@ class BridgeState:
         self.goals: dict[str, GoalTask] = {}
         self._order: list[str] = []
         self._seen: set[str] = set()
+        # turn_id -> session (task container) id. NEVER pruned: the TTL
+        # prunes the live registry, but the durable session log keeps
+        # receiving late events (the terminal row, a late tool result) and
+        # it must still land in the right session folder
+        # (audit 2026-11-11).
+        self._sessions: dict[str, str] = {}
 
     def touch(self, turn_id: str) -> None:
         """Remember a goal id (even one we didn't start) for /api/sessions."""
@@ -104,10 +110,28 @@ class BridgeState:
         self._seen.add(turn_id)
         self._order.append(turn_id)
 
+    def bind_session(self, turn_id: str, session_id: str) -> None:
+        """Record which SESSION a turn belongs to (the durable log's key)."""
+        if turn_id and session_id:
+            self._sessions[str(turn_id)] = str(session_id)
+
+    def session_of(self, turn_id: str) -> str:
+        """The session id of a turn ("" when unknown)."""
+        if not turn_id:
+            return ""
+        bound = self._sessions.get(str(turn_id), "")
+        if bound:
+            return bound
+        gt = self.goals.get(str(turn_id))
+        if gt is not None:
+            return str(getattr(gt, "task_id", "") or "")
+        return ""
+
     def create(self, turn_id: str, text: str, task_id: str = "") -> GoalTask:
         gt = GoalTask(turn_id, text, task_id=task_id)
         self.goals[turn_id] = gt
         self.touch(turn_id)
+        self.bind_session(turn_id, task_id or turn_id)
         return gt
 
     def get(self, turn_id: str) -> GoalTask | None:

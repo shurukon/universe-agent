@@ -175,13 +175,13 @@ The execution environment for `Bash` depends on the platform:
 
 | Platform | Execution environment |
 |---|---|
-| Windows (native, no WSL2) | `security/windows_sandbox.py` — an elevated→unelevated restricted-user chain cloned from the Codex design, **when the vendored Rust binaries are built** (see `docs/WINDOWS_SANDBOX.md`; they do not ship prebuilt). Until they are built, `Bash` fails closed and points at `BashUnsandboxed` (explicit consent). |
-| Linux / macOS / WSL2 | Native execution through the Capability Gate and Audit Log, at per-session consent. A Docker backend exists (`security/sandbox.py`) but is **not wired** — there is no quarantine tier in the current build (all bundled skills are ingested from the 18 trusted sources; the community-submission pipeline is not connected). |
+| Windows (native, no WSL2) | **No OS sandbox.** `security/windows_sandbox.py` does not exist in this repo — the Codex Windows-sandbox design was vendored **for reference and audit only** (`vendor/codex-windows-sandbox/`, Rust source, Apache-2.0) and the two binaries it needs (`codex-windows-sandbox-setup.exe`, `codex-command-runner.exe`) are **not built**. `Bash` therefore runs natively behind the Capability Gate and the audit log, with the sanitized child environment of `security/child_env.py`. Building the sandbox is a documented, unfinished step — see `vendor/codex-windows-sandbox/README.md`. |
+| Linux / macOS / WSL2 | Native execution through the Capability Gate and Audit Log, at per-call consent. A Docker backend exists (`security/sandbox.py`) but is **not wired**. The skills corpus is **empty**: `config.TRUSTED_SKILL_SOURCES == ()` (purged 2026-10-31) and `skills/loader.py` is a stub — there are no bundled sources, and the community-submission pipeline is not connected. See [`docs/SKILLS.md`](SKILLS.md). |
 
 Honest limitation: a force-Docker toggle and per-tier sandbox routing are not
-implemented in v1. `TestRunner`, `CoverageReport`, `CodeExecute` and the
-docker/k8s tools run natively behind their consent policies, with the same
-sanitized child environment as `Bash`.
+implemented in v1. `CodeExecute`, `Monitor`, `PowerShell` and the docker/k8s
+tools run natively behind their consent policies, with the same sanitized
+child environment as `Bash`.
 
 ---
 
@@ -205,7 +205,10 @@ confidence (0.70, or the trusted-load value when the source is on the
 bundled allowlist). Quarantined and approved skills are never executed as
 code — they are indexed prompt text ranked lower in retrieval; the Docker
 backend (`security/sandbox.py`) is available for shell/tool sandboxing, not
-as a skill sandbox (§6).
+as a skill sandbox (§6). The skill pipeline itself (signing, quarantine,
+taxonomy) is live code — `skill/signing.py`, `skill/quarantine.py`,
+`skill/taxonomy.py` — but the shipped catalog is empty (§7,
+[`docs/SKILLS.md`](SKILLS.md)).
 
 ---
 
@@ -258,17 +261,21 @@ on the roadmap, not in the build.
 ## 10. The Capability-Scoped Tool Model
 
 Every tool exposed to an agent is a `Tool(...)` record whose `capability`
-field declares the capability it requires (for example, `Write`,
-`Bash`, `http.egress`, `mcp.invoke`). The Capability Gate consults a
-default policy table to decide whether a given agent invoking a given
-capability is allowed, denied, or requires an interactive first-use prompt.
+field declares the capability it requires (for example, `Write`, `Bash`,
+`file.read`, `network.req`, `connector.run`, `universe:agents`). The
+Capability Gate consults a default policy table to decide whether a given
+agent invoking a given capability is allowed, denied, or requires an
+interactive first-use prompt.
 
 The default policy is conservative: high-impact capabilities (`Write`,
-`Bash`, `http.egress`) require a first-use prompt per session. The
-first-use prompt, once approved by the user, is saved as a **White Hole** in
-the agent's session memory: a permanent, auditable record of what the user
-consented to and when. Subsequent calls within the same session do not re-prompt;
-calls in a new session start the flow over again.
+`Bash`, `network.req`, `connector.run`) require a consent prompt. The
+prompt, once approved, is recorded as a row in the `capability_grants`
+table (`schema/v0015_consent_persist.py`) — an auditable record of what the
+user consented to and when. A `once` grant is **single-use**: it is
+consumed by the call it authorised and the next identical call asks again
+(`security/capability.py`). A **White Hole** is a different thing entirely
+— a standing rule of the kind `whitehole`, added via `/whitehole`
+(`cli/wizards/__init__.py`).
 
 Capabilities never invoked by an agent are simply absent from its policy
 context, so an agent cannot escalate by requesting a capability it has never

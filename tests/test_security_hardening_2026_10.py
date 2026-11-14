@@ -63,6 +63,12 @@ async def test_apply_patch_rejects_absolute_and_traversal(fresh_home, tmp_path,
     work.mkdir()
     (work / "t.txt").write_text("hello\n", encoding="utf-8")
     monkeypatch.setattr("connectors.builtin.files._project_root", lambda: work)
+    # the builtin fact-guard now covers EVERY write tool (audit 2026-11-10),
+    # so its one-shot pre_write block eats the first call of this test.
+    # Disarm the builtin — this test measures the patch SCOPE lock.
+    from hooks import get_hook_manager
+    get_hook_manager()._hooks = [h for h in get_hook_manager()._hooks
+                                 if not h.get("builtin")]
 
     evil_abs = ("*** Begin Patch\n"
                 f"*** Update File: {work.parent / 'evil.txt'}\n"

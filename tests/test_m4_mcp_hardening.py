@@ -163,16 +163,25 @@ def test_write_hints_cover_m4_verbs():
     assert _tool_is_read_only({"name": "echo"}) is True
 
 
-def test_line_cap_constant_and_abort():
+def test_line_cap_constant_and_abort(monkeypatch):
     import asyncio
     import pytest
-    from connectors.mcp_client import MCPClient, MCPServer, _MAX_MCP_LINE_BYTES
+    import connectors.mcp_client as mcp
+    from connectors.mcp_client import MCPClient, MCPServer
 
-    assert _MAX_MCP_LINE_BYTES == 16 * 1024 * 1024
+    # the shipped contract: a 16 MiB cap
+    assert mcp._MAX_MCP_LINE_BYTES == 16 * 1024 * 1024
+
+    # The abort path is the same code at any cap, so exercise it at 4 KiB:
+    # materialising a real 16 MiB line in a test only proves this machine's
+    # free RAM (it genuinely raised MemoryError on the RAM-starved box,
+    # 2026-11-10), and the cap value itself is asserted right above.
+    monkeypatch.setattr(mcp, "_MAX_MCP_LINE_BYTES", 4096)
+    cap = 4096
 
     class FakeStdout:
         async def readline(self):
-            return b"{" + b"x" * (_MAX_MCP_LINE_BYTES + 1) + b"}\n"
+            return b"{" + b"x" * (cap + 1) + b"}\n"
 
     class FakeProc:
         stdout = FakeStdout()

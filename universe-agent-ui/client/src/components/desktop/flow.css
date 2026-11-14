@@ -39,8 +39,8 @@
 
 /* ---- composer running tag + bridge connection dot ---- */
 .steer-tag {
-  max-width: 990px;
-  width: calc(100% - 52px);
+  max-width: var(--chat-col, 789px);
+  width: calc(100% - 32px);
   margin: 0 auto 6px;
   font-size: 11px;
   color: var(--ink3);
@@ -362,7 +362,7 @@
 
 /* ---- the inline consent banner (docked above the composer) ---- */
 .consent-banner {
-  max-width: 780px;                 /* exactly the chat column width */
+  max-width: var(--chat-col, 789px);     /* the chat column width */
   width: 100%;
   margin: 0 auto 8px;
   display: flex;

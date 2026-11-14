@@ -312,19 +312,19 @@ def test_tool_result_redacted_and_capped_for_llm_context():
 # ---- 7. cancel-before-planet stays 'cancelled' ---------------------------------
 
 @pytest.mark.asyncio
-async def test_cancel_before_planet_records_cancelled_not_failed(fresh_home,
-                                                                 monkeypatch):
-    """A cancel landing during classify (planet still None) used to hit
-    planet.id inside the CancelledError handler, raise AttributeError FROM
-    the except block, and swallow the cancellation — the goal read
-    'failed: NoneType has no attribute id' instead of 'cancelled'.
+async def test_cancel_records_cancelled_not_failed(fresh_home,
+                                                    monkeypatch):
+    """A cancel landing mid-turn must close the TRANSCRIPT row as
+    'cancelled', never 'failed'.
 
-    Legacy goal-state path (goals rows + planets + checkpoints): opt in
-    with GAX_ENGINE=goal — the default session engine writes no goals row
-    and owns no planet, so this regression only exists there."""
-    monkeypatch.setenv("GAX_ENGINE", "goal")
+    2026-11-10 (P4): the legacy goal-state path (goals rows + planets +
+    checkpoints) is DELETED, so the regression this test used to pin is now
+    pinned against the one engine there is. The old failure mode was a
+    CancelledError handler that raised AttributeError and turned the
+    outcome into 'failed'."""
     import asyncio
     from core.agent.orchestrator import Orchestrator
+    from core.session.store import get_session_store
 
     class CancelledLLM:
         async def complete(self, **kwargs):
@@ -332,22 +332,25 @@ async def test_cancel_before_planet_records_cancelled_not_failed(fresh_home,
 
     orch = Orchestrator(llm_client=CancelledLLM())
     task = asyncio.get_running_loop().create_task(
-        orch.run_turn("will be cancelled", turn_id="goal-cancel-test"))
-    await asyncio.sleep(0.05)  # let classify() reach its await
+        orch.run_turn("will be cancelled", turn_id="goal-cancel-test",
+                      session_id="goal-cancel-test"))
+    # wait until the turn has actually STARTED (its transcript row exists)
+    # before cancelling — cancelling a coroutine that never reached its first
+    # await leaves no bookkeeping to close, which is a different (and
+    # uninteresting) case.
+    store = get_session_store()
+    deadline = asyncio.get_running_loop().time() + 5.0
+    while asyncio.get_running_loop().time() < deadline:
+        if any(r.get("kind") == "turn_start"
+               for r in store.transcript("goal-cancel-test")):
+            break
+        await asyncio.sleep(0.02)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    from storage.local import get_storage
-    row = get_storage().query_one(
-        "SELECT status FROM goals WHERE id='goal-cancel-test';")
-    assert row is not None
-    assert row["status"] == "cancelled"
-    # the checkpoint written by the handler must not have crashed
-    from failure.checkpoint import load_checkpoint
-    cp = load_checkpoint("goal-cancel-test")
-    assert cp is not None and cp.get("status") == "cancelled"
-    # agent-turn model: the planet is created at TURN START (before the
-    # first LLM await), so a cancel may legitimately carry its id — but it
-    # must be a planet id, never a goal id, and the handler must not crash
-    pid = str(cp.get("planet_id", "") or "")
-    assert pid == "" or pid.startswith("planet-"), f"honest planet id, got {pid!r}"
+    # the durable close-out is a transcript row, and it reads 'cancelled'
+    rows = get_session_store().transcript("goal-cancel-test")
+    ends = [r for r in rows if r.get("kind") == "turn_end"]
+    assert ends, rows
+    assert ends[-1]["status"] == "cancelled", ends[-1]
+    assert "cancelled" in str(ends[-1].get("stop_reason", ""))

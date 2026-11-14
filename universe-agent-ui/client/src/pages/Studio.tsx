@@ -40,7 +40,7 @@ import Sidebar from "@/components/desktop/Sidebar";
 import ChatMessages from "@/components/desktop/ChatMessages";
 import Composer, { type StudioTool } from "@/components/desktop/Composer";
 import ConsentBanner from "@/components/desktop/ConsentBanner";
-import QuestionBanner from "@/components/desktop/QuestionBanner";
+import QuestionCard from "@/components/desktop/QuestionCard";
 import OfflineBanner from "@/components/desktop/OfflineBanner";
 import PlanPill from "@/components/desktop/PlanPill";
 import { api } from "@/lib/api";
@@ -561,7 +561,7 @@ export default function Studio() {
             </div>
           )}
           <ConsentBanner />
-          <QuestionBanner />
+          <QuestionCard />
           <Composer
             centered={isEmpty}
             variant="studio"

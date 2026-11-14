@@ -14,7 +14,7 @@ import Sidebar from "@/components/desktop/Sidebar";
 import ChatMessages from "@/components/desktop/ChatMessages";
 import Composer from "@/components/desktop/Composer";
 import ConsentBanner from "@/components/desktop/ConsentBanner";
-import QuestionBanner from "@/components/desktop/QuestionBanner";
+import QuestionCard from "@/components/desktop/QuestionCard";
 import OfflineBanner from "@/components/desktop/OfflineBanner";
 
 import PlanPill from "@/components/desktop/PlanPill";
@@ -119,7 +119,7 @@ export default function ChatPage() {
           <PlanPill />
           <ChatMessages />
           <ConsentBanner />
-          <QuestionBanner />
+          <QuestionCard />
           {/* Universe order: the chat flow, banners, then the composer — the
               composer card now carries its own workspace head row (the
               project crumbs moved inside the card), and the stripped-under

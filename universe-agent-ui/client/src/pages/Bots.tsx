@@ -13,8 +13,8 @@
  *            a heterogeneous transcript (user bubbles right, bot panels
  *            left, system milestones centered, approval cards inline with
  *            Allow once / Always allow / Deny), and the composer card with
- *            a Meta one-shot mic (muse-voice-transcribe — model selected
- *            automatically, there is exactly one).
+ *            a one-shot mic (speech → text through the bridge's transcription
+ *            endpoint).
  *   RIGHT    the bot's computer, three levels of access (Grok Bot parity):
  *            Screen (live machine view), Timeline (LITERALLY the Universe
  *            timeline — the same ActivityPane/fold the chat renders, fed
@@ -1156,7 +1156,7 @@ export default function BotsPage() {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         if (blob.size < 1200) return;
         toast.info("Transcribing…", {
-          description: "Meta · muse-voice-transcribe-1.0 (model auto-selected)",
+          description: "Speech → text through the bridge's transcription endpoint",
         });
         try {
           const t = await transcribeAudio(blob);
@@ -1423,7 +1423,7 @@ export default function BotsPage() {
                     type="button"
                     className={`bots-iconbtn${recording ? " rec" : ""}`}
                     title={
-                      recording ? "Stop recording" : "Speak (Meta · one-shot)"
+                      recording ? "Stop recording" : "Speak (one-shot)"
                     }
                     onClick={() => void toggleMic()}
                   >

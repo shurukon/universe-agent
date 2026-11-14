@@ -7,10 +7,13 @@ silently missing.
 
 References: reports 01–04
 (`C:\Users\MKT\.shell\workspace\default\shell-harness-docs\`), the
-measured palette (docs/shell-tokens.md), the frozen event contract
+measured palette (the token evidence file is not part of this repository —
+the findings below are the surviving summary; the raw captures live on the
+RE workstation), the frozen event contract
 (docs/events-v1.md), and the live-verification scripts
 (`scripts/verify_universe_live.py`, `scripts/verify_phase_c_live.py`) whose
-captures live in `docs/shell-live-screens/`.
+captures likewise live on the RE workstation (the
+`docs/shell-live-screens/` directory is not part of this repository).
 
 Legend: ✅ parity · 🟡 parity with a documented difference · ⛔ deliberately
 different (a decision, not a gap) · phases reference the rebuild commits
@@ -58,7 +61,7 @@ different (a decision, not a gap) · phases reference the rebuild commits
 | Max chip (thinking level) | ✓ | fast/balanced/max budgets | ✅ P2/P3 |
 | Context usage meter | ✓ | `context_usage` events | ✅ P1 |
 | Queued follow-ups (queue mode) | ✓ | steer/queue behavior | ✅ P1 |
-| Ask-user structured questions | AskUserQuestion | ask_user + banner | ✅ P1 |
+| Ask-user structured questions | AskUserQuestion | **ZCode contract** (2026-11-12): `questions[{question, header, options[{value,label,description}], multiSelect}]` in, `{answers: {<question>: "v, v"}}` out; the card above the composer (header chip, option rows with descriptions, "Other" free text, arrow/Enter/Escape keys) | ✅ P1, live-verified |
 | Attachments "+ Add context" | ✓ | text file paths v1 | 🟡 v1 scope |
 
 ## Right rail
@@ -97,7 +100,7 @@ different (a decision, not a gap) · phases reference the rebuild commits
 | Hooks (GateGuard-style) | pre/post tool | HookManager + rules | ✅ P1/P3 |
 | Permission modes | plan/build/edit/yolo | the Universe four, alias-normalized
 (acceptEdits→edit, bypassPermissions→yolo), enforced by the gate | ✅ P1 |
-| ask_user | structured options | question_required/decided | ✅ P1 |
+| ask_user | structured options | the ZCode question list + the answers map (`question_required`/`question_decided`) | ✅ P1, ZCode contract (2026-11-12) |
 | Follow-up queue | queue | steer_queued | ✅ P1 |
 | Automations (cron) | CronCreate/… | cron.* tools + scheduler + page | ✅ P1/C |
 | Transparency bar | yellow "…controlling" | TransparencyBar `#f5c518` | ✅ B |
@@ -127,8 +130,10 @@ different (a decision, not a gap) · phases reference the rebuild commits
 
 ## Universe reverse-engineering pass (2026-10-19)
 
-Static RE of the installed Universe 3.14.3 (app.asar + glm/shell.cjs), evidence
-in docs/shell-re-map.md:
+Static RE of the installed Universe 3.14.3 (app.asar + glm/shell.cjs); the
+evidence file `docs/shell-re-map.md` is not part of this repository — the
+findings below are the surviving summary, and the raw captures live on the
+RE workstation:
 
 | Surface | Universe | Universe | Status |
 |---|---|---|---|
@@ -136,4 +141,4 @@ in docs/shell-re-map.md:
 | Slash commands | 20 built-ins + .md files (`$ARGUMENTS`, `:` names, `compress` reserved) | same registry over `GET /api/commands` + `/api/commands/resolve`, composer autocomplete rebuilt on it | ✅ (Universe-only entries keep their actions; Universe-only ones are honest placeholders) |
 | Permission modes | plan/build/edit/yolo (+auto) | identical + alias table (full→yolo, ask→build) | ✅ |
 | Icons | lucide canonical names | renames applied (TriangleAlert, ChartColumn, Ellipsis, LoaderCircle); `funnel` needs the newer lucide the registry can't fetch — Filter alias kept | ⚠️ |
-| UI strings/labels | i18n table + harness reports | measured tokens already in docs/shell-tokens.md; geometry fixes pending Phase-5 pixel pass | ⏳ |
+| UI strings/labels | i18n table + harness reports | measured tokens (the token evidence file is not part of this repository — the raw captures live on the RE workstation); geometry fixes pending Phase-5 pixel pass | ⏳ |

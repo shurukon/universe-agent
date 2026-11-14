@@ -266,7 +266,11 @@ def test_questions_broker_roundtrip(fresh_home):
         ok = broker.answer(pend[0]["pending_id"], "b")
         assert ok is True
         result = await asyncio.wait_for(task, 2)
-        assert result == {"answer": "b", "timed_out": False}
+        # the ZCode answer shape: the answers MAP keyed by the question
+        # text, plus the single-question shortcut (2026-11-12).
+        assert result["answers"] == {"pick one": "b"}
+        assert result["answer"] == "b"
+        assert result["timed_out"] is False
 
     asyncio.run(go())
 

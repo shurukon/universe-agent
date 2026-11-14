@@ -152,16 +152,30 @@ def test_cli_new_fork_compact_sessions_commands(fresh_home):
                for o in io.outputs())
 
 
-def test_goal_engine_still_available_via_flag(orch, monkeypatch):
-    """Rollback contract: GAX_ENGINE=goal restores the legacy goal-state
-    path (rows in the goals table) — the escape hatch kept open until the
-    goal path is deleted after the burn-in period."""
+def test_goal_engine_env_var_is_ignored(orch, monkeypatch):
+    """P4 (2026-11-10): the legacy goal engine is DELETED — there is one
+    engine. GAX_ENGINE=goal is now IGNORED (loudly), and the turn still
+    runs on the session engine with a transcript as the only durable
+    state. The rollback escape hatch closed on purpose: keeping it would
+    keep the ~400 dead lines of goal machinery alive forever."""
     monkeypatch.setenv("GAX_ENGINE", "goal")
+    from core.session.store import get_session_store
     summary = asyncio.run(orch.run_turn("legacy path"))
-    from storage.local import get_storage
-    row = get_storage().query_one("SELECT COUNT(*) AS c FROM goals")
-    assert row["c"] >= 1, "goal engine must persist a goal row"
+    # the turn ran on the session engine
+    assert summary.get("engine") == "session", summary
     assert summary.get("goal_text") == "legacy path"
+    # and its only durable state is the transcript
+    sid = summary.get("session_id") or ""
+    rows = get_session_store().transcript(sid)
+    assert any(r.get("kind") == "turn_start" for r in rows), rows
+    # no goals row was written — the table is no longer the authority
+    from storage.local import get_storage
+    try:
+        row = get_storage().query_one("SELECT COUNT(*) AS c FROM goals")
+        count = int(row["c"]) if row else 0
+    except Exception:
+        count = 0
+    assert count == 0, "no turn may write a goals row any more"
 
 
 # ------------------------------------------------------------------- bridge
