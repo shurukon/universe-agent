@@ -13,7 +13,7 @@
  * request, to make a bot by chatting. The answer belongs in a Universe
  * conversation, so the request opens one.
  */
-import React, { createElement, useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { api } from "@/lib/api";
 import { useChat } from "@/stores/chat";
@@ -29,12 +29,23 @@ type UniverseBots = {
   version: string | null;
 };
 
-const PROBE_MS = 5000;
+type BotsHostApi = {
+  botsViewVisible?: (visible: boolean) => void;
+  botsViewBounds?: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => void;
+  onNavigateSurface?: (cb: (surface: string) => void) => () => void;
+  onCreateBotViaChat?: (cb: () => void) => () => void;
+};
 
-/** Electron's <webview>: its own renderer, so universe bots' preload runs and
- *  it gets window.ogb — the browser and computer-use capabilities an iframe
- *  cannot have. React renders unknown tags as custom elements. */
-const CREATE_VIA_CHAT = "universe:create-bot-via-chat";
+function hostApi(): BotsHostApi | null {
+  return (window as unknown as { universe?: BotsHostApi }).universe ?? null;
+}
+
+const PROBE_MS = 5000;
 
 const CREATE_VIA_CHAT_PROMPT =
   "Create a new bot in Universe Bots. Ask me what it should do, agree the " +
@@ -42,17 +53,8 @@ const CREATE_VIA_CHAT_PROMPT =
 
 export default function Bots() {
   const [state, setState] = useState<UniverseBots | null>(null);
-  const [botsPreload, setBotsPreload] = useState("");
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const webviewRef = useRef<HTMLElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const [, navigate] = useLocation();
-
-  useEffect(() => {
-    const bridge = (window as unknown as {
-      universe?: { botsPreload?: () => Promise<string> };
-    }).universe;
-    void bridge?.botsPreload?.().then(setBotsPreload).catch(() => undefined);
-  }, []);
 
   const probe = useCallback(async () => {
     try {
@@ -69,30 +71,66 @@ export default function Bots() {
     return () => window.clearInterval(timer);
   }, [probe]);
 
+  // The harness lives in a native WebContentsView owned by main. Show it only
+  // while this route is mounted, and keep its bounds equal to the DOM host.
   useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if (event.source !== frameRef.current?.contentWindow) return;
-      const data = event.data as { type?: string } | null;
-      if (data?.type !== CREATE_VIA_CHAT) return;
+    const apiHost = hostApi();
+    if (!apiHost) return;
+    const sendBounds = () => {
+      const rect = frameRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      apiHost.botsViewBounds?.({
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+    const frame = requestAnimationFrame(() => {
+      apiHost.botsViewVisible?.(true);
+      sendBounds();
+    });
+    window.addEventListener("resize", sendBounds);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", sendBounds);
+      apiHost.botsViewVisible?.(false);
+    };
+  }, []);
+
+  // The transparent switcher view forwards a click here, where wouter lives.
+  useEffect(() => {
+    return hostApi()?.onNavigateSurface?.(surface => {
+      if (surface === "universe" || surface === "studio") navigate(`/${surface}`);
+    });
+  }, [navigate]);
+
+  // The bots view asks for a new bot by chat over its own desktop channel.
+  useEffect(() => {
+    const off = hostApi()?.onCreateBotViaChat?.(() => {
       const chat = useChat.getState();
       chat.newConversation();
       navigate("/chat");
       void chat.sendGoal(CREATE_VIA_CHAT_PROMPT);
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    });
+    return off;
   }, [navigate]);
 
   return (
     <div className="ubots-host">
       {state?.origin ? (
-        <iframe
-          ref={frameRef}
-          className="ubots-frame"
-          src={state.origin}
-          title="universe bots"
-          allow="clipboard-read; clipboard-write; microphone; camera"
-        />
+        hostApi() ? (
+          // The real renderer is a native WebContentsView in main; this box
+          // only defines its geometry and keeps the floating switcher above.
+          <div ref={frameRef} className="ubots-frame" />
+        ) : (
+          <iframe
+            className="ubots-frame"
+            src={state.origin}
+            title="universe bots"
+            allow="clipboard-read; clipboard-write; microphone; camera"
+          />
+        )
       ) : (
         <div className="ubots-waiting">
           {state === null

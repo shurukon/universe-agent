@@ -26,6 +26,7 @@ import {
   session,
   shell,
   utilityProcess,
+  WebContentsView,
 } from "electron";
 import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import http from "node:http";
@@ -33,7 +34,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { pathToFileURL } from "node:url";
+import { installBotsIpc } from "./bots-ipc";
 
 // ---- constants ------------------------------------------------------------
 
@@ -290,8 +291,8 @@ function bootstrapDesktop(): void {
   // A missing build is reported and never fatal - the rest of the Universe
   // does not depend on it.
 
-  const BOTS_PORT = process.env.UNIVERSE_BOTS_PORT || "8799";
-  const BOTS_ORIGIN = `http://127.0.0.1:${BOTS_PORT}`;
+  let BOTS_PORT = process.env.UNIVERSE_BOTS_PORT || "8799";
+  let BOTS_ORIGIN = `http://127.0.0.1:${BOTS_PORT}`;
   /** The harness's owner capability: a browser without it is asked to pair. */
   const BOTS_OWNER_HEADER = "X-UB-Desktop-Owner";
   const BOTS_OWNER_TOKEN = crypto.randomBytes(32).toString("base64url");
@@ -309,35 +310,13 @@ function bootstrapDesktop(): void {
     );
   }
 
-  /**
-   * The framed universe bots app needs the same desktop bridge its own
-   * Electron window gives it: browser loading, computer use, file dialogs and
-   * the rest arrive as `window.ogb`. A cross-origin iframe never receives a
-   * preload from the parent's webPreferences, but a session-level frame
-   * preload runs in every frame — including this one.
-   */
-  function installBotsFramePreload(): void {
-    const file = path.join(
-      resolveRepoRoot(), "universe-bots", "electron", "preload.cjs");
-    if (!fs.existsSync(file)) {
-      console.log("[bots] no frame preload at " + file);
-      return;
-    }
-    try {
-      session.defaultSession.registerPreloadScript({
-        id: "universebots-frame-preload",
-        filePath: file,
-        type: "frame",
-      });
-    } catch (error) {
-      console.log(`[bots] frame preload failed: ${String(error)}`);
-    }
-  }
-
-  function installBotsOwnerHeader(): void {
+  function installBotsOwnerHeader(target: Electron.Session): void {
     // Chromium adds this to every request the session makes, on http and ws
-    // alike, so the embedded UI is the owner without a pairing code.
-    session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    // alike, so the embedded UI is the owner without a pairing code. The
+    // view runs in its own partition, so each session that can reach the
+    // harness needs the hook — without it the harness serves its frozen
+    // non-owner "Opening My Cloud" page instead of the real app.
+    target.webRequest.onBeforeSendHeaders((details, callback) => {
       const headers = { ...details.requestHeaders };
       try {
         const target = new URL(details.url);
@@ -447,6 +426,15 @@ function bootstrapDesktop(): void {
       try {
         const response = await fetch(`${BOTS_ORIGIN}/api/bots`, { headers });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        // The view is created before the harness finishes booting, so its
+        // first navigation can lose the race. Now that the server answers,
+        // load it exactly once.
+        if (botsView && !botsView.webContents.isDestroyed() && !botsViewLoaded) {
+          botsViewLoaded = true;
+          void botsView.webContents.loadURL(BOTS_ORIGIN).catch(() => {
+            botsViewLoaded = false;
+          });
+        }
         const body = (await response.json()) as {
           bots?: Array<Record<string, unknown>>;
         };
@@ -512,9 +500,8 @@ function bootstrapDesktop(): void {
       console.log(`[bots] spawn failed: ${String(err)}`);
       return;
     }
-    installBotsFramePreload();
-    installBotsIpcDefaults();
-    installBotsOwnerHeader();
+    installBotsOwnerHeader(session.defaultSession);
+    installBotsOwnerHeader(session.fromPartition(BOTS_VIEW_PARTITION));
     // The harness learns the owner capability over the parent message port.
     try {
       (
@@ -530,6 +517,26 @@ function bootstrapDesktop(): void {
     botsProc.stdout?.on("data", (d: Buffer) => {
       const line = d.toString().trim();
       if (line) console.log(`[bots] ${line}`);
+      // The harness falls back to 18799/28799 when 8799 is held. Adopt the
+      // port it actually bound so the view, the CSP and the bridge all follow
+      // one origin instead of talking to a stale one.
+      const bound = line.match(/universebots server on http:\/\/127\.0\.0\.1:(\d+)/);
+      if (bound && bound[1] !== BOTS_PORT) {
+        const previous = BOTS_PORT;
+        BOTS_PORT = bound[1];
+        BOTS_ORIGIN = `http://127.0.0.1:${BOTS_PORT}`;
+        console.log(`[bots] port changed ${previous} -> ${BOTS_PORT}`);
+        installBotsOwnerHeader(session.defaultSession);
+        installBotsOwnerHeader(session.fromPartition(BOTS_VIEW_PARTITION));
+        botsViewLoaded = false;
+        if (botsView && !botsView.webContents.isDestroyed())
+          void botsView.webContents.loadURL(BOTS_ORIGIN).catch(() => undefined);
+        if (!appQuitting && bridgeStatus === "up") {
+          stopBridge();
+          bridgeAttempts = 0;
+          startBridge();
+        }
+      }
     });
     botsProc.stderr?.on("data", (d: Buffer) => {
       const line = d.toString().trim();
@@ -616,6 +623,126 @@ function bootstrapDesktop(): void {
   // ---- window ----------------------------------------------------------------
 
   let mainWindow: BrowserWindow | null = null;
+
+  // The bots app is hosted as a real Electron WebContentsView, not a DOM
+  // frame. A WebContentsView keeps its own renderer, its own preload and its
+  // own IPC registry, which is what window.ogb needs. It is a native view
+  // above the page, so a second transparent view carries the surface switcher
+  // over it.
+  let botsView: WebContentsView | null = null;
+  let botsViewLoaded = false;
+  let botsSwitcherView: WebContentsView | null = null;
+  const BOTS_VIEW_PARTITION = "persist:universebots-embed";
+  const TOP_BAR_H = 56;
+
+  function botsPreloadPath(): string {
+    return path.join(resolveRepoRoot(), "universe-bots", "electron", "preload.cjs");
+  }
+
+  function layoutBotsViews(): void {
+    const view = botsView;
+    const bar = botsSwitcherView;
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) return;
+    const [width, height] = win.getContentSize();
+    const bodyHeight = Math.max(0, height - TOP_BAR_H);
+    if (view) view.setBounds({ x: 0, y: TOP_BAR_H, width: Math.max(0, width), height: bodyHeight });
+    if (bar) bar.setBounds({ x: 10, y: TOP_BAR_H + 10, width: 248, height: 40 });
+  }
+
+  function disposeBotsViews(): void {
+    const views = [botsSwitcherView, botsView];
+    botsView = null;
+    botsViewLoaded = false;
+    botsSwitcherView = null;
+    for (const view of views) {
+      if (!view) continue;
+      try {
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.contentView.removeChildView(view);
+      } catch { /* already detached */ }
+      try { view.webContents.close(); } catch { /* already closed */ }
+    }
+  }
+
+  function createBotsViews(): void {
+    if (botsView || !mainWindow || mainWindow.isDestroyed()) return;
+    const preload = botsPreloadPath();
+    if (!fs.existsSync(preload)) {
+      console.log("[bots] no preload at " + preload);
+      return;
+    }
+    try {
+      const view = new WebContentsView({
+        webPreferences: {
+          preload,
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          partition: BOTS_VIEW_PARTITION,
+        },
+      });
+      botsView = view;
+      const handled = installBotsIpc(view.webContents.ipc, () => mainWindow);
+      view.webContents.ipc.on("universe:create-bot-via-chat", event => {
+        if (event.sender !== view.webContents) return;
+        mainWindow?.webContents.send("universe:create-bot-via-chat");
+      });
+      console.log(`[bots] registered ${handled} IPC channels on the view`);
+      // Added last so it paints above the page. The switcher below is added
+      // after it and therefore paints on top.
+      mainWindow.contentView.addChildView(view);
+      layoutBotsViews();
+      view.setVisible(false);
+      view.webContents.on("did-fail-load", (_e, code, desc) => {
+        console.log(`[bots] view load failed: ${code} ${desc}`);
+      });
+      view.webContents.on("console-message", (_e, level, message) => {
+        if (level >= 2) console.log(`[bots:view] ${message}`);
+      });
+      void view.webContents.loadURL(BOTS_ORIGIN).catch(err => {
+        console.log(`[bots] view load error: ${String(err)}`);
+      });
+
+      const bar = new WebContentsView({
+        webPreferences: {
+          preload: path.join(__dirname, "bots-switcher.cjs"),
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          transparent: true,
+        },
+      });
+      botsSwitcherView = bar;
+      mainWindow.contentView.addChildView(bar);
+      layoutBotsViews();
+      bar.setVisible(false);
+      void bar.webContents.loadURL(
+        "data:text/html;charset=utf-8," + encodeURIComponent(BOTS_SWITCHER_HTML));
+    } catch (err) {
+      disposeBotsViews();
+      console.log(`[bots] view creation failed: ${String(err)}`);
+    }
+  }
+
+  const BOTS_SWITCHER_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:transparent;overflow:hidden}
+  .zsb-ws-toggle{display:flex;gap:2px;padding:4px;border-radius:10px;
+    background:rgba(22,22,22,.86);border:1px solid #333;backdrop-filter:blur(8px);
+    font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .zsb-ws-toggle button{appearance:none;border:0;background:transparent;color:#cfcfcf;
+    padding:6px 12px;border-radius:7px;cursor:pointer;font:inherit}
+  .zsb-ws-toggle button:hover{background:rgba(255,255,255,.08)}
+  .zsb-ws-toggle button[data-active="1"]{background:#2b2b2b;color:#fff}
+  </style></head><body><nav class="zsb-ws-toggle">
+  <button data-surface="universe">Universe</button>
+  <button data-surface="studio">Studio</button>
+  <button data-surface="bots" data-active="1">Bots</button>
+  </nav><script>
+  for(const b of document.querySelectorAll('button')){
+    b.addEventListener('click',()=>window.botsSwitcher.switchTo(b.dataset.surface));
+  }
+  </script></body></html>`;
 
   function applyCsp(): void {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -763,6 +890,11 @@ function bootstrapDesktop(): void {
       console.log(`[fatal] did-fail-load code=${code} ${desc} ${url}`)
     );
 
+    // The bots views are native children: CSS cannot size them, so the host
+    // re-lays them out whenever the window changes size.
+    mainWindow.on("resize", () => layoutBotsViews());
+    createBotsViews();
+
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
       // the only outbound navigation allowed is real http(s) links handed to
       // the system browser. Scheme allowlist (audit 2026-09): model-rendered
@@ -812,6 +944,7 @@ function bootstrapDesktop(): void {
     }
 
     mainWindow.on("closed", () => {
+      disposeBotsViews();
       mainWindow = null;
     });
   }
@@ -905,38 +1038,47 @@ function bootstrapDesktop(): void {
     }
   });
 
-  /**
-   * The framed bots app asks its own desktop host for a few facts before it
-   * renders. Those channels belong to the bots Electron app; here they are
-   * answered with honest defaults so the shared UI can start. The real
-   * capabilities (browser, computer use) are registered by their own modules.
-   */
-  function installBotsIpcDefaults(): void {
-    const syncDefaults = [
-      "update:offered", "home:page", "home:updating",
-      "desktop-analytics:read", "desktop-language:read",
-      "screen:preview-intent",
-    ];
-    for (const channel of syncDefaults) {
-      if (!ipcMain.listenerCount(channel)) {
-        ipcMain.on(channel, event => { event.returnValue = false; });
-      }
-    }
-    const invokeDefaults = [
-      "desktop:skin", "desktop-language:set", "desktop-language:shown",
-      "desktop-notifications:seen", "updates-consent:set",
-    ];
-    for (const channel of invokeDefaults) {
-      if (!ipcMain.listenerCount(channel)) {
-        ipcMain.handle(channel, () => true);
-      }
-    }
-  }
+  // The Bots surface asks main to show/hide its native view and reports the
+  // DOMRect of its host so the view lines up with the page, including the
+  // custom title bar. Both calls are restricted to the main window.
+  ipcMain.on("universe:bots-view-visible", (event, visible: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
+    const on = visible === true;
+    botsView?.setVisible(on);
+    botsSwitcherView?.setVisible(on);
+    if (on) layoutBotsViews();
+  });
 
-  ipcMain.handle("universe:bots-preload", () =>
-    pathToFileURL(
-      path.join(resolveRepoRoot(), "universe-bots", "electron", "preload.cjs")
-    ).href);
+  ipcMain.on(
+    "universe:bots-view-bounds",
+    (
+      event,
+      bounds: { x: number; y: number; width: number; height: number },
+    ) => {
+      if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
+      const view = botsView;
+      const win = mainWindow;
+      if (!view || !win || win.isDestroyed()) return;
+      if (!bounds || typeof bounds.width !== "number" || typeof bounds.height !== "number") return;
+      const [contentWidth, contentHeight] = win.getContentSize();
+      view.setBounds({
+        x: Math.max(0, Math.min(contentWidth, Math.round(bounds.x))),
+        y: Math.max(0, Math.min(contentHeight, Math.round(bounds.y))),
+        width: Math.max(0, Math.min(contentWidth, Math.round(bounds.width))),
+        height: Math.max(0, Math.min(contentHeight, Math.round(bounds.height))),
+      });
+      if (botsSwitcherView)
+        botsSwitcherView.setBounds({ x: 10, y: Math.round(bounds.y) + 10, width: 248, height: 40 });
+    },
+  );
+
+  // The transparent switcher view is a separate renderer: one explicit IPC
+  // from it, forwarded to the page that owns wouter navigation.
+  ipcMain.on("universe:bots-switch", (event, surface: unknown) => {
+    if (event.sender !== botsSwitcherView?.webContents) return;
+    if (surface !== "universe" && surface !== "studio" && surface !== "bots") return;
+    mainWindow?.webContents.send("universe:navigate-surface", surface);
+  });
 
   ipcMain.handle("universe:bridge-info", () => ({
     port: BRIDGE_PORT,
@@ -1035,12 +1177,14 @@ function bootstrapDesktop(): void {
   app.on("before-quit", () => {
     appQuitting = true;
     if (healthTimer) clearInterval(healthTimer);
+    disposeBotsViews();
     stopBridge();
     stopUniverseBots();
   });
 
   app.on("window-all-closed", () => {
     appQuitting = true;
+    disposeBotsViews();
     stopBridge();
     stopUniverseBots();
     if (process.platform !== "darwin") app.quit();

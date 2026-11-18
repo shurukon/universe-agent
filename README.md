@@ -1,4 +1,4 @@
-﻿# Universe Agent
+# Universe Agent
 
 ```
     ·  ✦  ·     ·  ✦  ·     ·  ✦  ·
@@ -44,11 +44,11 @@ Keys are AES-encrypted at rest in the local secrets vault, are never logged, and
 
 `universe-bots/` is [OpenMausBot](https://github.com/milind-soni/OpenMausBot) (Apache-2.0), vendored in and renamed to **universe bots**: an open-source Grok-Bot alternative — a team of AI bots in a chat app, each a real agent (Claude, Codex, Grok, Muse Code or any ACP-speaking CLI) with its own model, its own computer and its own connected apps.
 
-It runs as its **own application**, not as a Universe feature:
+It runs as its **own application**, shown inside Universe as a real Electron view:
 
-- Its harness owns its own API and its own UI on `127.0.0.1:8799`, and it deliberately refuses to be framed (`frame-ancestors 'none'` — a hidden frame could act on a pair or sign-in page unseen). So the Universe **hands off** to it rather than embedding it; `GET /api/universe-bots` reports live whether that harness answers.
-- The desktop app starts it as a supervised child, next to the Universe bridge, and stops it on quit.
-- Its own state lives in `~/.openmausbot/` (bots, transcripts, per-thread event logs, keys) — separate from Universe's `~/.universe/`.
+- Its harness owns its own API and its own UI on `127.0.0.1:8799`. The desktop shows that UI in a `WebContentsView` with the app's own preload, so `window.ogb` and its desktop IPC surface work as they do in the standalone app. The `Universe | Studio | Bots` switcher floats above the view. `GET /api/universe-bots` reports live whether the harness answers.
+- The desktop supervises the harness process next to the Universe bridge, follows the port it actually binds, and stops it on quit. The harness keeps its own `frame-ancestors` policy; nothing is weakened for the embedding.
+- Its own state lives in `~/.universe/bots` (bots, transcripts, per-thread event logs, keys) — under the same home folder as Universe's other state.
 - It ships its own build and test gates (`pnpm typecheck`, `pnpm i18n:check`, `pnpm test`); see `universe-bots/AGENTS.md` and `universe-bots/DESIGN.md`.
 - The tree is vendored as a **sibling folder, not tracked source** (8,000+ files, its own upstream and its own release train — `universe-bots/` is in `.gitignore`). Fetch it with `pnpm install --frozen-lockfile && pnpm build && pnpm build:server` inside the folder; the rename to *universe bots* is applied by the scripts in `D:\universe\universe-bots\rename\`.
 

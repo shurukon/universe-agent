@@ -9,7 +9,7 @@
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.electron.json && eslint client/src",
     "format": "prettier --write .",
     "build": "npm run check && npm run build:electron && vite build",
-    "build:electron": "esbuild electron/main.ts --platform=node --packages=external --bundle --format=esm --outfile=dist-electron/main.mjs --banner:js=\"import { createRequire as __cr } from 'node:module'; import { fileURLToPath as __f2p } from 'node:url'; import * as __p from 'node:path'; const require = __cr(import.meta.url); const __dirname = __p.dirname(__f2p(import.meta.url));\" && esbuild electron/preload.ts --platform=node --packages=external --bundle --format=cjs --outfile=dist-electron/preload.js",
+    "build:electron": "esbuild electron/main.ts --platform=node --packages=external --bundle --format=esm --outfile=dist-electron/main.mjs --banner:js=\"import { createRequire as __cr } from 'node:module'; import { fileURLToPath as __f2p } from 'node:url'; import * as __p from 'node:path'; const require = __cr(import.meta.url); const __dirname = __p.dirname(__f2p(import.meta.url));\" && esbuild electron/preload.ts --platform=node --packages=external --bundle --format=cjs --outfile=dist-electron/preload.js && node -e \"require('fs').copyFileSync('electron/bots-switcher.cjs','dist-electron/bots-switcher.cjs')\"",
     "desktop": "concurrently -k --kill-others-on-fail \"npm:dev:client:desktop\" \"npm:electron:dev\"",
     "dev:client:desktop": "vite --port 5199 --strictPort",
     "electron:dev": "wait-on -t 60000 http://127.0.0.1:5199 && electron .",

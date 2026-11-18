@@ -23,9 +23,26 @@ const api = {
    *  (navigator.clipboard rejects in some webviews — user bug 2026-10-30) */
   copyText: (text: string) =>
     ipcRenderer.invoke("universe:copy-text", text) as Promise<boolean>,
-  /** The preload the framed universe bots app needs for its own desktop API. */
-  botsPreload: () =>
-    ipcRenderer.invoke("universe:bots-preload") as Promise<string>,
+  /** The Bots surface is a native view in main; these two calls keep its
+   *  bounds in sync with the DOM host and show/hide it on route changes. */
+  botsViewVisible: (visible: boolean) =>
+    ipcRenderer.send("universe:bots-view-visible", visible),
+  botsViewBounds: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ipcRenderer.send("universe:bots-view-bounds", bounds),
+  onNavigateSurface: (cb: (surface: string) => void) => {
+    const listener = (_e: unknown, surface: string) => cb(surface);
+    ipcRenderer.on("universe:navigate-surface", listener);
+    return () => ipcRenderer.removeListener("universe:navigate-surface", listener);
+  },
+  onCreateBotViaChat: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on("universe:create-bot-via-chat", listener);
+    return () => ipcRenderer.removeListener("universe:create-bot-via-chat", listener);
+  },
   bridgeInfo: () =>
     ipcRenderer.invoke("universe:bridge-info") as Promise<{
       port: string;
