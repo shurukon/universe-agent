@@ -49,6 +49,11 @@ release/
 .zcode/
 .kilo/
 
+# universe bots (OpenMausBot, vendored): an upstream product with its own
+# history, 8000+ files and its own release train. It lives here as a sibling
+# folder, not as tracked source — see the README's "universe bots" section.
+universe-bots/
+
 # Stale build output that should never ship
 dist-electron/main.js
 

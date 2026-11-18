@@ -543,7 +543,7 @@ body.side-off .sidebar {
 .app.sb-closed .sidebar { transform: translateX(-100%); }
 
 /* page loading */
-.page-loading { position: fixed; inset: 0; background: #161616; }
+.page-loading { position: fixed; inset: 0; background: var(--canvas); }
 
 /* chat-inner column + user-bubble compat (reference uses .u-text) */
 .chat-inner { display: flex; flex-direction: column; gap: 18px; }
@@ -653,7 +653,7 @@ body.side-off .sidebar {
 .t-menu { position: relative; flex-shrink: 0; }
 .chat-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
   min-width: 168px; display: flex; flex-direction: column; padding: 5px;
-  background: var(--raise3, #14171d); border: 1px solid var(--line);
+  background: var(--raise3, #2c2c2c); border: 1px solid var(--line);
   border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,5,.55); }
 .chat-menu button { display: flex; align-items: center; gap: 9px; width: 100%;
   padding: 7px 10px; background: none; border: none; color: var(--ink2);
@@ -678,7 +678,7 @@ body.side-off .sidebar {
 /* inline rename row (replaces window.prompt) */
 .rename-row { display: inline-flex; align-items: center; gap: 4px; }
 .rename-row input { width: 110px; padding: 3px 7px; font-size: 11.5px;
-  color: var(--ink); background: var(--raise2, #10131a);
+  color: var(--ink); background: var(--raise2, #202020);
   border: 1px solid var(--accent-cyan); border-radius: 7px; outline: none; }
 .rename-row button { display: inline-flex; align-items: center; padding: 3px;
   background: none; border: none; color: var(--ink2); cursor: pointer;
@@ -751,9 +751,9 @@ body.side-off .sidebar {
 .sb-add-btn {
   display: grid; place-items: center;
   width: 22px; height: 22px; border-radius: 6px;
-  border: 0; background: transparent; color: #5e5e5e; cursor: pointer;
+  border: 0; background: transparent; color: var(--ds-ink-4); cursor: pointer;
 }
-.sb-add-btn:hover { color: #d4d4d4; background: #363636; }
+.sb-add-btn:hover { color: var(--ds-ink); background: var(--ds-surface-2); }
 .sb-add-btn.small { width: 18px; height: 18px; flex-shrink: 0; }
 
 .proj-tree { overflow-y: auto; min-height: 0; } /* no flex:1 — hugs its rows so TASKS sits right under PROJECTS */
@@ -765,16 +765,16 @@ body.side-off .sidebar {
 .pn-row .pi-btn { flex: 1; min-width: 0; }
 .pn-chevron {
   display: grid; place-items: center; width: 14px; height: 14px;
-  color: #5e5e5e; flex-shrink: 0;
+  color: var(--ds-ink-4); flex-shrink: 0;
   transition: transform .12s ease;
 }
 .pn-chevron svg { transition: transform .12s ease; }
-.proj-node.active > .pn-row .pi-btn { background: #363636; color: #d4d4d4; }
-.task-list.nested { padding-left: 14px; border-left: 1px solid #414141; margin: 2px 0 4px 14px; }
+.proj-node.active > .pn-row .pi-btn { background: var(--ds-surface-2); color: var(--ds-ink); }
+.task-list.nested { padding-left: 14px; border-left: 1px solid var(--ds-line); margin: 2px 0 4px 14px; }
 .task-list.nested .task-item { padding: 4px 10px; font-size: 12px; }
 .sb-nested-empty {
   padding: 4px 10px 6px 24px;
-  font-size: 11px; color: #5e5e5e;
+  font-size: 11px; color: var(--ds-ink-4);
 }
 
 /* ---- ProjectBar: its own card above the composer bubble — same chat
@@ -790,17 +790,17 @@ body.side-off .sidebar {
   margin: 0 auto;
   background: #232323;
   border-radius: 10px;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   flex-shrink: 0;
 }
-.pb-name { font-size: 13px; color: #999999; }
+.pb-name { font-size: 13px; color: var(--ds-ink-3); }
 .pb-add {
   display: grid; place-items: center;
   width: 24px; height: 24px; border-radius: 6px;
-  border: 0; background: transparent; color: #5e5e5e; cursor: pointer;
+  border: 0; background: transparent; color: var(--ds-ink-4); cursor: pointer;
   flex-shrink: 0;
 }
-.pb-add:hover { color: #d4d4d4; background: #363636; }
+.pb-add:hover { color: var(--ds-ink); background: var(--ds-surface-2); }
 
 /* User annotation 2026-11: Delete top StatusStrip + right StatusCard + Group/Project org row + events hint */
 .status-strip, .zsp, .status-strip.fade { display: none !important; }

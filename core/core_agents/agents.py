@@ -411,6 +411,10 @@ class UniverseAgent(BaseAgent):
             # Universe Studio — the real tool surfaces behind the Studio
             # tool cards (AVE MCP, open-design daemon, Blender addon socket)
             "StudioAVE", "StudioDesign", "StudioBlender",
+            # universe bots — the second agent app inside this one: its bots
+            # each have an inbox, and the work lands there
+            "UniverseBotsList", "UniverseBotsDelegate", "UniverseBotsResult",
+            "UniverseBotsCreate",
         ]
 
     async def _execute(self, *, memory, llm_client, goal_text, classification, handoff, context, capability_gate, turn_id="", **_):

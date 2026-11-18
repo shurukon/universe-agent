@@ -16,16 +16,16 @@
  *     bubbles rounded-xl rounded-tr-xs bg 5%-white border 10%-white
  *     px-4 py-3, hover actions below-right; the assistant turn closes
  *     with the "Worked for …" hairline (border-b 50%)
- *   · canvas #161616, panels #2b2b2b, hairlines rgba(255,255,255,.1),
+ *   · canvas var(--canvas), panels var(--ds-surface-1), hairlines rgba(255,255,255,.1),
  *     ink 14px/21px ui-sans-serif. StatusStrip (.zsp) keeps its section.
  */
 
 .zt {
-  --zt-ink: #d4d4d4;
+  --zt-ink: var(--ds-ink);
   --zt-mut: #8a8a8a;
-  --zt-faint: #5e5e5e;
+  --zt-faint: var(--ds-ink-4);
   --zt-line: rgba(255, 255, 255, 0.1);
-  --zt-panel: #2b2b2b;
+  --zt-panel: var(--ds-surface-1);
   --zt-warn: rgba(255, 255, 255, 0.62);
   --zt-rail: rgba(255, 255, 255, 0.07);
   display: flex;
@@ -275,7 +275,7 @@
   animation: none;
 }
 .msg-user .m-bubble {
-  border: 1px solid var(--zt-line, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--zt-line, #383838);
   background: rgba(255, 255, 255, 0.05);
   /* ONE bubble (user annotation 2026-10-30) — the tail follows the TEXT
      direction via the logical corner + dir="auto" on the element:
@@ -285,7 +285,7 @@
   padding: 12px 16px;
   font-size: 14px;
   line-height: 21px;
-  color: var(--zt-ink, #d4d4d4);
+  color: var(--zt-ink, #f5f5f5);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -324,8 +324,8 @@
   cursor: pointer;
 }
 .msg-user .m-act:hover { background: rgba(255, 255, 255, 0.06); color: #e6e6e6; }
-.msg-user .m-ts { color: var(--zt-faint, #505050); font-size: 11px; }
-.msg-user .m-steered { color: var(--zt-faint, #505050); font-size: 11px; }
+.msg-user .m-ts { color: var(--zt-faint, #f5f5f591); font-size: 11px; }
+.msg-user .m-steered { color: var(--zt-faint, #f5f5f591); font-size: 11px; }
 
 /* ---- the assistant turn footer: "Worked for …" hairline ------------- */
 .zturn-foot {
@@ -361,7 +361,7 @@
   flex: 0 0 auto;
 }
 .zhist { cursor: pointer; }
-.zhist:hover { color: var(--zt-ink, #e8e8e8); }
+.zhist:hover { color: var(--zt-ink, #f5f5f5); }
 .zhist-panel {
   margin-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -400,15 +400,15 @@
   cursor: pointer;
 }
 .m-act2:hover { background: rgba(255, 255, 255, 0.06); color: #e6e6e6; }
-.m-act2.on { color: #d4d4d4; background: rgba(255, 255, 255, 0.05); }
+.m-act2.on { color: var(--ds-ink); background: rgba(255, 255, 255, 0.05); }
 .m-hooks-wrap { position: relative; display: inline-flex; }
 .m-hooks-card {
   position: absolute;
   bottom: 32px;
   left: 0;
   z-index: 30;
-  background: var(--zt-panel, #2b2b2b);
-  border: 1px solid var(--zt-line, rgba(255, 255, 255, 0.1));
+  background: var(--zt-panel, #0e0e0e);
+  border: 1px solid var(--zt-line, #383838);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 11.5px;
@@ -429,7 +429,7 @@
 
 /* the turn outcome state next to the actions, Universe subtlety */
 .zturn-state {
-  color: var(--zt-faint, #505050);
+  color: var(--zt-faint, #f5f5f591);
   font-size: 11px;
   margin-left: 4px;
   white-space: nowrap;
@@ -443,7 +443,7 @@
   min-width: 0;
   flex: 1;
   font-size: 12px;
-  color: var(--zt-ink, #d4d4d4);
+  color: var(--zt-ink, #f5f5f5);
   overflow: hidden;
 }
 .zsp-sec {
@@ -469,7 +469,7 @@
   background: transparent;
 }
 .zt-dot.st-in_progress.spin svg { animation: zt-spin 1s linear infinite; }
-.zt-dot.st-in_progress.spin { color: #d4d4d4; border-color: #4b4b4b; }
+.zt-dot.st-in_progress.spin { color: var(--ds-ink); border-color: var(--ds-line-strong); }
 .zt-dot.st-completed { color: #8a8a8a; }
 .zt-dot.st-failed {
   color: #ff6b5e;
@@ -481,7 +481,7 @@
   flex: 0 0 auto;
   font: inherit;
   font-size: 12px;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 9999px;

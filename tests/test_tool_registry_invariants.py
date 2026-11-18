@@ -22,7 +22,7 @@ def test_registry_equals_whitelist(fresh_home):
         "registered-but-unreachable tools: "
         f"{sorted(registered - whitelisted)}; whitelisted-but-missing: "
         f"{sorted(whitelisted - registered)}")
-    assert len(registered) == 121, f"tool count changed: {len(registered)}"
+    assert len(registered) == 125, f"tool count changed: {len(registered)}"
 
 
 def test_no_duplicate_registrations(fresh_home):

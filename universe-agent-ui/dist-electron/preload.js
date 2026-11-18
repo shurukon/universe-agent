@@ -23,6 +23,8 @@ var api = {
   /** Copy the message chips: the main process writes the OS clipboard
    *  (navigator.clipboard rejects in some webviews — user bug 2026-10-30) */
   copyText: (text) => import_electron.ipcRenderer.invoke("universe:copy-text", text),
+  /** The preload the framed universe bots app needs for its own desktop API. */
+  botsPreload: () => import_electron.ipcRenderer.invoke("universe:bots-preload"),
   bridgeInfo: () => import_electron.ipcRenderer.invoke("universe:bridge-info"),
   bridgeRestart: () => import_electron.ipcRenderer.invoke("universe:bridge-restart"),
   pickFolder: () => import_electron.ipcRenderer.invoke("universe:pick-folder"),

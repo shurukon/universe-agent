@@ -15,7 +15,7 @@
  * its toggles, search as an inline input. Sessions reach
  * /automations and the marketplace via the command palette.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
@@ -365,16 +365,11 @@ function TaskRow({
 export default function Sidebar({
   open,
   surface = "universe",
-  botsBody = null,
 }: {
   open: boolean;
   /** universe → rows navigate /chat; studio → the SAME rows navigate
-   *  /studio (Universe Studio is the same workspace, minus Automations);
-   *  bots → the switcher stays, the body swaps for the bots roster
-   *  (same width, same tokens — the ONLY surface that changes the column) */
-  surface?: "universe" | "studio" | "bots";
-  /** the roster node rendered when surface === "bots" */
-  botsBody?: ReactNode;
+   *  /studio (Universe Studio is the same workspace, minus Automations). */
+  surface?: "universe" | "studio";
 }) {
   const tasks = useChat(s => s.tasks);
   const activeProject = useChat(s => s.activeProject);
@@ -656,11 +651,6 @@ export default function Sidebar({
       <div className="zsb-ws-row">
         <WorkspaceSwitcher />
       </div>
-      {surface === "bots" ? (
-        <div className="zsb-body">
-          <div className="zsb-scroll">{botsBody}</div>
-        </div>
-      ) : (
       <>
       {/* --- the menu rows: New task / Search / Automations. Universe
           Studio drops the Automations row (it has no automations). --- */}
@@ -1181,7 +1171,6 @@ export default function Sidebar({
         </div>
       </div>
       </>
-      )}
 
       {/* --- footer: 32px avatar, 14px/600 name, gear (Universe's slot) --- */}
       <footer className="zsb-foot">

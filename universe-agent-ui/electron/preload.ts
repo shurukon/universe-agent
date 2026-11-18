@@ -23,6 +23,9 @@ const api = {
    *  (navigator.clipboard rejects in some webviews — user bug 2026-10-30) */
   copyText: (text: string) =>
     ipcRenderer.invoke("universe:copy-text", text) as Promise<boolean>,
+  /** The preload the framed universe bots app needs for its own desktop API. */
+  botsPreload: () =>
+    ipcRenderer.invoke("universe:bots-preload") as Promise<string>,
   bridgeInfo: () =>
     ipcRenderer.invoke("universe:bridge-info") as Promise<{
       port: string;

@@ -1,41 +1,50 @@
 /**
- * components/desktop/ModelPicker.tsx — the model chip inside the chat
- * composer (2026-09 redesign): model choice lives HERE, not in Settings.
+ * components/desktop/ModelPicker.tsx — engine + model selectors in the chat
+ * composer.
  *
- * One model for everything: the universe agent runs the conversation and the
- * subagents inherit the same routing — so the chip shows the connected
- * provider and its full live model list (searchable, scrollable), and
- * picking one re-routes every agent in a single call. Settings → Providers
- * still manages KEYS (connect/remove); the Settings → Subagents page is a
- * read-only roster.
+ * The fix: show ONLY engines that are actually connected, and when one is
+ * chosen show ONLY its models. Model names are display names (the part after
+ * the last slash, or the catalog label), never a full `provider/model/id`.
+ * Search filters both selectors by what the user can actually read.
+ *
+ * Form: the measured mp-* chip/popover of the Universe shell. Content: the
+ * one engine roster the harness owns, shared with universe bots.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useLocation } from "wouter";
 import { useChat } from "@/stores/chat";
-import { api } from "@/lib/api";
+import { api, type EngineInfo, type EngineRoster } from "@/lib/api";
+
+/** What a person should see: only the part after the last slash. Everything
+ *  before it is the provider/route and carries no meaning for the choice. */
+function displayName(model: { id: string; label?: string }): string {
+  const parts = model.id.split("/");
+  return parts[parts.length - 1] || model.id;
+}
+
+type Pane = "engine" | "model" | null;
 
 export default function ModelPicker() {
   const hasProvider = useChat(s => s.providerServing !== "none" && s.providerServing !== "loading");
-  const provider = useChat(s => s.activeProvider);
-  const model = useChat(s => s.activeModel);
-  const switchModel = useChat(s => s.switchModel);
   const [, navigate] = useLocation();
 
-  const [open, setOpen] = useState(false);
-  const [models, setModels] = useState<string[] | null>(null);
+  const [pane, setPane] = useState<Pane>(null);
+  const [roster, setRoster] = useState<EngineRoster | null>(null);
+  const [current, setCurrent] = useState<{
+    instanceId: string; model: string; effort?: string;
+  }>({ instanceId: "", model: "" });
   const [query, setQuery] = useState("");
-  const [switching, setSwitching] = useState(false);
+  const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // close on outside click / Esc — the popover owns focus while open
   useEffect(() => {
-    if (!open) return;
+    if (!pane) return;
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(e.target as Node)) setPane(null);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setPane(null);
     };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
@@ -43,127 +52,160 @@ export default function ModelPicker() {
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [pane]);
 
-  // the live model list: cached by api.providerModels (30s TTL + the
-  // bridge's own 2-min probe cache) so re-opening is instant
   useEffect(() => {
-    if (!open || !provider || models !== null) return;
-    api
-      .getProviderModels(provider)
-      .then(ms => setModels(ms))
-      .catch(() => setModels([]));
-  }, [open, provider, models]);
+    let active = true;
+    void Promise.all([
+      api.universeBotsInstances().catch(() => null),
+      api.universeBotsModel().catch(() => null),
+    ]).then(([engines, model]) => {
+      if (!active) return;
+      setRoster(engines);
+      if (model?.selection?.instanceId) setCurrent(model.selection);
+    });
+    return () => { active = false; };
+  }, [pane]);
 
-  const filtered = useMemo(() => {
-    const list = models ?? [];
+  const allEngines = useMemo(
+    () => Object.values(roster?.groups ?? {}).flat(),
+    [roster]);
+
+  // Only engines the harness reports as AVAIBLE are offered. This is the
+  // whole fix for "every provider shows, even ones I never connected".
+  const engines = useMemo(() => {
+    const connected = allEngines.filter(engine => engine.available);
     const q = query.trim().toLowerCase();
-    return q ? list.filter(m => m.toLowerCase().includes(q)) : list;
-  }, [models, query]);
+    return q
+      ? connected.filter(engine =>
+          engine.name.toLowerCase().includes(q) ||
+          engine.id.toLowerCase().includes(q))
+      : connected;
+  }, [allEngines, query]);
+
+  const engine = allEngines.find(item => item.id === current.instanceId) ?? null;
+  const models = useMemo(() => {
+    if (!engine) return [];
+    const q = query.trim().toLowerCase();
+    return q
+      ? engine.models.filter(model =>
+          displayName(model).toLowerCase().includes(q) ||
+          model.id.toLowerCase().includes(q))
+      : engine.models;
+  }, [engine, query]);
 
   if (!hasProvider) return null;
 
-  const pick = async (m: string) => {
-    if (m === model || switching) return;
-    setSwitching(true);
-    const ok = await switchModel(provider, m);
-    setSwitching(false);
-    if (ok) {
-      setOpen(false);
+  const save = async (instanceId: string, model: string, effort = "") => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.universeBotsSetModel({
+        instanceId, model, ...(effort ? { effort } : {}),
+      });
+      setCurrent({ instanceId, model, effort });
+      setPane(null);
       setQuery("");
+    } finally {
+      setBusy(false);
     }
   };
 
+  const open = (next: Pane) => {
+    setPane(pane === next ? null : next);
+    setQuery("");
+  };
+
+  const currentModel = engine?.models.find(model => model.id === current.model);
+
   return (
     <div className="mp-root" ref={rootRef}>
-      {/* The trigger shows the CURRENT model once one is picked — the
-          user must read it at a glance, not hover for it. Before any
-          pick it reads exactly like Universe's idle slot ("Manage models").
-          Long ids truncate; the full id + provider stay in the tooltip. */}
-      <button
-        className="mp-chip"
-        onClick={() => {
-          setOpen(o => !o);
-          if (!open) {
-            setQuery("");
-            setModels(null); // force a fresh list each open (cache is in api)
-          }
-        }}
-        title={
-          model
-            ? `Model: ${model} on ${provider} — click to change (applies to the main agent and every subagent)`
-            : "Pick the model"
-        }
-        aria-label="Change model"
-        aria-expanded={open}
-      >
-        <span className="mp-model">{model || "Manage models"}</span>
-        <ChevronDown size={14} strokeWidth={2} className={open ? "mp-chev open" : "mp-chev"} />
-      </button>
+      <div className="mp-selectors">
+        {/* provider selector — connected engines only */}
+        <button
+          className={`mp-chip mp-engine-chip${pane === "engine" ? " open" : ""}`}
+          onClick={() => open("engine")}
+          title="Choose a connected provider or CLI"
+          aria-label="Change provider"
+          aria-expanded={pane === "engine"}
+        >
+          <span className="mp-model">{engine?.name ?? "Provider"}</span>
+          <ChevronDown size={13} className={pane === "engine" ? "mp-chev open" : "mp-chev"} />
+        </button>
 
-      {open && (
-        <div className="mp-pop" role="listbox" aria-label="Models">
+        {/* model selector — only this provider's models, short display names */}
+        <button
+          className={`mp-chip${pane === "model" ? " open" : ""}`}
+          onClick={() => open("model")}
+          title={current.model
+            ? `Model: ${engine?.name ?? ""} / ${current.model} — click to change`
+            : "Pick a model"}
+          aria-label="Change model"
+          aria-expanded={pane === "model"}
+        >
+          <span className="mp-model">
+            {currentModel ? displayName(currentModel) : (current.model || "Model")}
+          </span>
+          <ChevronDown size={14} className={pane === "model" ? "mp-chev open" : "mp-chev"} />
+        </button>
+      </div>
+
+      {pane && (
+        <div className="mp-pop" role="listbox" aria-label={pane === "engine" ? "Providers" : "Models"}>
           <div className="mp-search">
             <Search size={12} strokeWidth={2} />
             <input
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder={`Search models...`}
-              aria-label="Search models"
-              // Enter picks the first match — the fastest path
+              placeholder={pane === "engine" ? "Search connected providers…" : `Search ${engine?.name ?? ""} models…`}
+              aria-label="Search"
               onKeyDown={e => {
-                if (e.key === "Enter" && filtered.length > 0) {
-                  e.preventDefault();
-                  void pick(filtered[0]);
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (pane === "engine" && engines[0]) {
+                  void save(engines[0].id, engines[0].default || engines[0].models[0]?.id || "");
+                } else if (pane === "model" && models[0] && engine) {
+                  void save(engine.id, models[0].id);
                 }
               }}
             />
-            {models === null && <span className="mp-loading">loading…</span>}
+            {roster === null && <span className="mp-loading">loading…</span>}
           </div>
           <div className="mp-list">
-            {(models ?? []).length === 0 && models !== null && (
-              <p className="mp-empty">
-                {provider} did not return a model list — it may forbid
-                listing. Type an id and press Enter.
-              </p>
-            )}
-            <div className="mp-rowhead">{provider}</div>
-            {filtered.map(m => (
+            {pane === "engine" && engines.map(item => (
               <button
-                key={m}
-                className={`mp-row${m === model ? " on" : ""}`}
+                key={item.id}
+                className={`mp-row${item.id === current.instanceId ? " on" : ""}`}
                 role="option"
-                aria-selected={m === model}
-                onClick={() => void pick(m)}
+                aria-selected={item.id === current.instanceId}
+                onClick={() => void save(item.id, item.default || item.models[0]?.id || "")}
               >
-                <span className="mp-rowname">{m}</span>
-                {m === model && <Check size={12} strokeWidth={2.4} />}
+                <span className="mp-rowname">{item.name}</span>
+                <span className="mp-meta">{item.models.length} models</span>
+                {item.id === current.instanceId && <Check size={12} strokeWidth={2.4} />}
               </button>
             ))}
-            {models !== null &&
-              query.trim() &&
-              !filtered.some(m => m.toLowerCase() === query.trim().toLowerCase()) && (
-                <button
-                  className="mp-row mp-freetext"
-                  onClick={() => void pick(query.trim())}
-                  title="Use this model id"
-                >
-                  <span className="mp-rowname">Use “{query.trim()}”</span>
-                </button>
-              )}
+            {pane === "model" && models.map(model => (
+              <button
+                key={model.id}
+                className={`mp-row${model.id === current.model ? " on" : ""}`}
+                role="option"
+                aria-selected={model.id === current.model}
+                onClick={() => engine && void save(engine.id, model.id)}
+              >
+                <span className="mp-rowname">{displayName(model)}</span>
+                {model.id === current.model && <Check size={12} strokeWidth={2.4} />}
+              </button>
+            ))}
+            {((pane === "engine" && engines.length === 0) ||
+              (pane === "model" && models.length === 0)) && (
+              <p className="mp-empty">Nothing matches “{query}”.</p>
+            )}
           </div>
-          {/* Universe's model menu ends with a manage-models row — the
-              provider/keys page in Universe's settings */}
-          <button
-            type="button"
-            className="mp-manage"
-            onClick={() => {
-              setOpen(false);
-              navigate("/settings");
-            }}
-            role="menuitem"
-          >
+          <button type="button" className="mp-manage"
+            onClick={() => { setPane(null); navigate("/settings"); }}
+            role="menuitem">
             <span>Manage models</span>
           </button>
         </div>

@@ -5,6 +5,7 @@
  * the banner can distinguish "backend down" from "network down".
  */
 import { useEffect } from 'react'
+import { toast } from 'sonner'
 import { useChat } from '@/stores/chat'
 import { useSetup } from '@/stores/setup'
 import { UniverseWs } from '@/lib/ws'
@@ -26,6 +27,15 @@ export default function UniverseConnector() {
 
     const ws = new UniverseWs({
       onEvent: (ev) => {
+        // A delegation into Universe Bots came back. It belongs to a turn
+        // that is usually long over, so the toast is how the person hears
+        // about it; the event itself still lands in that turn's timeline.
+        if (ev.type === 'universe_bots_result') {
+          toast(ev.text || ev.bot_name || 'Universe Bots finished', {
+            description: ev.bot_name || undefined,
+            duration: 20_000,
+          })
+        }
         useChat.getState().ingestEvent(ev)
         // rebroadcast for surfaces outside the chat store (the big universe
         // listens for comets/star flares; §6.3 of the desktop plan)

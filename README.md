@@ -1,4 +1,4 @@
-# Universe Agent
+﻿# Universe Agent
 
 ```
     ·  ✦  ·     ·  ✦  ·     ·  ✦  ·
@@ -9,9 +9,9 @@
 
 **Universe Agent** is a local-first AI agent platform delivered through three connected work surfaces that share one brain, one memory, and one permission gate:
 
-**Universe · Studio · Bots**
+**Universe · Studio · universe bots**
 
-An agent that plans, thinks, spawns worker missions, calls **121** real tools, and keeps every thought, plan, tool call, and artifact on disk — the session transcript (`transcript.jsonl`) is the single source of truth and is restored across restarts, so nothing disappears. It runs on any installed OpenAI-compatible provider (Meta's Muse models are one preset among many) — and **Muse Code** is supported as an optional external runtime for bots.
+An agent that plans, thinks, spawns worker missions, calls **121** real tools, and keeps every thought, plan, tool call, and artifact on disk — the session transcript (`transcript.jsonl`) is the single source of truth and is restored across restarts, so nothing disappears. It runs on any installed OpenAI-compatible provider (Meta's Muse models are one preset among many).
 
 ---
 
@@ -24,7 +24,7 @@ The chat and agent path runs through the standard OpenAI-compatible provider cha
 | Chat & agent reasoning | the provider's own models (e.g. Meta `muse-wonder-1.0` · `muse-spark-1.3`) | OpenAI-compatible `/v1/chat/completions` through the provider chain |
 | Key verification & model discovery | — | `GET /api/providers/{name}/models` (Settings → *Test Connection*) |
 | Voice → text (voice channel + mic) | local faster-whisper, or a cloud STT provider you pick in Settings → Voice | the bridge's transcription path (local ffmpeg converts mic audio to 16 kHz WAV) |
-| **Bots runtime (optional)** | **Muse Code** (`muse exec --json`, MSP events) | if Muse Code is installed, bots can run inside it; otherwise they run on Universe's own engine and say so in the transcript |
+| **universe bots** | the agent engines it drives — Claude, Codex, Grok, **Muse Code**, and any ACP-speaking CLI | its own harness serves its own API and UI on `127.0.0.1:8799`; the Universe desktop starts it and the bots surface hands off to it |
 
 ## Where do I put a provider key?
 
@@ -36,22 +36,26 @@ The chat and agent path runs through the standard OpenAI-compatible provider cha
 export MODEL_API_KEY="..."   # or META_API_KEY — both are honored (Meta only)
 ```
 
-**Scope, honestly:** `MODEL_API_KEY` / `META_API_KEY` are read by the Meta **media** endpoints (voice transcription) and are injected into the `muse` CLI for the optional Bots runtime. The **chat** chain does not read them: it resolves keys from the local vault (`providers/manager.py`), so a headless chat run still needs the provider + key installed once in Settings (or via the CLI provider wizard).
+**Scope, honestly:** `MODEL_API_KEY` / `META_API_KEY` are read by the Meta **media** endpoints (voice transcription). The **chat** chain does not read them: it resolves keys from the local vault (`providers/manager.py`), so a headless chat run still needs the provider + key installed once in Settings (or via the CLI provider wizard).
 
 Keys are AES-encrypted at rest in the local secrets vault, are never logged, and are never sent anywhere except the provider's own endpoint.
 
-## Muse Code — an optional bots runtime
+## universe bots — OpenMausBot, as its own app
 
-**Muse Code** is Meta's coding agent. Universe can use it as an external runtime, not an add-on:
+`universe-bots/` is [OpenMausBot](https://github.com/milind-soni/OpenMausBot) (Apache-2.0), vendored in and renamed to **universe bots**: an open-source Grok-Bot alternative — a team of AI bots in a chat app, each a real agent (Claude, Codex, Grok, Muse Code or any ACP-speaking CLI) with its own model, its own computer and its own connected apps.
 
-- In the **Bots** surface, if Muse Code is not connected, a **Install & connect Muse Code** button finds it on your system, installs it if missing, and connects it automatically.
-- When it is connected, each bot runs inside a real `muse exec --json` session in its own workspace; Universe digests the MSP/JSONL event stream so the bot's thinking, tool calls, and reports appear live in the timeline.
-- If Muse Code is not installed, bots fall back to Universe's own engine — and say so honestly in the transcript.
+It runs as its **own application**, not as a Universe feature:
+
+- Its harness owns its own API and its own UI on `127.0.0.1:8799`, and it deliberately refuses to be framed (`frame-ancestors 'none'` — a hidden frame could act on a pair or sign-in page unseen). So the Universe **hands off** to it rather than embedding it; `GET /api/universe-bots` reports live whether that harness answers.
+- The desktop app starts it as a supervised child, next to the Universe bridge, and stops it on quit.
+- Its own state lives in `~/.openmausbot/` (bots, transcripts, per-thread event logs, keys) — separate from Universe's `~/.universe/`.
+- It ships its own build and test gates (`pnpm typecheck`, `pnpm i18n:check`, `pnpm test`); see `universe-bots/AGENTS.md` and `universe-bots/DESIGN.md`.
+- The tree is vendored as a **sibling folder, not tracked source** (8,000+ files, its own upstream and its own release train — `universe-bots/` is in `.gitignore`). Fetch it with `pnpm install --frozen-lockfile && pnpm build && pnpm build:server` inside the folder; the rename to *universe bots* is applied by the scripts in `D:\universe\universe-bots\rename\`.
 
 ## The three work surfaces (one shell toggle)
 
 1. **Universe** — the chat/agent workspace. Session-based engine (`transcript.jsonl` as the single source of truth, forkable sessions, 200-step budget with 85 % compaction, background reflection), slash commands across three layers (CLI → bridge → UI), and a **fully persistent timeline**: thinking, plans, subagents, tool calls, and artifacts are written live to `~/.universe/rings/<turn_id>.jsonl` and restored across sessions — in all three surfaces.
-2. **Bots** — persistent task agents in the *one bot, one job* spirit: a live bot screen, the **TASK → SKILL → ROUTINE** lifecycle (run once → save the method as a skill → schedule it daily / every N minutes / cron with timezone), and an **approvals queue** (*Allow once / Always allow / Deny*) that gates risky steps — send · publish · purchase · push — with **no timers and no auto-approval**.
+2. **universe bots** — a team of AI bots in a chat app, running as its own app (see above): each bot is a real agent with its own model, its own computer and its own connected apps; work is handed to them like a colleague, and they pull the person in only when a step needs an approval.
 3. **Studio** — a creation workspace managed end-to-end by Universe (clone → install → launch → health-probe), with a **Connect Blender** button that detects Blender on your machine and connects it automatically:
    - **Video** — [AVE](https://github.com/shurukon/AVE), the author's own AI video editor, driven through its MCP server (41 tools).
    - **Design** — [open-design](https://github.com/nexu-io/open-design): websites & presentations, exported to HTML / PDF / JSX.
@@ -78,7 +82,7 @@ universe> /setup    # 6-step onboarding wizard
 universe> /goal "write a python function to read a csv file"
 ```
 
-**2 — Desktop app (Universe · Studio · Bots):**
+**2 — Desktop app (Universe · Studio · universe bots):**
 
 ```bash
 cd universe-agent-ui
@@ -95,7 +99,7 @@ A hands-free scripted demo of the same flow: `python walkthrough.py`.
 
 | Platform | Status |
 | --- | --- |
-| **Linux** | 🟡 **CI-verified** — the non-LLM pytest suite runs on `ubuntu-latest` (`.github/workflows/ci.yml`). The desktop app, Bots and Studio are not covered by an end-to-end Linux run. |
+| **Linux** | 🟡 **CI-verified** — the non-LLM pytest suite runs on `ubuntu-latest` (`.github/workflows/ci.yml`). The desktop app, universe bots and Studio are not covered by an end-to-end Linux run. |
 | **Windows** | 🟡 **CI-verified** — the same non-LLM suite runs on `windows-latest`; the computer-use broker (`universe_cua_helper.py`) is Windows-only by design and is exercised by `tests/test_computer_use.py`. |
 
 ## Architecture overview
@@ -107,7 +111,7 @@ A hands-free scripted demo of the same flow: `python walkthrough.py`.
 | `providers/` | LLM client + provider/key rotation; the provider catalog includes a **Meta** preset (`api.meta.ai/v1`, Muse Wonder / Muse Spark) alongside OpenAI, Anthropic, xAI and the free tiers. |
 | `connectors/` | **121** registered tools grouped by domain: browser, files, shell, git, data, … |
 | `universe_desktop_bridge/` | FastAPI bridge serving the Electron UI (bound to `127.0.0.1`). |
-| `universe-agent-ui/` | Electron + Vite desktop app: the Universe · Studio · Bots shell. |
+| `universe-agent-ui/` | Electron + Vite desktop app: the Universe · Studio · universe bots shell. |
 | `security/` | Capability gate, keyring-backed secrets (AES), append-only audit log. |
 | `channels/` | Remote surfaces (Telegram polling). |
 | `skill/`, `schema/`, `storage/` | Skill lifecycle, SQLite migrations, local persistence. |

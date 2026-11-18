@@ -25,6 +25,7 @@ import {
   screen,
   session,
   shell,
+  utilityProcess,
 } from "electron";
 import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import http from "node:http";
@@ -32,6 +33,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 // ---- constants ------------------------------------------------------------
 
@@ -41,6 +43,10 @@ const WS_URL = `ws://127.0.0.1:${BRIDGE_PORT}`;
 const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:5199";
 const HEALTH_POLL_MS = 30_000;
 const MAX_BRIDGE_ATTEMPTS = 5;
+/** universe bots gets fewer: it can refuse to start because another
+ *  OpenMausBot already holds its data directory, and a restart loop would
+ *  only spin. */
+const MAX_BOTS_ATTEMPTS = 3;
 
 /** Per-launch bearer token for the bridge. Every renderer HTTP/WS request
  *  must carry it; without it any local process or webpage could drive the
@@ -182,6 +188,13 @@ function bootstrapDesktop(): void {
           ...process.env,
           UNIVERSE_BRIDGE_PORT: BRIDGE_PORT,
           UNIVERSE_BRIDGE_TOKEN: BRIDGE_TOKEN,
+          // the bots surface asks the bridge where universe bots lives
+          UNIVERSE_BOTS_ORIGIN: BOTS_ORIGIN,
+          UNIVERSE_BOTS_DATA_DIR: path.join(os.homedir(), ".universe", "bots"),
+          // the bridge is this app's own process, so it carries the same
+          // capability the harness gives the desktop: the routes that change
+          // something refuse a request without it.
+          UNIVERSE_BOTS_OWNER_TOKEN: BOTS_OWNER_TOKEN,
           PYTHONUNBUFFERED: "1",
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -262,6 +275,318 @@ function bootstrapDesktop(): void {
     }
   }
 
+  // ---- universe bots supervision ---------------------------------------------
+  //
+  // universe bots is OpenMausBot, renamed, vendored at universe-bots/. It runs
+  // as its own harness on 127.0.0.1:8799 and the Bots surface frames it.
+  //
+  // The harness trusts only its own desktop parent: it refuses a browser that
+  // does not carry the owner capability, and it trusts only the origins it is
+  // told about. So this app does three things for it - it names itself as an
+  // allowed frame ancestor, it runs the harness as a UTILITY PROCESS (so the
+  // harness gets a parent message port), and it hands the harness the owner
+  // token and adds it to every request the embedded UI makes.
+  //
+  // A missing build is reported and never fatal - the rest of the Universe
+  // does not depend on it.
+
+  const BOTS_PORT = process.env.UNIVERSE_BOTS_PORT || "8799";
+  const BOTS_ORIGIN = `http://127.0.0.1:${BOTS_PORT}`;
+  /** The harness's owner capability: a browser without it is asked to pair. */
+  const BOTS_OWNER_HEADER = "X-UB-Desktop-Owner";
+  const BOTS_OWNER_TOKEN = crypto.randomBytes(32).toString("base64url");
+  let botsProc: ChildProcess | null = null;
+  let botsAttempts = 0;
+
+  /** The origin the renderer runs on, which is the frame the harness may be
+   *  shown in. */
+  function botsFrameAncestors(): string {
+    const dev = "http://127.0.0.1:5199";
+    const packaged = "app://universe";
+    return (
+      process.env.UNIVERSE_BOTS_FRAME_ANCESTORS ||
+      (app.isPackaged ? packaged : dev)
+    );
+  }
+
+  /**
+   * The framed universe bots app needs the same desktop bridge its own
+   * Electron window gives it: browser loading, computer use, file dialogs and
+   * the rest arrive as `window.ogb`. A cross-origin iframe never receives a
+   * preload from the parent's webPreferences, but a session-level frame
+   * preload runs in every frame — including this one.
+   */
+  function installBotsFramePreload(): void {
+    const file = path.join(
+      resolveRepoRoot(), "universe-bots", "electron", "preload.cjs");
+    if (!fs.existsSync(file)) {
+      console.log("[bots] no frame preload at " + file);
+      return;
+    }
+    try {
+      session.defaultSession.registerPreloadScript({
+        id: "universebots-frame-preload",
+        filePath: file,
+        type: "frame",
+      });
+    } catch (error) {
+      console.log(`[bots] frame preload failed: ${String(error)}`);
+    }
+  }
+
+  function installBotsOwnerHeader(): void {
+    // Chromium adds this to every request the session makes, on http and ws
+    // alike, so the embedded UI is the owner without a pairing code.
+    session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      const headers = { ...details.requestHeaders };
+      try {
+        const target = new URL(details.url);
+        if (
+          target.hostname === "127.0.0.1" &&
+          Number(target.port || 80) === Number(BOTS_PORT)
+        ) {
+          headers[BOTS_OWNER_HEADER] = BOTS_OWNER_TOKEN;
+        }
+      } catch {
+        /* not a URL we can place */
+      }
+      callback({ requestHeaders: headers });
+    });
+  }
+
+  /** The first-run hints of the universe bots app: the welcome flow, the
+   *  guided tour, and the launch notices. This desktop goes straight to the
+   *  app, so every one of them is recorded as seen. */
+  const UNIVERSE_BOTS_FIRST_RUN_HINTS = [
+    // the guided tour's steps
+    "tour.composer",
+    "tour.model",
+    "tour.computer",
+    "tour.computer-browser",
+    "tour.tools",
+    "tour.apps",
+    "tour.apps-panel",
+    "tour.automations",
+    "tour.automations-page",
+    "tour.done",
+    // the launch notices
+    "grok-move-2026-11",
+    "phone-app-update",
+    "simple-mode-prompt",
+    "whats-new-2026-11",
+    "updates-consent",
+    "two-places",
+    "product-hunt-launch-2026-10",
+    "cloud-trial-intro-v1",
+    "cloud-trial-notice",
+    "cloud-notice",
+    "modelgo-offer-2026-11",
+    "boat-credit-2026-11",
+    "announcement",
+    "github-star-dismissed",
+    // the cloud and the first chat
+    "onboarding-cloud-v1",
+    "cloud-setup-hidden",
+    "cloud-welcome-shown",
+    "cloud-welcome-bring",
+    "cloud-welcome-engine",
+    "cloud-welcome-files",
+    "cloud-welcome-done",
+    "met-chief-v1",
+    "pro-introduction-dismissed-v3",
+  ];
+
+  /** The universe bots welcome is a first-run screen. This desktop shows the
+   *  app straight away, so the record that marks it done is written into the
+   *  data dir before the harness starts; the harness reads it and goes to the
+   *  home screen. Nothing in the app's own code changes, and deleting that
+   *  one file brings the welcome back. */
+  function markUniverseBotsWelcomed(dataDir: string): void {
+    const file = path.join(dataDir, "config.json");
+    let config: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (parsed && typeof parsed === "object") {
+        config = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // No file yet, or one we cannot read: start from an empty record.
+    }
+    const record = (
+      config.onboarding && typeof config.onboarding === "object"
+        ? config.onboarding
+        : {}
+    ) as Record<string, unknown>;
+    const hints = Array.isArray(record.hintsSeen)
+      ? record.hintsSeen.filter((hint): hint is string => typeof hint === "string")
+      : [];
+    const merged = [...new Set([...hints, ...UNIVERSE_BOTS_FIRST_RUN_HINTS])];
+    if (record.completedAt && typeof record.version === "number" && record.version >= 1) {
+      if (merged.length === hints.length) return;
+    }
+    config.onboarding = {
+      ...record,
+      completedAt:
+        typeof record.completedAt === "string" && record.completedAt
+          ? record.completedAt
+          : new Date().toISOString(),
+      version: 1,
+      hintsSeen: merged,
+    };
+    fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  }
+
+  /** The app's own per-bot welcome card is a first-run screen too, and it
+   *  waits for the app-level welcome to be out of the way — so finishing
+   *  that one lets it through. The Universe goes straight to the app, so
+   *  the place's own Universe Bots is marked as welcomed as soon as the
+   *  harness answers. */
+  async function welcomeUniverseBots(): Promise<void> {
+    const headers = { [BOTS_OWNER_HEADER]: BOTS_OWNER_TOKEN };
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      try {
+        const response = await fetch(`${BOTS_ORIGIN}/api/bots`, { headers });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = (await response.json()) as {
+          bots?: Array<Record<string, unknown>>;
+        };
+        const bots = Array.isArray(body.bots) ? body.bots : [];
+        const chief = bots.find(
+          bot => bot.defaultBot !== undefined || bot.chiefOfStaff === true,
+        );
+        const target = chief ?? bots.find(bot => bot.welcomed !== true);
+        if (!target) return;
+        const id = String(target.id ?? "");
+        if (!id || target.welcomed === true) return;
+        await fetch(`${BOTS_ORIGIN}/api/bots/${id}`, {
+          method: "PATCH",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ welcomed: true }),
+        });
+        console.log(`[bots] welcomed ${String(target.name ?? id)}`);
+        return;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+
+  function startUniverseBots(): void {
+    if (botsProc && botsProc.exitCode === null) return;
+    const root = path.join(resolveRepoRoot(), "universe-bots");
+    const bundled = path.join(root, "dist-server", "index.js");
+    const source = path.join(root, "server", "universebots.ts");
+    let entry: string;
+    let args: string[];
+    if (fs.existsSync(bundled)) {
+      entry = bundled;
+      args = [];
+    } else if (fs.existsSync(source)) {
+      entry = source;
+      args = ["--experimental-strip-types", source, "serve"];
+    } else {
+      console.log("[bots] universe-bots is not built yet; skipping");
+      return;
+    }
+    botsAttempts += 1;
+    // The universe bots world lives under the user's home, in the same
+    // ".universe" folder the rest of Universe keeps its own state in.
+    const dataDir = path.join(os.homedir(), ".universe", "bots");
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      markUniverseBotsWelcomed(dataDir);
+      botsProc = utilityProcess.fork(entry, args, {
+        cwd: root,
+        env: {
+          ...process.env,
+          UB_PORT: BOTS_PORT,
+          UB_STATIC_DIR: path.join(root, "dist"),
+          UB_SKILLS_DIR: path.join(root, "skills"),
+          UB_DATA_DIR: dataDir,
+          UB_FRAME_ANCESTORS: botsFrameAncestors(),
+          UB_DESKTOP_PARENT: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      }) as unknown as ChildProcess;
+    } catch (err) {
+      console.log(`[bots] spawn failed: ${String(err)}`);
+      return;
+    }
+    installBotsFramePreload();
+    installBotsIpcDefaults();
+    installBotsOwnerHeader();
+    // The harness learns the owner capability over the parent message port.
+    try {
+      (
+        botsProc as unknown as { postMessage(message: unknown): void }
+      ).postMessage({
+        type: "universebots:desktop-mutation-token",
+        token: BOTS_OWNER_TOKEN,
+      });
+    } catch (err) {
+      console.log(`[bots] could not hand over the owner token: ${String(err)}`);
+    }
+    void welcomeUniverseBots();
+    botsProc.stdout?.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line) console.log(`[bots] ${line}`);
+    });
+    botsProc.stderr?.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line) console.log(`[bots:err] ${line}`);
+    });
+    botsProc.on("error", (err: Error) => {
+      botsProc = null;
+      console.log(`[bots] spawn error: ${err.message}`);
+    });
+    botsProc.on("exit", code => {
+      botsProc = null;
+      if (appQuitting) return;
+      if (botsAttempts >= MAX_BOTS_ATTEMPTS) {
+        console.log(`[bots] exited (code ${code}) after ${botsAttempts} attempts`);
+        return;
+      }
+      // Another OpenMausBot on this computer may already hold the data
+      // directory's lease, in which case the harness refuses to start and
+      // restarting it would only spin.
+      const delay = Math.min(500 * 2 ** (botsAttempts - 1), 10_000);
+      console.log(`[bots] exited code=${code}; restart #${botsAttempts} in ${delay}ms`);
+      setTimeout(() => {
+        if (!appQuitting) startUniverseBots();
+      }, delay);
+    });
+  }
+
+  function stopUniverseBots(): void {
+    const proc = botsProc;
+    botsProc = null;
+    if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
+    try {
+      if (process.platform === "win32" && proc.pid) {
+        spawnSync("taskkill", ["/pid", String(proc.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+      } else {
+        proc.kill("SIGTERM");
+        setTimeout(() => {
+          try {
+            if (proc.exitCode === null && proc.signalCode === null)
+              proc.kill("SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }, 3000).unref?.();
+      }
+    } catch {
+      try {
+        proc.kill();
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+
   function pollHealth(): void {
     // skip verdicts during the start/restart window: a poll racing the
     // spawn would flip a healthy-restarting bridge to "down".
@@ -294,6 +619,22 @@ function bootstrapDesktop(): void {
 
   function applyCsp(): void {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      // The universe bots app keeps its OWN policy. This handler rewrites
+      // every response the session sees, and the framed app's answers come
+      // through here too: replacing its policy with the Universe's would
+      // block its own scripts and its analytics.
+      try {
+        const target = new URL(details.url);
+        if (
+          target.hostname === "127.0.0.1" &&
+          Number(target.port || 80) === Number(BOTS_PORT)
+        ) {
+          callback({ responseHeaders: details.responseHeaders });
+          return;
+        }
+      } catch {
+        /* not a URL we can place */
+      }
       // Dev vs packaged CSP. @vitejs/plugin-react injects an INLINE preamble
       // into every JSX module for Fast Refresh; a strict `script-src 'self'`
       // blocks it, React throws "can't detect preamble" and the window goes
@@ -313,6 +654,10 @@ function bootstrapDesktop(): void {
               scriptSrc,
               "style-src 'self' 'unsafe-inline'",
               `connect-src 'self' ${BRIDGE_URL} ${WS_URL}`,
+              // The bots surface frames the universe bots app, which runs on
+              // its own loopback port. Without this the frame inherits
+              // default-src 'self' and is blocked before it loads.
+              `frame-src 'self' http://127.0.0.1:${BOTS_PORT}`,
               "img-src 'self' data: blob:",
               "font-src 'self' data:",
               "worker-src 'self' blob:",
@@ -560,6 +905,39 @@ function bootstrapDesktop(): void {
     }
   });
 
+  /**
+   * The framed bots app asks its own desktop host for a few facts before it
+   * renders. Those channels belong to the bots Electron app; here they are
+   * answered with honest defaults so the shared UI can start. The real
+   * capabilities (browser, computer use) are registered by their own modules.
+   */
+  function installBotsIpcDefaults(): void {
+    const syncDefaults = [
+      "update:offered", "home:page", "home:updating",
+      "desktop-analytics:read", "desktop-language:read",
+      "screen:preview-intent",
+    ];
+    for (const channel of syncDefaults) {
+      if (!ipcMain.listenerCount(channel)) {
+        ipcMain.on(channel, event => { event.returnValue = false; });
+      }
+    }
+    const invokeDefaults = [
+      "desktop:skin", "desktop-language:set", "desktop-language:shown",
+      "desktop-notifications:seen", "updates-consent:set",
+    ];
+    for (const channel of invokeDefaults) {
+      if (!ipcMain.listenerCount(channel)) {
+        ipcMain.handle(channel, () => true);
+      }
+    }
+  }
+
+  ipcMain.handle("universe:bots-preload", () =>
+    pathToFileURL(
+      path.join(resolveRepoRoot(), "universe-bots", "electron", "preload.cjs")
+    ).href);
+
   ipcMain.handle("universe:bridge-info", () => ({
     port: BRIDGE_PORT,
     url: BRIDGE_URL,
@@ -646,6 +1024,7 @@ function bootstrapDesktop(): void {
     applyCsp();
     registerAppProtocol();
     startBridge();
+    startUniverseBots();
     healthTimer = setInterval(pollHealth, HEALTH_POLL_MS);
     void createWindow();
     app.on("activate", () => {
@@ -657,11 +1036,13 @@ function bootstrapDesktop(): void {
     appQuitting = true;
     if (healthTimer) clearInterval(healthTimer);
     stopBridge();
+    stopUniverseBots();
   });
 
   app.on("window-all-closed", () => {
     appQuitting = true;
     stopBridge();
+    stopUniverseBots();
     if (process.platform !== "darwin") app.quit();
   });
 }

@@ -1,0 +1,106 @@
+/* universe-bots.css — the universe bots surface.
+   The framed app fills the surface; the workspace switcher floats over it. */
+
+.ubots-host {
+  position: fixed;
+  inset: var(--tb-h, 0px) 0 0 0;
+  background: var(--canvas);
+}
+
+.ubots-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--canvas);
+}
+
+.ubots-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--ink3, #f5f5f591);
+}
+
+/* The switcher floats over the framed app: the frame owns the whole surface,
+   and this is the one piece of Universe chrome that stays reachable. */
+.ubots-bar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 40;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(22, 22, 22, 0.86);
+  border: 1px solid var(--line1, #0e0e0e);
+  backdrop-filter: blur(8px);
+}
+
+.ubots-bar .zsb-ws-toggle {
+  margin: 0;
+}
+
+/* The result chip a delegation into universe bots leaves in the
+   conversation: who did it, how it ended, and the way to take the
+   conversation over into the bots surface. */
+.ubrc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(640px, 100%);
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--line1, #0e0e0e);
+  border-radius: 12px;
+  background: var(--ds-panel, #1a1a1a);
+  font-size: 12.5px;
+  color: var(--ink2, #f5f5f5a8);
+}
+
+.ubrc-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.ubrc-ok { color: #6fcf97; }
+.ubrc-bad { color: #eb5757; }
+.ubrc-warn { color: #f2c94c; }
+
+.ubrc-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--ink1, #e6e6e6);
+}
+
+.ubrc-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink3, #f5f5f591);
+}
+
+.ubrc-take {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--line1, #0e0e0e);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--ink2, #f5f5f5a8);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ubrc-take:hover {
+  border-color: var(--ds-accent, #1084fe);
+  color: var(--ds-accent, #1084fe);
+}

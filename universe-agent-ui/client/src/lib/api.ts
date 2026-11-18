@@ -376,6 +376,39 @@ export interface CatalogProvider {
   url_fields?: string[];
 }
 
+/** The shared engine roster, read from universe bots' harness. */
+export interface EngineModel {
+  id: string;
+  label: string;
+  contextWindow?: number | null;
+  provider?: string | null;
+  custom?: boolean;
+  variants: Array<{ id: string; label: string }>;
+  needsCliUpdate?: string | null;
+}
+
+export interface EngineInfo {
+  id: string;
+  name: string;
+  driver: string;
+  available: boolean;
+  reason: string;
+  default: string;
+  models: EngineModel[];
+  effortLevels: string[];
+  supportsVariants: boolean;
+  install: Record<string, unknown>;
+}
+
+export interface EngineRoster {
+  ok: boolean;
+  groups: { subscription: EngineInfo[]; api: EngineInfo[]; custom: EngineInfo[] };
+  engines?: unknown[];
+  count: number;
+  available: number;
+  error?: string;
+}
+
 /** one API key row of an installed provider — masked, never the secret */
 export interface ProviderKeyInfo {
   id: number;
@@ -499,6 +532,11 @@ export interface BridgeEvent {
   /** artifact_created (M2) — the produced file's absolute path + size */
   path?: string;
   bytes?: number;
+  /** universe_bots_result — a delegation into Universe Bots came back */
+  assignment_id?: string;
+  bot_name?: string;
+  bots_status?: string;
+  bots_result?: string;
   /** steer_received/steer_queued (M3) — the user's course-correction texts */
   messages?: string[];
   /** steer_received (M3) — the texts that triggered it */
@@ -614,23 +652,40 @@ export const api = {
       post_tokens?: number;
     }>(`/api/turn/${encodeURIComponent(turnId)}/compact`, { method: "POST" }),
 
-  botsStatus: () =>
+  /** The universe bots surface: its harness, framed in the Bots page. `up`
+   *  is a live probe, not a guess. */
+  universeBots: () =>
     request<{
-      runtime: "muse" | "muse_no_key" | "unavailable";
-      muse_installed: boolean;
-      muse_path: string;
-      meta_key: boolean;
-    }>("/api/bots/status"),
+      origin: string;
+      up: boolean;
+      app: string | null;
+      version: string | null;
+    }>("/api/universe-bots"),
 
-  /** Find Muse Code on this machine and connect it — installing it for real
-   *  when missing. `installed:false` carries the honest failure detail. */
-  botsMuseInstall: () =>
+  /** The one engine roster both apps use. The harness owns the ACP/CLI
+   *  drivers and their live availability; this reads its view of them. */
+  universeBotsInstances: (refresh = false) =>
+    request<EngineRoster>(
+      `/api/universe-bots/instances${refresh ? "?refresh=true" : ""}`),
+
+  /** The default model selection the two apps share. */
+  universeBotsModel: () =>
+    request<{ ok: boolean; selection: { instanceId: string; model: string; effort?: string; variant?: string } }>(
+      "/api/universe-bots/model"),
+
+  universeBotsSetModel: (selection: {
+    instanceId: string; model: string; effort?: string; variant?: string;
+  }) =>
+    request<{ ok: boolean; selection: typeof selection }>("/api/universe-bots/model", {
+      method: "POST", body: JSON.stringify(selection),
+    }),
+
+  /** Cheap availability map, for a settings page that only needs state. */
+  universeBotsInstancesStatus: () =>
     request<{
       ok: boolean;
-      installed: boolean;
-      muse_path: string;
-      detail: string;
-    }>("/api/bots/muse/install", { method: "POST" }),
+      engines: Record<string, { available: boolean; state: string; reason: string }>;
+    }>("/api/universe-bots/instances/status"),
 
   /** One real Blender viewport frame through the addon socket (Studio 3D
    *  Live view). 503 = the addon is unreachable — an honest error. */

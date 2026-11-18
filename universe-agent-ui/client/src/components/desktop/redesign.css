@@ -143,8 +143,8 @@
 .slash-pop {
   position: absolute; left: 10px; right: 10px; bottom: calc(100% + 8px);
   max-height: 264px; overflow-y: auto;
-  background: #2b2b2b;
-  border: 1px solid #4b4b4b;
+  background: var(--ds-surface-1);
+  border: 1px solid var(--ds-line-strong);
   border-radius: 10px;
   padding: 4px;
   z-index: 40;
@@ -155,12 +155,12 @@
   padding: 7px 10px; border-radius: 7px;
   border: 0; background: transparent;
   cursor: pointer; text-align: left;
-  color: #d4d4d4; font-size: 13px;
+  color: var(--ds-ink); font-size: 13px;
 }
 .slash-item .mono { font-weight: 500; flex-shrink: 0; }
-.slash-item.on { background: #363636; }
+.slash-item.on { background: var(--ds-surface-2); }
 .slash-desc {
-  color: #999999; font-size: 12px;
+  color: var(--ds-ink-3); font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .composer:focus-within {
@@ -510,8 +510,8 @@
 /* ---- Add (+) menu: file picker + hints (replaces the text input) ---- */
 .add-menu {
   padding: 4px;
-  background: #2b2b2b;
-  border: 1px solid #4b4b4b;
+  background: var(--ds-surface-1);
+  border: 1px solid var(--ds-line-strong);
   border-radius: 10px;
   margin-bottom: 8px;
 }
@@ -519,12 +519,12 @@
   display: flex; align-items: center; gap: 8px;
   width: 100%; padding: 7px 10px; border-radius: 7px;
   border: 0; background: transparent;
-  color: #d4d4d4; font-size: 13px; cursor: pointer; text-align: left;
+  color: var(--ds-ink); font-size: 13px; cursor: pointer; text-align: left;
 }
-.add-item:hover { background: #363636; }
+.add-item:hover { background: var(--ds-surface-2); }
 .add-hints {
   display: flex; flex-direction: column; gap: 3px;
-  padding: 8px 10px 6px; border-top: 1px solid #414141; margin-top: 2px;
+  padding: 8px 10px 6px; border-top: 1px solid var(--ds-line); margin-top: 2px;
 }
-.add-hints span { font-size: 11.5px; color: #5e5e5e; }
-.add-hints b { color: #999999; font-weight: 500; }
+.add-hints span { font-size: 11.5px; color: var(--ds-ink-4); }
+.add-hints b { color: var(--ds-ink-3); font-weight: 500; }

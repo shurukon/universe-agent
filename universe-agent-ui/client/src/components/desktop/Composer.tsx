@@ -373,7 +373,7 @@ export default function Composer({
     } else if (action === "agents") {
       // one agent: the roster endpoint is gone — Universe ships exactly one
       // agent ("universe"); the Agent tool spawns worker missions from it.
-      toast("universe — one agent, 121 tools; the Agent tool spawns worker missions");
+      toast("universe - one agent, 125 tools; the Agent tool spawns worker missions");
     } else if (action === "export") {
       void (async () => {
         try {

@@ -41,6 +41,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
+import EngineRosterSettings from "@/components/desktop/EngineRosterSettings";
 import {
   Anchor,
   ArrowLeft,
@@ -1249,6 +1250,8 @@ function ProvidersTab() {
   ];
 
   return (
+    <>
+      <EngineRosterSettings />
     <div className="sx-card">
       <h2>Providers</h2>
       <p className="sx-sub">
@@ -1616,6 +1619,7 @@ function ProvidersTab() {
         )}
       </div>
     </div>
+    </>
   );
 }
 

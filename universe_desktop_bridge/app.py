@@ -39,6 +39,10 @@ from typing import Any, AsyncIterator
 # behind the first probe. Warm it at module import so no request ever pays.
 import httpx  # noqa: F401  (used by _probe_provider / voice_check via local imports)
 
+from universe_desktop_bridge import universe_bots as _universe_bots
+from universe_desktop_bridge.tools_mcp import mcp_app as _universe_bots_mcp_app
+from universe_desktop_bridge.tools_mcp import mcp_lifespan as _universe_bots_mcp_lifespan
+
 from loguru import logger
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -311,8 +315,8 @@ class Runtime:
 
     P4 (audit 2026-11-10): the bridge owns ONE long-lived event loop, on a
     daemon thread, and every piece of background work the bridge starts —
-    the turn runner, the automations scheduler, the bots scheduler, the bus
-    consumer, the model pre-warm — runs on it. They used to be created on
+    the turn runner, the automations scheduler, the bus consumer, the model
+    pre-warm — runs on it. They used to be created on
     the *request's* loop, which is correct under uvicorn (one server loop
     for the process) and a landmine anywhere else: starlette's TestClient
     creates a fresh portal loop PER REQUEST, so the first request's portal
@@ -511,33 +515,37 @@ async def _run_subconscious() -> None:
         raise
 
 
-async def _run_bot_scheduler() -> None:
-    """The bots ROUTINE scheduler, parked forever on the bridge loop."""
-    from bots.scheduler import get_scheduler
-    get_scheduler().start()
-    try:
-        await asyncio.Event().wait()
-    except asyncio.CancelledError:
-        try:
-            await get_scheduler().stop()
-        except Exception:
-            pass
-        raise
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     _runtime.init()
+    # The engine proxy is a Universe provider too: refresh its key with this
+    # launch's bridge token before anything can try to route through it.
+    try:
+        _universe_bots.install_proxy_provider()
+    except Exception:
+        pass
     # Memory: the subconscious writer loop (L2/L3 consolidation) used to be
     # started ONLY by the CLI REPL, so the desktop app — the product's main
     # surface — never wrote a single episodic/semantic memory (audit
     # 2026-11-10, B2a). It runs on the bridge's own loop so a TestClient
     # request cannot kill it, and it yields to any active turn.
     _runtime.submit_bg(_run_subconscious())
-    # Universe Bots: the ROUTINE scheduler ticks bots.json every 30s and
-    # fires due daily/interval/cron schedules (TASK→SKILL→ROUTINE).
-    _runtime.submit_bg(_run_bot_scheduler())
-    yield
+    # The universe bots link: a delegation does not come back in the call
+    # that made it, so a watcher asks the harness every few seconds and
+    # reports what settled.
+    _bots_watcher = _universe_bots.ResultWatcher()
+    _bots_watcher.start()
+    # The tool MCP app is mounted inside this FastAPI app, so its own
+    # lifespan is never called. Enter it here: the streamable-HTTP manager
+    # needs its task group before it can answer a request.
+    try:
+        async with _universe_bots_mcp_lifespan():
+            yield
+    finally:
+        try:
+            await _bots_watcher.stop()
+        except Exception:
+            pass
     try:
         _runtime.stop_bg_loop()
     except Exception:
@@ -949,9 +957,7 @@ async def memory() -> dict[str, Any]:
 
 @app.get("/api/tools")
 async def tools_list() -> dict[str, Any]:
-    """The REAL Universe tool inventory — the same registry the turn engine
-    resolves every call through (connectors.builtin). The Bots page renders
-    it verbatim: bots carry literally these tools."""
+
     from connectors.builtin import get_registry
     reg = get_registry()
     out = []
@@ -3798,499 +3804,212 @@ async def terminal_ws(ws: WebSocket) -> None:
             pass
 
 
-# ==== Universe Bots · Studio · Meta media (P0 2026-11) ========================
+# ==== Universe bots · Studio · Meta media (P0 2026-11) ========================
 
-class BotCreate(BaseModel):
-    name: str
-    description: str
+@app.get("/api/universe-bots")
+async def universe_bots_status() -> dict[str, Any]:
+    """The universe bots surface: OpenMausBot, running as its own app.
 
+    Its harness owns its own API and its own UI on 127.0.0.1, and the
+    desktop frames that UI inside the Bots surface. This route reports
+    whether that harness answers, so the page can say so honestly.
+    """
+    import urllib.request
 
-class BotRunReq(BaseModel):
-    task: str
+    origin = os.environ.get(
+        "UNIVERSE_BOTS_ORIGIN", "http://127.0.0.1:8799").rstrip("/")
 
-
-class SkillReq(BaseModel):
-    name: str
-
-
-class ScheduleReq(BaseModel):
-    kind: str = Field(pattern="^(none|daily|interval|cron)$")
-    time: str | None = None
-    expr: str | None = None
-    tz: str | None = None
-
-
-class ApprovalDecisionReq(BaseModel):
-    decision: str = Field(pattern="^(allow_once|always_allow|deny)$")
-
-
-# ---- Bots → Universe engine: the SAME orchestrator, tools and timeline -----
-
-def _bot_container(bot: dict[str, Any]) -> str:
-    """The bot's task container in the goals table — one per bot, owner
-    'bot:<id>' so it stays out of the Universe sidebar (GET /api/sessions
-    filters it) while every bot message turn streams through the normal
-    event bus and renders in the SAME Universe timeline.
-
-    The goals table here is only a CONTAINER key (kind='task') for the
-    bridge's own bookkeeping — the goal engine that wrote turn rows into it
-    is deleted; the turn itself lives in the session transcript."""
-    from bots import store
-    known = store.get_bot(bot["id"]) or {}
-    cid = known.get("container_id")
-    if cid:
-        row = get_storage().query_one("SELECT id FROM goals WHERE id=?;", (cid,))
-        if row is not None:
-            return cid
-    from core.agent.base_agent import new_id
-    cid = new_id("task-")
-    with get_storage().transaction() as conn:
-        conn.execute(
-            "INSERT INTO goals(id, text, status, kind, title, project_id, "
-            "created_at, owner_session_id) VALUES(?,?,?,?,?,?,?,?);",
-            (cid, "", "active", "task", f"Bot · {bot['name']}", "",
-             time.time(), f"bot:{bot['id']}"))
-    store.update_bot(bot["id"], container_id=cid)
-    return cid
-
-
-async def _dispatch_bot_turn(
-    bot: dict[str, Any], task: str
-) -> tuple[str, "asyncio.Task[None] | None", Any]:
-    """Run a bot task as a REAL turn through the SAME orchestrator chat
-    uses — the bot gets literally the same tools (file, shell, browser,
-    web, the Studio tools…) and its events stream on the same bus, so the
-    SAME Universe timeline renders its run. Returns (turn_id, task,
-    reply_getter)."""
-    _runtime.init()
-    if _runtime.orchestrator is None:
-        raise RuntimeError(
-            f"backend not initialized: {_runtime.init_error or 'unknown'}")
-    from bots import store
-    from core.agent.base_agent import new_id
-    bot_id = bot["id"]
-    container_id = _bot_container(bot)
-    text = (
-        f"You are '{bot['name']}', the user's persistent Universe bot — a "
-        "teammate they hand work to in the Bots surface. Job definition "
-        f"(role, sources and boundaries): {bot['description'] or task}\n"
-        f"Your own workspace (your computer) is {bot.get('workspace') or ''} "
-        "— keep your files there and always use ABSOLUTE paths under it "
-        "when writing or reading files. The shared computer every bot reads "
-        f"and writes is {store.shared_dir()}. Complete the task end-to-end "
-        "with your tools and report the outcome concisely."
-        f"\n\n---\nTask: {task}"
-    )
-    turn_id = new_id("turn-")
-    gt = get_state().create(turn_id, text, task_id=container_id)
-    get_state().prune_expired()
-    gt.set_status("running")
-    # the /api/sessions running-task sweep must never surface bot turns as
-    # standalone sidebar rows (their container lives in the Bots surface)
-    gt._bot_owned = True  # type: ignore[attr-defined]
-    orch = _runtime.orchestrator
-    bus = get_event_bus()
-
-    async def _run() -> None:
+    def probe() -> dict[str, Any]:
         try:
-            with bus.bind_goal(turn_id):
-                emit("turn_started", turn_id=turn_id, text=text[:2000],
-                     language="en", task_id=container_id)
-                summary = await orch.run_turn(
-                    text, language="en", turn_id=turn_id,
-                    owner_session_id=f"bot:{bot_id}",
-                    project_id="",
-                    project_root=bot.get("workspace") or "",
-                    session_id=container_id,
-                )
-                gt.result = summary
-                if isinstance(summary, dict) and not summary.get("success", True):
-                    gt.set_status("failed")
-                    gt.error = str(summary.get("error", ""))[:500]
-                else:
-                    gt.set_status("completed")
-                    gt.error = ""
-        except asyncio.CancelledError:
-            gt.set_status("cancelled")
-            raise
-        except Exception as exc:  # noqa: BLE001 — keep bookkeeping truthful
-            gt.set_status("failed")
-            if not gt.error:
-                gt.error = str(exc)[:500]
+            with urllib.request.urlopen(f"{origin}/api/health", timeout=2.0) as response:
+                body = json.loads(response.read().decode("utf-8", "replace") or "{}")
+            return {"up": True, "app": body.get("app"), "version": body.get("version")}
+        except Exception:
+            return {"up": False, "app": None, "version": None}
 
-    gt.task = asyncio.create_task(_run())
+    return {"origin": origin, **await asyncio.to_thread(probe)}
 
-    async def _reply() -> str:
-        s = gt.result
-        if isinstance(s, dict):
-            return str(s.get("reply") or "")
-        if isinstance(s, str):
-            return s
+
+@app.get("/api/universe-bots/agents")
+async def universe_bots_agents() -> dict[str, Any]:
+    """The bots in universe bots, and the delegations this app still has open.
+
+    The roster comes from the harness itself, over the same standing
+    capability the tools use, so what is listed here is exactly what work
+    can be handed to.
+    """
+    roster = await _universe_bots.list_agents()
+    if not roster.get("ok"):
+        return {"ok": False, "error": roster.get("error", "universe bots is not reachable"),
+                "bots": [], "outstanding": []}
+    rows = await _universe_bots.outstanding()
+    return {
+        "ok": True,
+        "speaker": roster.get("speaker", ""),
+        "bots": roster.get("bots", []),
+        "outstanding": [
+            {
+                "id": str(row.get("id") or ""),
+                "botId": str(row.get("botId") or ""),
+                "botName": str(row.get("botName") or ""),
+                "status": str(row.get("status") or ""),
+                "text": _universe_bots.describe(row),
+            }
+            for row in rows
+        ],
+    }
+
+
+@app.get("/api/universe-bots/instances")
+async def universe_bots_instances(refresh: bool = False) -> dict[str, Any]:
+    """Every engine the two apps can now use, exactly as the harness sees it.
+
+    The harness owns the ACP/CLI drivers and the live availability of each
+    one. This route is how Universe's settings and model picker read that
+    roster instead of keeping a second, stale copy of it.
+    """
+    rows = await _universe_bots.instances(refresh=refresh)
+    if not rows:
+        return {"ok": False, "error": "universe bots is not reachable",
+                "groups": {"subscription": [], "api": [], "custom": []},
+                "count": 0, "available": 0}
+    result = _universe_bots.engine_groups(rows)
+    result["engines"] = rows
+    return result
+
+
+@app.get("/api/universe-bots/v1/models")
+async def universe_bots_openai_models() -> dict[str, Any]:
+    """The engine roster, so the proxy can be installed as a provider."""
+    return await _universe_bots.openai_models()
+
+
+@app.post("/api/universe-bots/v1/chat/completions")
+async def universe_bots_chat_completions(req: dict[str, Any]) -> dict[str, Any]:
+    """An OpenAI-compatible completion backed by any universe bots engine.
+
+    The harness owns the engine; this route translates the shape Universe's
+    provider client already speaks. The engine has Universe's tools mounted
+    as MCP, so it does the work and returns the finished answer.
+    """
+    messages = req.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(400, {"code": "bad_messages", "message": "messages are required"})
+
+    def text_of(message: Any) -> str:
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            return "\n".join(
+                str(part.get("text") or "") for part in content
+                if isinstance(part, dict) and part.get("type") == "text").strip()
         return ""
 
-    return turn_id, gt.task, _reply
+    parts = [text_of(message) for message in messages]
+    prompt = "\n\n".join(part for part in parts if part)
+    if not prompt:
+        raise HTTPException(400, {"code": "empty_prompt", "message": "no text in the messages"})
+
+    model_id = str(req.get("model") or "").strip()
+    current = await _universe_bots.default_model()
+    selection = current.get("selection") if current.get("ok") else {}
+    instance_id = str(selection.get("instanceId") or "")
+    model = str(selection.get("model") or "")
+    if "/" in model_id:
+        candidate, rest = model_id.split("/", 1)
+        if rest:
+            instance_id, model = candidate, rest
+    elif model_id:
+        model = model_id
+    if not instance_id or not model:
+        raise HTTPException(400, {"code": "no_model",
+                                  "message": "choose an engine and a model in Model settings"})
+
+    effort = str(selection.get("effort") or "")
+    variant = str(selection.get("variant") or "")
+    answer = await _universe_bots.run_engine_turn(
+        prompt, instance_id, model, effort, variant,
+        wait_seconds=180)
+    if not answer.get("ok"):
+        raise HTTPException(502, {"code": "engine_failed",
+                                  "message": str(answer.get("error") or "no answer")})
+
+    return {
+        "id": f"chatcmpl-{answer.get('threadId', '')}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model_id or f"{instance_id}/{model}",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": answer["text"]},
+            "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
 
 
-@app.get("/api/bots")
-async def bots_list() -> dict[str, Any]:
-    from bots import store
-    return {"bots": store.list_bots()}
+@app.post("/api/universe-bots/proxy/setup")
+async def universe_bots_proxy_setup() -> dict[str, Any]:
+    """Mount Universe's tools in the harness and prepare the engine proxy bot."""
+    mcp = await _universe_bots.register_tools_mcp()
+    if not mcp.get("ok"):
+        return {"ok": False, "step": "mcp", "error": mcp.get("error")}
+    selection = await _universe_bots.default_model()
+    bot = await _universe_bots.ensure_proxy_bot(
+        selection.get("selection") if selection.get("ok") else None)
+    if not bot.get("ok"):
+        return {"ok": False, "step": "bot", "error": bot.get("error")}
+    api = await _universe_bots.enable_proxy_api(bot["botId"])
+    if not api.get("ok"):
+        return {"ok": False, "step": "api", "error": api.get("error")}
+    return {"ok": True, "mcp": mcp.get("url"), "botId": bot["botId"],
+            "apiReady": True}
 
 
-@app.get("/api/bots/status")
-async def bots_status() -> dict[str, Any]:
-    """Bots runtime availability, read live: is the real Muse Code CLI on
-    PATH, and is a Meta API key configured? The Bots page shows Connect to
-    Muse Code instead of Add bot when the runtime is absent — never a
-    fake ready state."""
-
-    muse_bin = _find_muse()
-    meta_key = False
-    try:
-        from providers.meta_media import resolve_key
-        key = await resolve_key(None)
-        meta_key = bool(key)
-    except Exception:
-        meta_key = False
-    if muse_bin and meta_key:
-        runtime = "muse"
-    elif muse_bin:
-        runtime = "muse_no_key"
-    else:
-        runtime = "unavailable"
-    return {"runtime": runtime,
-            "muse_installed": bool(muse_bin),
-            "muse_path": muse_bin or "",
-            "meta_key": meta_key}
+@app.get("/api/universe-bots/model")
+async def universe_bots_model() -> dict[str, Any]:
+    """The default model selection shared with universe bots."""
+    return await _universe_bots.default_model()
 
 
-_MUSE_COMMON_PATHS = (
-    "/usr/local/bin/muse", "/usr/bin/muse", "/opt/homebrew/bin/muse",
-    "/home/linuxbrew/.linuxbrew/bin/muse",
-)
+@app.post("/api/universe-bots/model")
+async def universe_bots_set_model(req: dict[str, Any]) -> dict[str, Any]:
+    """Set the model new bots start with, on the harness's own validation."""
+    instance = str(req.get("instanceId") or "").strip()
+    model = str(req.get("model") or "").strip()
+    if not instance or not model:
+        raise HTTPException(400, {"code": "bad_model",
+                                  "message": "instanceId and model are required"})
+    result = await _universe_bots.set_default_model(
+        instance, model,
+        str(req.get("effort") or ""), str(req.get("variant") or ""))
+    if not result.get("ok"):
+        raise HTTPException(502, {"code": "bots_refused",
+                                  "message": str(result.get("error") or "refused")})
+    return result
 
 
-def _find_muse() -> str:
-    """ONE real search for the Muse Code CLI: PATH first, then the versioned
-    install the official installer writes (~/.local/bin/muse-bin-<ver>), then
-    the standard POSIX locations.
-
-    Audit 2026-11-10: this search existed TWICE — a nested copy in the
-    /api/bots/status handler (PATH + the versioned glob) and a module-level
-    one (PATH + POSIX paths only). A versioned install was therefore reported
-    as "installed" by the status route and "not found" by the install route,
-    which then re-ran the installer over an existing install."""
-    import glob as _glob
-    import shutil
-    hit = shutil.which("muse")
-    if hit:
-        return hit
-    hits = sorted(
-        _glob.glob(str(Path.home() / ".local" / "bin" / "muse-bin-*"))
-    )
-    if hits:
-        return hits[-1]
-    for cand in _MUSE_COMMON_PATHS:
-        if Path(cand).is_file() and os.access(cand, os.X_OK):
-            return cand
-    return ""
+@app.get("/api/universe-bots/instances/status")
+async def universe_bots_instances_status() -> dict[str, Any]:
+    """Just the availability map — cheap enough to poll from a settings page."""
+    rows = await _universe_bots.instances()
+    return {"ok": bool(rows), "engines": {
+        str(row.get("instanceId") or ""): {
+            "available": (row.get("snapshot") or {}).get("state") == "available",
+            "state": str((row.get("snapshot") or {}).get("state") or ""),
+            "reason": str((row.get("snapshot") or {}).get("reason") or ""),
+        }
+        for row in rows
+    }}
 
 
-@app.post("/api/bots/muse/install")
-async def bots_muse_install() -> dict[str, Any]:
-    """Find Muse Code on this machine and connect it — install it for real
-    (the official installer) when it is missing. The honest result comes
-    back either way; the caller re-probes /api/bots/status."""
-    hit = _find_muse()
-    if hit:
-        return {"ok": True, "installed": True, "muse_path": hit,
-                "detail": "Muse Code found and connected."}
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            "curl -fsSL https://dev.meta.ai/install.sh | bash",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT)
-        try:
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=420)
-        except asyncio.TimeoutError:
-            proc.kill()
-            return {"ok": False, "installed": False, "muse_path": "",
-                    "detail": "install timed out after 420s — try it "
-                              "manually in a terminal"}
-        tail = out.decode(errors="replace").splitlines()[-4:]
-    except Exception as exc:  # noqa: BLE001 — honest failure to the UI
-        return {"ok": False, "installed": False, "muse_path": "",
-                "detail": f"installer could not run: {exc}"}
-    # the fresh binary may sit on a PATH this process has not reloaded
-    hit = _find_muse()
-    if not hit:
-        for cand in ("~/.local/bin/muse", "~/bin/muse", "~/.cargo/bin/muse"):
-            p = Path(cand).expanduser()
-            if p.is_file() and os.access(str(p), os.X_OK):
-                hit = str(p)
-                break
-    return {"ok": bool(hit), "installed": bool(hit), "muse_path": hit or "",
-            "detail": ("Muse Code installed and connected."
-                       if hit else
-                       "installer finished but the muse binary was not "
-                       "found — " + " | ".join(tail))}
-
-
-@app.post("/api/bots")
-async def bots_create(req: BotCreate) -> dict[str, Any]:
-    from bots import store
-    if not req.name.strip():
-        raise HTTPException(400, {"code": "bad_bot", "message": "name required"})
-    return {"bot": store.create_bot(req.name, req.description)}
-
-
-class BotDraftReq(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
-
-
-@app.post("/api/bots/draft")
-async def bots_draft(req: BotDraftReq) -> dict[str, Any]:
-    """Create-via-chat: the user describes the bot in one message and the
-    configured engine drafts the name + job definition for a REAL bot row
-    (nothing is invented here — with no provider reachable the raw text
-    becomes the description and the honest fallback name is used)."""
-    text = req.text.strip()
-    fallback_name = " ".join(text.split()[:4])[:40] or "New bot"
-    try:
-        from providers.client import get_llm_client
-        client = get_llm_client()
-        res = await client.complete(agent="bots", messages=[
-            {"role": "system", "content": (
-                "Turn the user's description of an assistant/bot into a "
-                "compact draft. Reply with ONLY one JSON object: "
-                "{\"name\": a short product-quality bot name (1-3 words), "
-                "\"description\": one or two sentences defining the bot's "
-                "ongoing job, its sources and its boundaries}. No markdown, "
-                "no commentary.")},
-            {"role": "user", "content": text},
-        ])
-        raw = res if isinstance(res, str) else str(
-            getattr(res, "text", "") or getattr(res, "content", "") or "")
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            data = json.loads(m.group(0))
-            name = str(data.get("name") or "").strip()[:80]
-            desc = str(data.get("description") or "").strip()[:2000]
-            if name:
-                return {"name": name, "description": desc or text,
-                        "engine": True}
-    except Exception:  # noqa: BLE001 — drafting degrades to the raw text
-        pass
-    return {"name": fallback_name, "description": text, "engine": False}
-
-
-@app.get("/api/bots/{bot_id}")
-async def bots_get(bot_id: str) -> dict[str, Any]:
-    from bots import store
-    bot = store.get_bot(bot_id)
-    if bot is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    return {**bot, "transcript": bot.get("transcript", [])}
-
-
-@app.delete("/api/bots/{bot_id}")
-async def bots_delete(bot_id: str) -> dict[str, Any]:
-    from bots import store
-    if not store.delete_bot(bot_id):
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    return {"ok": True}
-
-
-@app.post("/api/bots/{bot_id}/run")
-async def bots_run(bot_id: str, req: BotRunReq) -> dict[str, Any]:
-    from bots import runtime, store
-    if store.get_bot(bot_id) is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    if not req.task.strip():
-        raise HTTPException(400, {"code": "bad_task",
-                                  "message": "task text required"})
-    # wire the engine dispatcher (idempotent): with no Meta key the bot's
-    # task runs as a REAL turn through the same orchestrator as chat —
-    # the same tools, the same event bus, the same timeline
-    runtime.set_dispatcher(_dispatch_bot_turn)
-    result = await runtime.request_run(bot_id, req.task.strip())
-    return {"ok": True, **result}
-
-
-@app.post("/api/bots/{bot_id}/stop")
-async def bots_stop(bot_id: str) -> dict[str, Any]:
-    from bots import runtime, store
-    if store.get_bot(bot_id) is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    stopped = runtime.stop_run(bot_id)
-    if stopped:
-        return {"ok": True}
-    raise HTTPException(409, {"code": "not_running",
-                              "message": "bot has no active run"})
-
-
-@app.post("/api/bots/{bot_id}/skill")
-async def bots_save_skill(bot_id: str, req: SkillReq) -> dict[str, Any]:
-    """TASK→SKILL: capture the last run's task + outcome as a method."""
-    from bots import store
-    bot = store.get_bot(bot_id)
-    if bot is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    last_user = next((e["text"] for e in reversed(bot.get("transcript", []))
-                      if e.get("role") == "user"), "")
-    last_bot = next((e["text"] for e in reversed(bot.get("transcript", []))
-                     if e.get("role") == "bot"), "")
-    method = (f"# {req.name.strip().lstrip('/')}\n\n"
-              f"Job: {bot['description']}\n\n"
-              f"## Task\n{last_user}\n\n"
-              f"## Method / outcome\n{last_bot or '(no recorded output yet)'}\n")
-    skill = store.add_skill(bot_id, req.name, method)
-    store.append_event(bot_id, "system",
-                       f"Method saved as skill {skill} (run it on a schedule "
-                       "to complete TASK → SKILL → ROUTINE).")
-    return {"ok": True, "skill": skill}
-
-
-@app.post("/api/bots/{bot_id}/schedule")
-async def bots_schedule(bot_id: str, req: ScheduleReq) -> dict[str, Any]:
-    from bots import store
-    bot = store.get_bot(bot_id)
-    if bot is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    sched: dict[str, Any] = {"kind": req.kind}
-    if req.kind == "daily":
-        if not req.time:
-            raise HTTPException(400, {"code": "bad_schedule",
-                                      "message": "daily needs a time (HH:MM)"})
-        sched["time"] = req.time
-        sched["tz"] = req.tz or "UTC"
-    elif req.kind == "interval":
-        if not req.expr:
-            raise HTTPException(400, {"code": "bad_schedule",
-                                      "message": "interval needs minutes"})
-        sched["expr"] = req.expr
-    elif req.kind == "cron":
-        if not req.expr:
-            raise HTTPException(400, {"code": "bad_schedule",
-                                      "message": "cron needs an expression"})
-        from scheduling.cron import CronSchedule
-        try:
-            CronSchedule(req.expr)
-        except Exception as exc:
-            raise HTTPException(400, {"code": "bad_cron",
-                                      "message": f"invalid cron: {exc}"})
-        sched["expr"] = req.expr
-    bot = store.update_bot(bot_id, schedule=sched)
-    assert bot is not None
-    return {"bot": bot}
-
-
-@app.post("/api/bots/{bot_id}/schedule/clear")
-async def bots_schedule_clear(bot_id: str) -> dict[str, Any]:
-    from bots import store
-    bot = store.get_bot(bot_id)
-    if bot is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    bot = store.update_bot(bot_id, schedule={"kind": "none"})
-    assert bot is not None
-    return {"bot": bot}
-
-
-@app.get("/api/bots/{bot_id}/approvals")
-async def bots_approvals(bot_id: str) -> dict[str, Any]:
-    from bots import store
-    if store.get_bot(bot_id) is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    return {"approvals": store.list_approvals(bot_id)}
-
-
-@app.post("/api/bots/{bot_id}/approvals/{approval_id}")
-async def bots_approve(bot_id: str, approval_id: str,
-                       req: ApprovalDecisionReq) -> dict[str, Any]:
-    from bots import store
-    if store.get_bot(bot_id) is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    res = store.resolve_approval(bot_id, approval_id, req.decision)
-    if res is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    store.append_event(bot_id, "system",
-                       f"Approval {req.decision.replace('_', ' ')}.")
-    return {"ok": True}
-
-
-@app.get("/api/bots/{bot_id}/screen")
-async def bots_screen(bot_id: str) -> Response:
-    """The bot's screen panel: a live, honest view of the bot's machine —
-    status, latest transcript and the workspace file tree. Rendered for the
-    iframe (GET + ?token= auth is enforced by the bridge middleware)."""
-    import html as _html
-    from bots import store
-    bot = store.get_bot(bot_id)
-    if bot is None:
-        raise HTTPException(404, {"code": "bot_not_found",
-                                  "message": f"bot {bot_id!r} unknown"})
-    events = bot.get("transcript", [])[-14:]
-    rows = "".join(
-        f"<div class='ev {e.get('role')}'><span class='role'>"
-        f"{_html.escape(str(e.get('role')))}</span>"
-        f"<span class='txt'>{_html.escape(str(e.get('text'))[:300])}</span></div>"
-        for e in events)
-    ws_files = 0
-    try:
-        root = Path(bot.get("workspace") or "/nonexistent")
-        ws_files = sum(1 for p in root.rglob("*") if p.is_file())
-    except Exception:
-        ws_files = 0
-    shared = store.shared_files()
-    shared_rows = "".join(
-        f"<div class='file'>{_html.escape(f['name'])}" 
-        f"<span class='sz'>{f['size']}B</span></div>"
-        for f in shared[:12]) or \
-        "<div class='file'>(shared computer is empty — bots write here)</div>"
-    doc = f"""<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="refresh" content="5">
-<title>{_html.escape(bot['name'])} — screen</title>
-<style>
- body{{background:#161616;color:#d4d4d4;font:13px/1.5 ui-monospace,monospace;margin:0;padding:14px}}
- h1{{font-size:15px;color:#d4d4d4;margin:0 0 4px}}
- .sub{{color:#999999;margin-bottom:10px}}
- .ev{{display:flex;gap:8px;padding:5px 8px;margin:3px 0;border:1px solid #414141;border-radius:8px;background:#2b2b2b}}
- .ev.user{{border-color:#4b4b4b;background:#363636}}
- .role{{color:#999999;min-width:52px;text-transform:uppercase;font-size:10px;padding-top:2px}}
- .txt{{flex:1;word-break:break-word}}
- .badge{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #414141;margin-right:6px;color:#d4d4d4}}
- h2{{font-size:11px;color:#999999;text-transform:uppercase;letter-spacing:.12em;margin:14px 0 4px}}
- .file{{display:flex;justify-content:space-between;gap:8px;padding:3px 8px;margin:2px 0;border-radius:6px;background:#2b2b2b}}
- .sz{{color:#999999}}
-</style></head><body>
-<h1>{_html.escape(bot['name'])} <span class="badge">{bot['status']}</span>
-<span class="badge">workspace: {ws_files} files</span></h1>
-<div class="sub">{_html.escape(bot['description'][:200])}</div>
-{rows}
-<h2>Shared computer</h2>
-{shared_rows}
-</body></html>"""
-    return Response(content=doc, media_type="text/html")
-
-
-# ---- Bots shared computer + Studio MCP driving + SAM 3.1 --------------------
-
-@app.get("/api/bots/shared/files")
-async def bots_shared_files() -> dict[str, Any]:
-    """The bots' shared computer: one directory every bot reads/writes —
-    the files substrate bot collaboration flows through."""
-    from bots import store
-    return {"path": str(store.shared_dir()), "files": store.shared_files()}
+# Universe's tools, as an MCP server the harness can mount on a driver turn.
+# The bridge's auth middleware also covers this mounted app, so the caller
+# must present the bridge token — which the harness carries in its headers.
+app.mount("/api/universe-bots/mcp", _universe_bots_mcp_app())
 
 
 # ---- Meta media (real Meta Model API endpoints) -----------------------------

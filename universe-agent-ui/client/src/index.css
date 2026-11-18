@@ -1,9 +1,10 @@
-/* Universe Desktop — Universe identity (2026-10 restyle).
-   Neutral-gray dark canvas, measured Universe palette (docs/shell-tokens.md):
-   #161616 canvas, #2b2b2b panels, #262626 top bar, #d4d4d4 ink,
-   #2b5c9b dark logo-blue accent, faint-white attention tone. design-system.css is
-   the canonical token source; the values below seed the shadcn layer
-   before it loads. */
+/* Universe Desktop — one colour system for both apps (2026-11-16).
+   The palette below is universe bots' Midnight skin, the one the bots app
+   ships with: universe-bots/src/styles.css declares these same tokens with
+   these same values, so the bots app framed inside the Universe reads as
+   part of it rather than beside it.
+
+   Only colours move. No size, radius, spacing, motion or icon changed. */
 @import "tailwindcss";
 @import "tw-animate-css";
 /* streamdown (agent-reply markdown) ships Tailwind classes inside its dist
@@ -21,48 +22,142 @@
 }
 
 :root {
-  /* shadcn surface tokens remapped onto the measured Universe identity */
+  /* ---- the universe bots palette (Midnight) -------------------------------
+     The tokens universe bots uses, under its own names. Every surface in
+     this app reads them, so a colour written once is the same colour in
+     both apps. */
+  --color-app: #121212;
+  --color-panel: #0e0e0e;
+  --color-raised: #202020;
+  --color-raised-hover: #2c2c2c;
+  --color-composer: #1f1f1f;
+  --color-composer-ring: #2a2a2a;
+  --color-menu: #1f1f1f;
+  --color-menu-hover: #f5f5f50f;
+  --color-menu-active: #f5f5f514;
+  --color-card: #1f1f1f;
+  --color-inset: #1b1b1b;
+  --color-control: #282828;
+  --color-hairline: #383838;
+  --color-edge: color-mix(in srgb, var(--color-ink) 8%, transparent);
+  --color-frame: var(--color-panel);
+  --color-ink: #f5f5f5;
+  --color-ink-secondary: #f5f5f5a8;
+  --color-ink-tertiary: #f5f5f591;
+  --color-accent: #1084fe;
+  --color-accent-border: #459ffe;
+  --color-focus: #459ffe;
+  --color-accent-text: #7fc0ff;
+  --color-bubble-user: #5a5a5a;
+  --color-success: #38d591;
+  --color-danger: #ff5667;
+  --color-warning: #ff9800;
+  --color-accent-ink: #ffffff;
+  --color-danger-ink: #ffffff;
+  --color-bubble-user-ink: #f5f5f5;
+  --color-success-ink: #072114;
+  --color-scrollbar: #3d3d3d;
+
+  /* -- Universe: structure (on the universe bots palette) ------------------ */
+  --canvas: var(--color-app);            /* app canvas (Universe chat background) */
+  --ds-surface-1: var(--color-panel);     /* panels: sidebar, cards, composer, menus */
+  --ds-surface-2: var(--color-raised);    /* raised: hover lifts, selected rows */
+  --ds-surface-3: var(--color-raised-hover); /* highest: active pills, active menu items */
+  --ds-line: var(--color-hairline);       /* hairline borders */
+  --ds-line-strong: var(--color-composer-ring); /* emphasized borders (composer card) */
+  --ds-ink: var(--color-ink);             /* primary text */
+  --ds-ink-2: var(--color-ink-secondary); /* secondary text */
+  --ds-ink-3: var(--color-ink-tertiary);  /* muted: ages, counters, icons */
+  /* the quietest step of Universe's four-step ink ramp, in the bots' ink */
+  --ds-ink-4: color-mix(in srgb, var(--color-ink) 37%, transparent);
+
+  /* -- Universe: accents ----------------------------------------------------- */
+  --ds-accent: var(--color-accent);       /* the bots' accent blue */
+  --ds-accent-hover: var(--color-accent-border);
+  --ds-accent-dim: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  --ds-teal: var(--ds-accent);             /* legacy alias */
+  --ds-teal-hover: var(--ds-accent-hover);
+  --ds-teal-dim: var(--ds-accent-dim);
+
+  /* -- semantic mapping (the legacy variables now point here) ----------- */
+  --bg: var(--canvas);
+  --panel: var(--ds-surface-1);
+  --panel-solid: var(--ds-surface-1);
+  --raise2: var(--ds-surface-2);
+  --raise3: var(--ds-surface-3);
+  --line: var(--ds-line);
+  --line-soft: var(--ds-surface-2);
+  --ink: var(--ds-ink);
+  --ink2: var(--ds-ink-2);
+  --ink3: var(--ds-ink-3);
+  --accent-cyan: var(--ds-accent);        /* legacy name -> the bots' accent */
+  --accent2: var(--ds-accent-hover);
+  --accent-dim: var(--ds-accent-dim);
+  --faint: var(--color-ink-tertiary);     /* the attention tone: quiet ink */
+  --success: var(--color-success);
+  /* Universe keeps its discipline: the attention tone is faint white, never
+     orange (the bots' own warning colour stays in the shared palette for
+     whoever wants it). */
+  --warning: var(--faint);
+  --amber: var(--faint);
+  --rose: var(--color-danger);
+  --teal: var(--color-success);           /* legacy success-teal */
+
+  /* -- shape & type (Linear discipline) --------------------------------- */
+  --ds-r-sm: 6px;
+  --ds-r-md: 8px;
+  --ds-r-lg: 10px;
+  --ds-ui-fs: 13px;
+  --ds-sidebar-w: 264px;
+
+  /* -- motion ----------------------------------------------------------- */
+  --ds-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ds-dur: 0.14s;
+
+  /* shadcn surface tokens, on that palette. These twelve names belong to
+     Tailwind (@theme inline above), so they carry the palette values that
+     have no free --color-* name of their own. */
   --radius: 0.625rem;
-  --background: #161616;           /* Universe canvas */
-  --foreground: #d4d4d4;           /* Universe primary ink */
-  --card: #2b2b2b;                  /* Universe panels/cards */
-  --card-foreground: #d4d4d4;
-  --popover: #2b2b2b;
-  --popover-foreground: #d4d4d4;
-  --primary: #ffffff;               /* white primary (Universe CTA) */
-  --primary-foreground: #161616;
-  --secondary: #363636;            /* selected/hover rows */
-  --secondary-foreground: #d4d4d4;
-  --muted: #363636;
-  --muted-foreground: #999999;
-  --accent: #363636;
-  --accent-foreground: #d4d4d4;
-  --destructive: #e5484d;
-  --destructive-foreground: #fff;
-  --border: #414141;               /* Universe hairline */
+  --background: var(--color-app);
+  --foreground: var(--color-ink);
+  --card: var(--color-card);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-menu);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-ink);       /* the bots' ink-filled primary button */
+  --primary-foreground: var(--color-app);
+  --secondary: var(--color-raised);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-raised);
+  --muted-foreground: var(--color-ink-tertiary);
+  --accent: var(--color-control);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-danger);
+  --destructive-foreground: var(--color-danger-ink);
+  --border: var(--color-hairline);
   --input: rgba(255,255,255,.12);
-  --ring: #2b5c9b;                 /* Universe logo-blue focus ring */
+  --ring: var(--color-focus);
 
   /* universe reference tokens — overridden by design-system.css; kept so the
      chat shell renders correctly before/without that file */
-  --void: #161616;
-  --panel: #2b2b2b;
-  --panel-solid: #2b2b2b;
-  --raise: #363636;
-  --raise2: #363636;
-  --raise3: #414141;
-  --line: #414141;
-  --line-soft: #363636;
-  --ink: #d4d4d4;
-  --ink2: #d4d4d4;
-  --ink3: #999999;
-  --accent-cyan: #2b5c9b;          /* legacy name — now the Universe logo-blue accent */
-  --accent2: #3a72b8;
-  --accent-dim: rgba(43, 92, 155, .16);
-  --blue: #6cb5e8;
-  --teal: #2b5c9b;                  /* success = Universe logo blue */
-  --amber: rgba(255, 255, 255, 0.62); /* attention = faint white (orange retired) */
-  --rose: #e5484d;                  /* stopped / failure */
+  --void: var(--color-app);
+  --panel: var(--color-panel);
+  --panel-solid: var(--color-panel);
+  --raise: var(--color-raised);
+  --raise2: var(--color-raised);
+  --raise3: var(--color-raised-hover);
+  --line: var(--color-hairline);
+  --line-soft: var(--color-raised);
+  --ink: var(--color-ink);
+  --ink2: var(--color-ink-secondary);
+  --ink3: var(--color-ink-tertiary);
+  --accent-cyan: var(--color-accent);
+  --accent2: var(--color-accent-border);
+  --accent-dim: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  --blue: var(--color-accent-text);
+  --teal: var(--color-success);
+  --amber: var(--faint);
+  --rose: var(--color-danger);
 
   --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --serif: 'Source Serif 4', Georgia, serif;
@@ -83,7 +178,7 @@
   }
   button, input, textarea { font: inherit; }
   button:not(:disabled), [role="button"]:not([aria-disabled="true"]), [type="button"]:not(:disabled), [type="submit"]:not(:disabled) { cursor: pointer; }
-  ::selection { background: rgba(43, 92, 155, .35); }
+  ::selection { background: color-mix(in srgb, var(--ds-accent) 35%, transparent); }
   :focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
 }
 

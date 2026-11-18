@@ -2,11 +2,14 @@
  * components/desktop/universe-parity.css â€” the measured Universe surface, pinned
  * to the values sampled off the live app (2026-10-10, 1616x876 capture).
  *
- * Measured Universe tokens (see docs/shell-tokens.md):
- *   canvas        #161616   panel #2b2b2b   raised #363636   line #414141
- *   ink #d4d4d4   ink-dim #999999   ink-faint #5e5e5e
- *   accent #2b5c9b (dark logo blue)   permission = faint white
- *   sidebar 264px   row 30px   topbar 38px   card radius 10px
+ * Universe tokens (see docs/shell-tokens.md) now read the universe bots
+ * palette (2026-11-16) - the same tokens the bots app declares, so the two
+ * read as one product:
+ *   canvas --color-app   panel --color-panel   raised --color-raised
+ *   line --color-hairline   ink --color-ink   ink-dim --color-ink-tertiary
+ *   accent --color-accent   permission = the quiet ink
+ * The measured scale is untouched: sidebar 264px, row 30px, topbar 38px,
+ * card radius 10px.
  *
  * This file is imported LAST (main.tsx, after shell.css) so it wins the
  * cascade against the earlier design-system / desktop / redesign passes
@@ -16,18 +19,18 @@
 
 :root {
   /* --- Universe surface scale (sampled, not invented) --- */
-  --zc-canvas: #161616;
-  --zc-panel: #2b2b2b;
-  --zc-raised: #363636;
-  --zc-active: #414141;
-  --zc-line: #414141;
-  --zc-ink: #d4d4d4;
-  --zc-ink-dim: #999999;
-  --zc-ink-faint: #5e5e5e;
-  --zc-accent: #2b5c9b;
-  --zc-accent-ink: #0d1f14;
-  --zc-permission: rgba(255, 255, 255, 0.62);
-  --zc-danger: #e5484d;
+  --zc-canvas: var(--color-app);
+  --zc-panel: var(--color-panel);
+  --zc-raised: var(--color-raised);
+  --zc-active: var(--color-raised-hover);
+  --zc-line: var(--color-hairline);
+  --zc-ink: var(--color-ink);
+  --zc-ink-dim: var(--color-ink-tertiary);
+  --zc-ink-faint: color-mix(in srgb, var(--color-ink) 37%, transparent);
+  --zc-accent: var(--color-accent);
+  --zc-accent-ink: var(--color-accent-ink);
+  --zc-permission: var(--color-ink-tertiary);
+  --zc-danger: var(--color-danger);
 
   --zc-r-sm: 5px;
   --zc-r-md: 8px;
@@ -335,7 +338,7 @@
   font-size: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
-.plan-pill:hover { background: #2b2b2b; color: var(--zc-ink); }
+.plan-pill:hover { background: var(--ds-surface-1); color: var(--zc-ink); }
 /* while the status strip is pinned above the timeline the pill clears it */
 .plan-pill.at-strip { top: 96px; }
 .plan-pill svg { flex: none; color: var(--zc-ink-faint); }
@@ -515,7 +518,7 @@
 .t-time {
   margin-left: auto;
   font-size: 11px;
-  color: #5e5e5e;
+  color: var(--ds-ink-4);
   flex-shrink: 0;
 }
 
@@ -571,7 +574,7 @@
 }
 
 /* =====================================================================
-   COMPOSER â€” panel card (#2b2b2b) with a #414141 hairline on the canvas,
+   COMPOSER â€” panel card (var(--ds-surface-1)) with a var(--ds-line) hairline on the canvas,
    10px radius. Chips are 12px with a 16px icon gutter; the permission
    chip is the orange one, the model chip is plain.
    ===================================================================== */
@@ -639,7 +642,7 @@
   flex: none;
 }
 .cx-chip.comp.on .comp-dot {
-  background: var(--zc-accent, #2b5c9b);
+  background: var(--zc-accent, #1084fe);
   opacity: 1;
   transform: none;
 }
@@ -746,8 +749,8 @@
 
 /* =====================================================================
    PROJECT BAR â€” its OWN card, sitting just above the composer bubble:
-   same column width, its own prominent #4b4b4b border and a darker
-   recessed tone (#1f1f1f, one step below the composer's #2b2b2b) so the
+   same column width, its own prominent var(--ds-line-strong) border and a darker
+   recessed tone (#1f1f1f, one step below the composer's var(--ds-surface-1)) so the
    two never read as one merged mass. Deliberately NOT z-indexed: the
    composer creates its own stacking context (backdrop-filter), so any
    positive z-index here would trap the composer's popovers (the model
@@ -757,7 +760,7 @@
 .project-bar {
   position: relative; /* anchors .pb-menu; z-index stays auto on purpose */
   background: #1f1f1f !important;
-  border: 1px solid #4b4b4b;
+  border: 1px solid var(--ds-line-strong);
   border-radius: var(--zc-r-lg);
   min-height: 40px;
   padding: 0 8px 0 6px;
@@ -1066,16 +1069,16 @@
      reference at x 264..268. */
   background: linear-gradient(
     90deg,
-    var(--zc-panel, #2b2b2b) 0 calc(var(--zc-sb-w, 264px) + 4px),
+    var(--zc-panel, #0e0e0e) 0 calc(var(--zc-sb-w, 264px) + 4px),
     #2e2e2e calc(var(--zc-sb-w, 264px) + 4px) calc(var(--zc-sb-w, 264px) + 5px),
-    var(--zc-canvas, #161616) calc(var(--zc-sb-w, 264px) + 5px) 100%
+    var(--zc-canvas, #121212) calc(var(--zc-sb-w, 264px) + 5px) 100%
   );
   -webkit-app-region: drag;
 }
 /* sidebar collapsed: the whole strip falls back to canvas so no darker
    block floats over the main column */
 .zt-strip.sb-off {
-  background: var(--zc-canvas, #161616);
+  background: var(--zc-canvas, #121212);
 }
 /* interactive children of the drag strip MUST opt out, or the window
    swallows every click (min/max/close, sidebar and panel toggles) */
@@ -1094,11 +1097,11 @@
   border-radius: 6px;
   background: transparent;
   border: 0;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
-.zt-strip .tb-btn:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.zt-strip .tb-btn:hover { background: var(--zc-chip, #0e0e0e); color: var(--zc-ink, #f5f5f5); }
 .zt-strip .tb-btn:disabled { opacity: .35; }
-.zt-strip .tb-btn[aria-pressed="true"] { color: var(--zc-ink, #d4d4d4); }
+.zt-strip .tb-btn[aria-pressed="true"] { color: var(--zc-ink, #f5f5f5); }
 .zt-strip-flex { flex: 1; height: 100%; }
 /* ---- the chat column's task title row (TaskHeader.tsx) ---------------- */
 .zc-task-head {
@@ -1119,13 +1122,13 @@
   border: 0;
   background: transparent;
   border-radius: 6px;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
-.tth-folder:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.tth-folder:hover { background: var(--zc-chip, #0e0e0e); color: var(--zc-ink, #f5f5f5); }
 .tth-title {
   font-size: 13px;
   font-weight: 500;
-  color: var(--zc-ink, #d4d4d4);
+  color: var(--zc-ink, #f5f5f5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1142,9 +1145,9 @@
   border-radius: 6px;
   background: transparent;
   border: 0;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
-.zc-task-head .tb-btn:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.zc-task-head .tb-btn:hover { background: var(--zc-chip, #0e0e0e); color: var(--zc-ink, #f5f5f5); }
 .zc-task-head .cx-menu.side-menu { top: calc(100% + 8px); left: 0; right: auto; }
 
 /* ---- two-row window chrome ------------------------------------------- */
@@ -1156,8 +1159,8 @@
   max-width: 240px;
   padding: 0 12px;
   border-radius: 8px;
-  background: var(--zc-panel, #2b2b2b);
-  color: var(--zc-ink, #d4d4d4);
+  background: var(--zc-panel, #0e0e0e);
+  color: var(--zc-ink, #f5f5f5);
   font-size: 12px;
   line-height: 1;
   cursor: default;
@@ -1174,7 +1177,7 @@
   align-items: center;
   gap: 2px;
   padding: 0 8px;
-  background: var(--z-topbar-bg, #262626);
+  background: var(--z-topbar-bg, #0e0e0e);
 }
 .zc-header .tb-btn {
   width: 26px;
@@ -1185,10 +1188,10 @@
   border-radius: 6px;
   background: transparent;
   border: 0;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
-.zc-header .tb-btn:hover { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
-.zc-header .tb-btn[aria-pressed="true"] { color: var(--zc-ink, #d4d4d4); }
+.zc-header .tb-btn:hover { background: var(--zc-chip, #0e0e0e); color: var(--zc-ink, #f5f5f5); }
+.zc-header .tb-btn[aria-pressed="true"] { color: var(--zc-ink, #f5f5f5); }
 .zt-head-flex { flex: 1; height: 100%; }
 
 /* the old .topbar two-tone strip is gone — window buttons re-home onto the
@@ -1205,8 +1208,8 @@
   background: transparent;
   color: var(--tb-ink, #f5f5f5);
 }
-.zt-strip .tb-win button:hover { background: var(--zc-chip, #2b2b2b); }
-.zt-strip .tb-win .tb-close:hover { background: #e5484d; color: #fff; }
+.zt-strip .tb-win button:hover { background: var(--zc-chip, #0e0e0e); }
+.zt-strip .tb-win .tb-close:hover { background: var(--rose); color: #fff; }
 
 /* ---- workspace sidebar head + tools ----------------------------------- */
 .side-head {
@@ -1216,7 +1219,7 @@
   padding: 10px 10px 6px 14px;
   gap: 6px;
 }
-.side-title { font-size: 12px; font-weight: 600; letter-spacing: .1px; color: var(--zc-ink, #d4d4d4); }
+.side-title { font-size: 12px; font-weight: 600; letter-spacing: .1px; color: var(--zc-ink, #f5f5f5); }
 .side-tools { display: inline-flex; gap: 2px; }
 .side-tool {
   width: 24px;
@@ -1227,23 +1230,23 @@
   border-radius: 6px;
   border: 0;
   background: transparent;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
-.side-tool:hover, .side-tool.on { background: var(--zc-chip, #2b2b2b); color: var(--zc-ink, #d4d4d4); }
+.side-tool:hover, .side-tool.on { background: var(--zc-chip, #0e0e0e); color: var(--zc-ink, #f5f5f5); }
 .side-search-row { display: flex; align-items: center; gap: 4px; padding: 0 10px 6px 14px; }
 .side-search {
   flex: 1;
   height: 26px;
   border-radius: 6px;
-  border: 1px solid var(--zc-line, #414141);
+  border: 1px solid var(--zc-line, #383838);
   background: transparent;
-  color: var(--zc-ink, #d4d4d4);
+  color: var(--zc-ink, #f5f5f5);
   font-size: 12px;
   padding: 0 9px;
   min-width: 0;
 }
-.side-search::placeholder { color: var(--zc-ink-faint, #777); }
-.side-search:focus { outline: none; border-color: var(--zc-line, #414141); }
+.side-search::placeholder { color: var(--zc-ink-faint, color-mix(in srgb, #f5f5f5 37%, transparent)); }
+.side-search:focus { outline: none; border-color: var(--zc-line, #383838); }
 
 .side-menu { right: 8px; left: auto; width: 190px; }
 .cx-menu-h {
@@ -1252,7 +1255,7 @@
   font-weight: 600;
   letter-spacing: .4px;
   text-transform: uppercase;
-  color: var(--zc-ink-faint, #777);
+  color: var(--zc-ink-faint, color-mix(in srgb, #f5f5f5 37%, transparent));
 }
 
 /* ---- composer chip bar: Universe keeps it chrome-less -------------------- */
@@ -1262,7 +1265,7 @@
   box-shadow: none !important;
   border-radius: 8px;
   padding: 5px 9px;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
 .composer .cx-chip b { font-weight: 500; color: inherit; }
 .composer .cx-chip:hover { background: rgba(255,255,255,.06) !important; }
@@ -1271,19 +1274,19 @@
   margin: 5px 10px;
   background: rgba(255,255,255,.08);
 }
-.add-item.on { color: var(--zc-ink, #d4d4d4); }
+.add-item.on { color: var(--zc-ink, #f5f5f5); }
 
 /* send button: Universe's rounded-square */
 .composer .send-btn {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--zc-panel, #2b2b2b) !important;
+  background: var(--zc-panel, #0e0e0e) !important;
   border: 0;
-  color: var(--zc-ink, #d4d4d4);
+  color: var(--zc-ink, #f5f5f5);
 }
 .composer .send-btn:disabled { opacity: .45; }
-.composer .send-btn.stop { color: #fff; background: var(--zc-raised, #363636) !important; }
+.composer .send-btn.stop { color: #fff; background: var(--zc-raised, #202020) !important; }
 
 /* welcome: the orb stands alone (no greeting), like Universe's wordmark slot */
 .welcome .w-universe { margin-bottom: 26px; }
@@ -1311,33 +1314,33 @@
   min-height: 88px;
   padding: 16px 18px;
   border-radius: 14px;
-  border: 1px solid var(--zc-line, #414141);
-  background: var(--zc-panel, #2b2b2b);
+  border: 1px solid var(--zc-line, #383838);
+  background: var(--zc-panel, #0e0e0e);
   cursor: pointer;
   font: inherit; color: inherit;
   transition: background .14s var(--ds-ease, ease), border-color .14s var(--ds-ease, ease);
 }
 .w-card:hover {
-  background: var(--zc-raised, #363636);
-  border-color: var(--zc-ink-faint, #5e5e5e);
+  background: var(--zc-raised, #202020);
+  border-color: var(--zc-ink-faint, color-mix(in srgb, #f5f5f5 37%, transparent));
 }
 .w-card:active { transform: scale(.995); }
 .w-card-icon {
   display: grid; place-items: center;
   width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; margin-top: 1px;
 }
-.w-ci-build { background: rgba(43, 92, 155, .18); color: var(--zc-accent, #2b5c9b); }
-.w-ci-create { background: rgba(255, 255, 255, .10); color: var(--zc-permission, rgba(255, 255, 255, 0.62)); }
+.w-ci-build { background: color-mix(in srgb, var(--ds-accent) 18%, transparent); color: var(--zc-accent, #1084fe); }
+.w-ci-create { background: rgba(255, 255, 255, .10); color: var(--zc-permission, #f5f5f591); }
 .w-card-body { display: flex; flex-direction: column; min-width: 0; }
 .w-card-title {
   display: inline-flex; align-items: center; gap: 3px;
-  font-size: 14.5px; font-weight: 600; color: var(--zc-ink, #d4d4d4);
+  font-size: 14.5px; font-weight: 600; color: var(--zc-ink, #f5f5f5);
 }
-.w-card-title svg { color: var(--zc-ink-faint, #5e5e5e); }
-.w-card-sub { margin-top: 3px; font-size: 12.5px; color: var(--zc-ink-dim, #999999); }
+.w-card-title svg { color: var(--zc-ink-faint, color-mix(in srgb, #f5f5f5 37%, transparent)); }
+.w-card-sub { margin-top: 3px; font-size: 12.5px; color: var(--zc-ink-dim, #f5f5f591); }
 .w-card-art {
   position: absolute; right: -8px; bottom: -14px;
-  opacity: .06; pointer-events: none; color: var(--zc-ink, #d4d4d4);
+  opacity: .06; pointer-events: none; color: var(--zc-ink, #f5f5f5);
 }
 .w-card-tall {
   flex-direction: column; align-items: center; justify-content: center;
@@ -1346,15 +1349,15 @@
 .w-card-eyebrow {
   position: absolute; top: 12px; right: 14px;
   font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
-  color: var(--zc-ink-faint, #5e5e5e);
+  color: var(--zc-ink-faint, color-mix(in srgb, #f5f5f5 37%, transparent));
 }
 .w-card-art-big {
   display: grid; place-items: center;
   width: 56px; height: 56px; margin-bottom: 10px; border-radius: 16px;
-  background: rgba(255, 255, 255, .045); color: var(--zc-ink-dim, #999999);
+  background: rgba(255, 255, 255, .045); color: var(--zc-ink-dim, #f5f5f591);
 }
-.w-card-title-c { font-size: 14.5px; font-weight: 600; color: var(--zc-ink, #d4d4d4); }
-.w-card-sub-c { font-size: 12.5px; color: var(--zc-ink-dim, #999999); }
+.w-card-title-c { font-size: 14.5px; font-weight: 600; color: var(--zc-ink, #f5f5f5); }
+.w-card-sub-c { font-size: 12.5px; color: var(--zc-ink-dim, #f5f5f591); }
 
 /* no-provider alert: quiet neutral notice with the permission orange word */
 .welcome .w-noprovider {
@@ -1362,21 +1365,21 @@
   max-width: 660px;
   padding: 12px 18px;
   border-radius: 12px;
-  background: var(--zc-panel, #2b2b2b);
-  border: 1px solid var(--zc-line, #414141);
+  background: var(--zc-panel, #0e0e0e);
+  border: 1px solid var(--zc-line, #383838);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   font-size: 12.5px;
   line-height: 1.6;
-  color: var(--zc-ink-dim, #999999);
+  color: var(--zc-ink-dim, #f5f5f591);
   text-align: left;
   animation: rise .5s ease .06s backwards;
 }
-.welcome .w-noprovider b { color: var(--zc-permission, rgba(255, 255, 255, 0.62)); }
+.welcome .w-noprovider b { color: var(--zc-permission, #f5f5f591); }
 .w-noprovider-btn {
   font: inherit; font-size: 12.5px; font-weight: 600;
   padding: 5px 12px; border-radius: 8px; cursor: pointer;
-  border: 0; background: var(--zc-ink, #d4d4d4); color: #161616;
+  border: 0; background: var(--zc-ink, #f5f5f5); color: var(--canvas);
   transition: background .14s ease;
 }
 .w-noprovider-btn:hover { background: #ffffff; }
@@ -1385,7 +1388,7 @@
 .zc-header-title {
   margin-left: 10px;
   font-size: 12.5px;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
   max-width: 420px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1397,13 +1400,13 @@
   gap: 7px;
   margin-left: 14px;
   font-size: 12px;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
 }
 .pb-machine-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--zc-accent, #2b5c9b);
+  background: var(--zc-accent, #1084fe);
 }
 
 .zt-tab-dot {
@@ -1411,7 +1414,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--zc-accent, #2b5c9b);
+  background: var(--zc-accent, #1084fe);
 }
 
 /* --- 2026-10-22 additions III: task-list truth (pinned section, groups,
@@ -1421,14 +1424,14 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .3px;
-  color: var(--zc-ink-faint, #5e5e5e);
+  color: var(--zc-ink-faint, color-mix(in srgb, #f5f5f5 37%, transparent));
 }
 .side-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 6px;
   width: 190px;
-  background: var(--zc-panel, #2b2b2b);
+  background: var(--zc-panel, #0e0e0e);
   border: 1px solid rgba(255, 255, 255, .07);
   border-radius: 10px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
@@ -1447,15 +1450,15 @@
   border-radius: 6px;
   border: 0;
   background: transparent;
-  color: var(--zc-ink, #d4d4d4);
+  color: var(--zc-ink, #f5f5f5);
   font-size: 12.5px;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.side-menu > button:hover { background: var(--zc-raised, #363636); }
-.side-menu > button.on { color: var(--zc-accent, #2b5c9b); }
+.side-menu > button:hover { background: var(--zc-raised, #202020); }
+.side-menu > button.on { color: var(--zc-accent, #1084fe); }
 .pn-chevron {
   width: 20px;
   height: 20px;
@@ -1465,11 +1468,11 @@
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
   flex: none;
   margin-left: 2px;
 }
-.pn-chevron:hover { background: var(--zc-raised, #363636); }
+.pn-chevron:hover { background: var(--zc-raised, #202020); }
 .arch-row {
   display: flex;
   align-items: center;
@@ -1482,12 +1485,12 @@
   gap: 6px;
   border: 0;
   background: transparent;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
   font-size: 12px;
   padding: 6px 4px;
   cursor: pointer;
 }
-.arch-toggle:hover { color: var(--zc-ink, #d4d4d4); }
+.arch-toggle:hover { color: var(--zc-ink, #f5f5f5); }
 .arch-pop { position: relative; display: inline-flex; }
 
 /* header actions: the ⋯ next to the session title anchors its own menu */
@@ -1505,12 +1508,12 @@
   border-top: 1px solid rgba(255, 255, 255, .06);
   border-radius: 0 0 8px 8px;
   background: transparent;
-  color: var(--zc-ink-dim, #999);
+  color: var(--zc-ink-dim, #f5f5f591);
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
 }
-.mp-manage:hover { background: var(--zc-raised, #363636); color: var(--zc-ink, #d4d4d4); }
+.mp-manage:hover { background: var(--zc-raised, #202020); color: var(--zc-ink, #f5f5f5); }
 
 /* ============================================================
    2026-10-24 · PASS 2 — EXACT Universe home composer. Every number
@@ -1521,7 +1524,7 @@
      shell   rgba(255,255,255,.05) over the canvas → #222 surface,
              radius 16, carries the workspace crumb band
      band    p-1.5 (6px) + h-7 (28px) crumbs = 40px tall
-     card    radius 16 · 1px rgba(250,250,250,.10) · #2b2b2b
+     card    radius 16 · 1px rgba(250,250,250,.10) · var(--ds-surface-1)
              · p-3 (12px) · row gap 12
      editor  min-h-10 (40px) · max-h-40 (160px) · 14px / 21px
              · placeholder = 30% ink (#e5e5e5 at 30%)
@@ -1543,7 +1546,7 @@
   margin: 0 auto;
 }.zc-shell.has-head {
   /* --color-surface = #ffffff0d → tuned +1/255 so the composited band
-     reads #222 (34) over the #161616 canvas, as in the reference */
+     reads #222 (34) over the var(--canvas) canvas, as in the reference */
   background: rgba(255, 255, 255, 0.055);
   border-radius: 16px;
   /* Universe: `chat-composer-input-surface … rounded-2xl bg-surface shadow-xl/5`
@@ -1587,7 +1590,7 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--zc-ink, #d4d4d4);
+  color: var(--zc-ink, #f5f5f5);
   font-size: 14px;
   line-height: 1.625;
   font-family: inherit;
@@ -1633,7 +1636,7 @@
   flex-direction: column;
   gap: 12px !important;
   padding: 12px !important;
-  background: var(--zc-panel, #2b2b2b) !important;
+  background: var(--zc-panel, #0e0e0e) !important;
   /* theme-zai-dark --color-input-border = --color-border = #ffffff1a,
      nudged to 0.106 so the 1px hairline lands on 65 as in the reference */
   border: 1px solid rgba(255, 255, 255, 0.106) !important;
@@ -1649,11 +1652,11 @@
   /* --color-input-border-hover = --color-border-hover = #ffffff26 (15%) */
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
-/* zai-dark keeps #2b2b2b on focus and only lifts the hairline
+/* zai-dark keeps var(--ds-surface-1) on focus and only lifts the hairline
    (focus-within:!border-input-border-focused · bg-input-focused = input) */
 .composer:focus-within {
   border-color: rgba(255, 255, 255, 0.15) !important;
-  background: var(--zc-panel, #2b2b2b) !important;
+  background: var(--zc-panel, #0e0e0e) !important;
 }
 
 /* ---- the editor: Universe's Lexical box, 40px min, 14px type ----------- */
@@ -1670,10 +1673,10 @@
   resize: none;
   font-size: 14px !important;
   line-height: 21px !important;
-  color: var(--zc-ink, #d4d4d4);
+  color: var(--zc-ink, #f5f5f5);
 }
 .composer textarea::placeholder {
-  /* --color-foreground-subtlest = #d4d4d4 at 30% (theme-zai-dark) */
+  /* --color-foreground-subtlest = var(--ds-ink) at 30% (theme-zai-dark) */
   color: rgba(212, 212, 212, 0.3) !important;
   /* redesign.css dims the placeholder with opacity .8 — cancel it */
   opacity: 1 !important;
@@ -1798,6 +1801,35 @@
   color: inherit;
 }
 
+/* two selectors: the connected provider and its model, side by side */
+.mp-selectors { display: flex; align-items: center; gap: 4px; }
+.mp-selectors .mp-chip.open,
+.mp-engine-chip.open { background: rgba(255, 255, 255, 0.06); }
+.mp-engine-chip .mp-model { max-width: 96px; }
+
+/* the shared engine roster in the picker: the bots' content in the mp-* form */
+.mp-engine { padding: 2px 0 6px; }
+.mp-engine-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 4px 10px;
+  font-size: 12px; font-weight: 500; color: var(--ds-ink-2);
+}
+.mp-ok { color: var(--color-success); }
+.mp-off { color: var(--ds-ink-4); }
+.mp-row .mp-meta {
+  margin-left: auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 11px; color: var(--ds-ink-4);
+}
+.mp-effort { display: flex; gap: 4px; padding: 4px 10px 2px; flex-wrap: wrap; }
+.mp-effort button {
+  border: 1px solid var(--ds-line); border-radius: 9999px;
+  background: transparent; color: var(--ds-ink-3);
+  padding: 2px 7px; font-size: 11px;
+}
+.mp-effort button.on {
+  border-color: var(--ds-accent); color: var(--ds-accent);
+}
+
 /* the send control: size-7 rounded-lg, Universe's disabled brand button —
    white fill + inverse (black) arrow at 50% → renders #959595 with a
    near-black glyph, exactly as the reference measures */
@@ -1821,8 +1853,8 @@
 }
 .composer .send-btn.ready {
   opacity: 1 !important;
-  background: var(--zc-accent, #2b5c9b) !important;
-  color: var(--zc-accent-ink, #0d1f14) !important;
+  background: var(--zc-accent, #1084fe) !important;
+  color: var(--zc-accent-ink, #ffffff) !important;
 }
 .composer .send-btn.stop {
   opacity: 1 !important;
@@ -1854,7 +1886,7 @@
   border: 1px solid rgba(255, 255, 255, 0.102);
   border-radius: 8px;
   background: transparent;
-  /* Universe: text-foreground opacity-70 over the canvas (#d4d4d4 at 70%) */
+  /* Universe: text-foreground opacity-70 over the canvas (var(--ds-ink) at 70%) */
   color: rgba(212, 212, 212, 0.7);
   font-size: 14px;
   line-height: 18px;
@@ -1869,7 +1901,7 @@
   flex: none;
 }
 .zc-suggest:hover {
-  color: #d4d4d4;
+  color: var(--ds-ink);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -1892,9 +1924,9 @@
   flex-direction: column;
   overflow: hidden;
   height: 100%;
-  background: #2b2b2b !important;
+  background: var(--ds-surface-1) !important;
   border-right: 0 !important;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   font-size: 14px;
@@ -1923,7 +1955,7 @@
   border: 0;
   border-radius: 8px;
   background: none;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -1982,7 +2014,7 @@
      makes Chromium drop the ::-webkit-scrollbar rules and paint the 15px
      standard bar: track 249..264, 9px rounded thumb at 10% white */
   scrollbar-width: auto;
-  /* the reference thumb composites to 65 over #2b2b2b; 0.104 is the alpha
+  /* the reference thumb composites to 65 over var(--ds-surface-1); 0.104 is the alpha
      that lands on that exact value in Chromium (0.1 -> 64, 0.11 -> 66) */
   scrollbar-color: rgba(255, 255, 255, 0.104) transparent;
 }
@@ -2039,14 +2071,14 @@
   cursor: pointer;
 }
 .zsb-tab:hover {
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 /* Universe paints the active tab with an absolutely positioned pill
    (inset-y-0.5 rounded-full bg-background); the tab itself is the same
    24x24 box, so the fill can live on the button and look identical */
 .zsb-tab.on {
-  background: #161616;
-  color: #d4d4d4;
+  background: var(--canvas);
+  color: var(--ds-ink);
 }
 .zsb-icon24 {
   display: inline-flex;
@@ -2065,7 +2097,7 @@
 .zsb-icon24:hover,
 .zsb-icon24.on {
   background: rgba(255, 255, 255, 0.051);
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 
 /* ---- sections ------------------------------------------------------- */
@@ -2110,7 +2142,7 @@
   white-space: nowrap;
 }
 .zsb-seclabel:hover {
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 .zsb-secchev {
   flex: none;
@@ -2172,7 +2204,7 @@
   padding: 0 4px 0 10px;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -2293,7 +2325,7 @@
   white-space: nowrap;
   font-size: 14px;
   line-height: 21px;
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 .zsb-meta {
   display: flex;
@@ -2333,7 +2365,7 @@
 }
 .zsb-rowbtn24:hover {
   background: rgba(255, 255, 255, 0.051);
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 
 /* ---- disclosure + empties ------------------------------------------- */
@@ -2413,7 +2445,7 @@
   flex: none;
   border-radius: 9999px;
   background: #3a3a3a;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   font-size: 13px;
   font-weight: 600;
   overflow: hidden;
@@ -2426,7 +2458,7 @@
   font-size: 14px;
   line-height: 21px;
   font-weight: 600;
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 .zsb-uacts {
   display: flex;
@@ -2447,12 +2479,12 @@
   background: none;
   /* full-strength ink: the reference footer buttons compute to
      oklch(0.87 0 0), unlike the 60% chrome icons in the organize row */
-  color: #d4d4d4;
+  color: var(--ds-ink);
   cursor: pointer;
 }
 .zsb-icon32:hover {
   background: rgba(255, 255, 255, 0.051);
-  color: #d4d4d4;
+  color: var(--ds-ink);
 }
 
 /* ---- top-strip cluster (Universe's absolute strip, ported to Universe's
@@ -2475,7 +2507,7 @@
   border: 1px solid transparent;
   border-radius: 8px;
   background: none;
-  color: #d4d4d4;
+  color: var(--ds-ink);
   cursor: pointer;
 }
 .zsb-tb:hover:not(:disabled) {
@@ -2516,7 +2548,7 @@
   bottom: 0;
   left: 0;
   width: 5px;
-  background: linear-gradient(90deg, #2b2b2b 0 4px, #2e2e2e 4px 5px);
+  background: linear-gradient(90deg, var(--ds-surface-1) 0 4px, #2e2e2e 4px 5px);
   pointer-events: none;
   /* above .composer-wrap (z-index 5), which paints an opaque canvas band
      across the full width in the empty state — the gutter is shell chrome
@@ -2535,21 +2567,21 @@
 .zsb-ws-toggle {
   display: flex; align-items: center; gap: 2px;
   width: 100%; box-sizing: border-box; padding: 3px;
-  border: 1px solid var(--ds-line, #414141);
+  border: 1px solid var(--ds-line, #383838);
   border-radius: 10px; background: rgba(255, 255, 255, 0.03);
 }
 .zsb-ws-toggle button {
   flex: 1 1 0; justify-content: center;
-  font-size: 11.5px; letter-spacing: 0.2px; color: var(--ds-ink-3, #999999);
+  font-size: 11.5px; letter-spacing: 0.2px; color: var(--ds-ink-3, #f5f5f591);
   background: transparent; border: 0; border-radius: 7px;
   padding: 5px 10px; cursor: pointer;
   display: flex; align-items: center; gap: 6px;
   transition: color 0.15s ease, background 0.15s ease;
 }
 .zsb-ws-toggle button:hover {
-  color: var(--ds-ink, #d4d4d4); background: rgba(255, 255, 255, 0.05);
+  color: var(--ds-ink, #f5f5f5); background: rgba(255, 255, 255, 0.05);
 }
 .zsb-ws-toggle button[data-active="true"] {
-  color: var(--ds-ink, #d4d4d4);
-  background: var(--ds-surface-3, #414141);
+  color: var(--ds-ink, #f5f5f5);
+  background: var(--ds-surface-3, #2c2c2c);
 }

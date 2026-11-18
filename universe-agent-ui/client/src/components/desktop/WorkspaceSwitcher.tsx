@@ -1,10 +1,10 @@
 /**
  * components/desktop/WorkspaceSwitcher.tsx — the Universe | Studio | Bots
  * segmented control. Lives at the TOP OF THE LEFT SIDEBAR (user decision,
- * 2026-11): the sidebar is the stable shell — it only changes shape in
- * Bots mode (the bots rail takes the same column). TopBar no longer
- * carries it. Styled on the Universe-measured neutral tokens — no
- * blue-tinted glass.
+ * 2026-11): the sidebar is the stable shell. TopBar no longer carries it.
+ * Styled on the Universe-measured neutral tokens — no blue-tinted glass.
+ * The bots surface floats this control over the framed universe bots app,
+ * which is the only chrome it adds.
  */
 import { useLocation } from "wouter";
 

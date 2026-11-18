@@ -78,7 +78,9 @@ class ToolRegistry:
         call_args = dict(args)
         if name in ("TodoWrite", "TodoRead", "Skill", "TaskCreate",
                     "TaskUpdate", "TaskGet", "TaskList", "TaskStop",
-                    "TaskOutput", "GoalRead", "ReadSessionContext"):
+                    "TaskOutput", "GoalRead", "ReadSessionContext",
+                    "UniverseBotsDelegate", "UniverseBotsResult",
+                    "UniverseBotsCreate"):
             # runtime context is AUTHORITATIVE: overwrite, never setdefault —
             # a model-supplied turn_id/agent is a forgery that would write
             # another goal's todo list or activate under a false identity
@@ -239,6 +241,7 @@ def _register_builtins(reg: ToolRegistry) -> None:
     from connectors.builtin.task_tools import register as reg_task_tools
     from connectors.builtin.parity_tools import register as reg_parity_tools
     from connectors.builtin.studio import register as reg_studio
+    from connectors.builtin.universe_bots import register as reg_universe_bots
     reg_files(reg)
     reg_shell(reg)
     reg_web(reg)
@@ -261,6 +264,7 @@ def _register_builtins(reg: ToolRegistry) -> None:
     reg_task_tools(reg)
     reg_parity_tools(reg)
     reg_studio(reg)
+    reg_universe_bots(reg)
     reg_ask_user(reg)
     reg_cron(reg)
     reg_computer_use(reg)

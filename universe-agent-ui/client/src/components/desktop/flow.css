@@ -125,7 +125,7 @@
 .fl-state.running { color: var(--accent2); }
 .fl-state.completed { color: var(--teal); }
 .fl-state.error { color: var(--rose); }
-.fl-state.blocked { color: var(--faint, rgba(255, 255, 255, 0.62)); }
+.fl-state.blocked { color: var(--faint, #f5f5f591); }
 .fl-chev {
   color: var(--ink3);
   flex-shrink: 0;
@@ -406,8 +406,8 @@
 /* ---- the right rail: Preview · Browser · Files ---- */
 .rail {
   position: relative;
-  background: #2b2b2b;
-  border-left: 1px solid #414141;
+  background: var(--ds-surface-1);
+  border-left: 1px solid var(--ds-line);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -676,16 +676,16 @@
   white-space: pre-wrap; word-break: break-word;
 }
 .term-cmd  { color: #f5f5f5; }
-.term-out  { color: #d4d4d4; }
-.term-err  { color: var(--faint, rgba(255, 255, 255, 0.62)); }
-.term-sys  { color: #5e5e5e; }
+.term-out  { color: var(--ds-ink); }
+.term-err  { color: var(--faint, #f5f5f591); }
+.term-sys  { color: var(--ds-ink-4); }
 .term-inputrow {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
-  border-top: 1px solid var(--raise3, #414141);
+  border-top: 1px solid var(--raise3, #2c2c2c);
 }
 .term-prompt {
-  font-size: 12px; color: var(--ds-accent, #2b5c9b);
+  font-size: 12px; color: var(--ds-accent, #1084fe);
   max-width: 40%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex-shrink: 1;
@@ -693,9 +693,9 @@
 .term-input {
   flex: 1; min-width: 0;
   background: transparent; border: 0; outline: none;
-  color: #d4d4d4; font-size: 12px;
+  color: var(--ds-ink); font-size: 12px;
 }
-.term-input::placeholder { color: #5e5e5e; }
+.term-input::placeholder { color: var(--ds-ink-4); }
 .term-input:disabled { opacity: 0.55; }
 
 /* ---- StatusStrip (master-spec §A1+§C): pinned live state over the chat ---- */
@@ -703,10 +703,10 @@
   display: flex; align-items: center; gap: 10px;
   min-height: 38px; padding: 4px 12px;
   margin: 0 0 6px;
-  border: 1px solid #414141;
+  border: 1px solid var(--ds-line);
   border-radius: 10px;
-  background: #2b2b2b;
-  color: #d4d4d4;
+  background: var(--ds-surface-1);
+  color: var(--ds-ink);
   animation: ss-in .15s ease-out;
 }
 .status-strip.fade { opacity: 0; transition: opacity .15s ease-in; }
@@ -715,81 +715,81 @@
 .ss-orb { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; }
 .ss-line {
   display: flex; align-items: center; gap: 6px;
-  font-size: 12.5px; color: #d4d4d4;
+  font-size: 12.5px; color: var(--ds-ink);
   min-width: 0; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis;
 }
 .ss-line b { font-weight: 500; }
 .ss-halt { color: #ff6363; font-weight: 500; }
-.ss-hint { font-size: 11.5px; color: #5e5e5e; flex-shrink: 0; white-space: nowrap; }
-.ss-hint b { color: #999999; font-weight: 500; }
+.ss-hint { font-size: 11.5px; color: var(--ds-ink-4); flex-shrink: 0; white-space: nowrap; }
+.ss-hint b { color: var(--ds-ink-3); font-weight: 500; }
 
 /* ---- Activity pane (master-spec §D): the live agent tree ---- */
 .act-recap {
   display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-  font-size: 12px; color: #999999;
+  font-size: 12px; color: var(--ds-ink-3);
   padding: 8px 10px; margin-bottom: 10px;
-  border: 1px solid #414141; border-radius: 8px;
+  border: 1px solid var(--ds-line); border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
 }
-.act-recap b { color: #d4d4d4; font-weight: 600; }
-.act-ok { color: var(--ds-accent, #2b5c9b); }
+.act-recap b { color: var(--ds-ink); font-weight: 600; }
+.act-ok { color: var(--ds-accent, #1084fe); }
 .act-err { color: #ff6363; }
-.act-wait { color: #5e5e5e; }
+.act-wait { color: var(--ds-ink-4); }
 .act-plan { margin-bottom: 10px; }
 .act-plan-step {
   display: flex; gap: 8px; align-items: baseline;
-  font-size: 11.5px; padding: 3px 0; color: #999999;
-  border-bottom: 1px dashed #363636;
+  font-size: 11.5px; padding: 3px 0; color: var(--ds-ink-3);
+  border-bottom: 1px dashed var(--ds-surface-2);
 }
-.act-plan-idx { color: #5e5e5e; }
-.act-plan-agent { color: #d4d4d4; flex-shrink: 0; }
+.act-plan-idx { color: var(--ds-ink-4); }
+.act-plan-agent { color: var(--ds-ink); flex-shrink: 0; }
 .act-plan-txt { min-width: 0; }
 .act-agents { display: flex; flex-direction: column; gap: 8px; }
-.act-agent { border-left: 2px solid #414141; padding-left: 9px; }
-.act-agent.working { border-left-color: #d4d4d4; }
-.act-agent.done { border-left-color: var(--ds-accent, #2b5c9b); }
+.act-agent { border-left: 2px solid var(--ds-line); padding-left: 9px; }
+.act-agent.working { border-left-color: var(--ds-ink); }
+.act-agent.done { border-left-color: var(--ds-accent, #1084fe); }
 .act-agent.failed { border-left-color: #ff6363; }
 .act-agent-row { display: flex; align-items: center; gap: 7px; }
-.act-glyph { font-size: 10px; color: #d4d4d4; }
-.act-agent-name { font-size: 12.5px; font-weight: 500; color: #d4d4d4; }
-.act-dur { font-size: 10.5px; color: #5e5e5e; }
+.act-glyph { font-size: 10px; color: var(--ds-ink); }
+.act-agent-name { font-size: 12.5px; font-weight: 500; color: var(--ds-ink); }
+.act-dur { font-size: 10.5px; color: var(--ds-ink-4); }
 .act-fold {
   display: grid; place-items: center;
   width: 18px; height: 18px; border-radius: 5px;
-  border: 0; background: none; color: #5e5e5e; cursor: pointer;
+  border: 0; background: none; color: var(--ds-ink-4); cursor: pointer;
 }
-.act-fold:hover { color: #d4d4d4; background: #363636; }
-.act-agent-summary { font-size: 11.5px; color: #999999; margin: 3px 0 4px; }
+.act-fold:hover { color: var(--ds-ink); background: var(--ds-surface-2); }
+.act-agent-summary { font-size: 11.5px; color: var(--ds-ink-3); margin: 3px 0 4px; }
 .act-tools { display: flex; flex-direction: column; margin: 4px 0 2px 2px; }
-.act-tool { border-left: 1px solid #363636; padding-left: 8px; margin: 2px 0; }
+.act-tool { border-left: 1px solid var(--ds-surface-2); padding-left: 8px; margin: 2px 0; }
 .act-tool-row {
   display: flex; align-items: center; gap: 7px; width: 100%;
   padding: 2px 0; border: 0; background: none;
-  color: #999999; font-size: 11.5px; cursor: pointer; text-align: left;
+  color: var(--ds-ink-3); font-size: 11.5px; cursor: pointer; text-align: left;
 }
-.act-tool-fam { font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #5e5e5e; }
+.act-tool-fam { font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ds-ink-4); }
 .act-tool-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.act-tool.done .act-tool-name { color: #999999; }
-.act-tool.running .act-tool-name { color: #d4d4d4; }
+.act-tool.done .act-tool-name { color: var(--ds-ink-3); }
+.act-tool.running .act-tool-name { color: var(--ds-ink); }
 .act-tool.error .act-tool-name, .act-tool.blocked .act-tool-name { color: #ff6363; }
 .act-tool-error { font-size: 10.5px; color: #ff6363; padding: 2px 0; }
 .act-tool-args {
-  font-size: 10.5px; color: #5e5e5e;
+  font-size: 10.5px; color: var(--ds-ink-4);
   padding: 4px 6px; margin-top: 2px;
   background: rgba(255, 255, 255, 0.03); border-radius: 6px;
   max-height: 132px; overflow-y: auto; word-break: break-all;
 }
 .act-handoffs { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
-.act-handoff { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #5e5e5e; }
+.act-handoff { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ds-ink-4); }
 .act-handoff-what { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.act-skills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; color: #5e5e5e; }
+.act-skills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; color: var(--ds-ink-4); }
 .act-skill {
   font-size: 10px; padding: 2px 7px; border-radius: 9999px;
-  border: 1px solid #414141; color: #999999;
+  border: 1px solid var(--ds-line); color: var(--ds-ink-3);
 }
 .act-artifacts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
-.act-artifact { font-size: 10.5px; color: var(--ds-accent, #2b5c9b); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.act-artifact { font-size: 10.5px; color: var(--ds-accent, #1084fe); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* shared inline spacer (StatusStrip/Activity rows) */
 .sp { flex: 1; min-width: 0; }

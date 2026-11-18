@@ -31,6 +31,8 @@ import { useUi } from "@/stores/ui";
 import AgentFlow from "./AgentFlow";
 import EmptyState from "./EmptyState";
 import AgentReply from "./AgentReply";
+import UniverseBotsResultChip from "./UniverseBotsResultChip";
+import "./universe-bots.css";
 
 function fmtClock(ts?: number): string | null {
   if (!ts) return null;
@@ -119,6 +121,8 @@ export default function ChatMessages() {
         {visible.map(m =>
           m.role === "user" ? (
             <UserRow key={m.id} text={m.text} turnId={m.turn_id} ts={m.ts} />
+          ) : m.botsResult ? (
+            <UniverseBotsResultChip key={m.id} result={m.botsResult} />
           ) : (
             <AgentMessage
               key={m.id}

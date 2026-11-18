@@ -47,6 +47,16 @@ export interface ChatMessage {
   /** unix seconds — message timestamps (Universe rows); absent on legacy
    *  threads the server never dated */
   ts?: number;
+  /** a delegation into universe bots came back: the row is a chip, not
+   *  prose */
+  botsResult?: {
+    assignmentId: string;
+    botName: string;
+    status: string;
+    outcome: string;
+    result: string;
+    text: string;
+  };
 }
 
 /** ask_user question in flight (the ZCode shape: a LIST of questions) */
@@ -1125,6 +1135,35 @@ export const useChat = create<ChatStore>((set, get) => ({
             ? { ...m, text: ev.reply, streaming: true }
             : m
         );
+      }
+
+      // --- a delegation into universe bots came back: it is a chip, not
+      // prose, and it belongs to the turn that asked for the work.
+      if (ev.type === "universe_bots_result") {
+        const assignmentId = ev.assignment_id ?? "";
+        const known = s.messages.some(
+          m => m.botsResult?.assignmentId === assignmentId && assignmentId !== ""
+        );
+        if (!known) {
+          next.messages = [
+            ...s.messages,
+            {
+              id: `bots-${assignmentId || ev.ts}`,
+              turn_id: gid,
+              role: "agent",
+              text: ev.text ?? "",
+              ts: ev.ts,
+              botsResult: {
+                assignmentId,
+                botName: ev.bot_name ?? "",
+                status: ev.bots_status ?? "",
+                outcome: ev.outcome ?? "",
+                result: ev.bots_result ?? "",
+                text: ev.text ?? "",
+              },
+            },
+          ];
+        }
       }
 
       // --- consent prompts

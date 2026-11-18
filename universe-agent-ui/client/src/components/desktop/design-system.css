@@ -1,72 +1,15 @@
 /*
- * design-system.css — Universe Agent unified design tokens.
- * Universe identity (2026-10 restyle) — every value below is measured
- * from the actual Universe UI (docs/shell-tokens.md: pixel samples of the 8
- * reference screenshots + a live window probe, palette stable).
+ * design-system.css — Universe Agent's surface rules.
  *
- * Universe is near-monochrome: neutral-gray canvas and panels, #d4d4d4 ink,
- * dark logo-blue #2B5C9B for positive/status accents only, faint white for
- * the attention/permission tone (no orange anywhere), white primary buttons.
- * No colored side bars, no glass.
+ * The TOKENS live in index.css (the entry stylesheet, always loaded): the
+ * shared `--color-*` palette of universe bots' Midnight skin, plus the
+ * `--ds-*` layer on top of it. They are here rather than in this file
+ * because the pages that use this sheet are loaded lazily - a token set
+ * that only exists with them would leave a cold-loaded page unstyled.
  *
- * This file OVERRIDES the older token sets in index.css and the glass
- * interaction layer in redesign.css — every surface reads from these
- * variables so the app speaks one language instead of three.
+ * Only colours moved when the palette changed (2026-11-16): every radius,
+ * size, spacing and motion token is untouched, and no icon changed.
  */
-
-:root {
-  /* -- Universe: structure (measured) --------------------------------------- */
-  --canvas: #161616;            /* app canvas (Universe chat background) */
-  --ds-surface-1: #2b2b2b;      /* panels: sidebar, cards, composer, menus */
-  --ds-surface-2: #363636;      /* raised: hover lifts, selected rows */
-  --ds-surface-3: #414141;      /* highest: active pills, active menu items */
-  --ds-line: #414141;           /* hairline borders */
-  --ds-line-strong: #4b4b4b;    /* emphasized borders (composer card) */
-  --ds-ink: #d4d4d4;            /* primary text */
-  --ds-ink-2: #d4d4d4;          /* secondary — Universe renders it equally bright */
-  --ds-ink-3: #999999;          /* muted: ages, counters, icons */
-  --ds-ink-4: #5e5e5e;          /* faint: section headers, placeholders */
-
-  /* -- Universe: accents ----------------------------------------------------- */
-  --ds-accent: #2b5c9b;         /* the dark logo-blue accent (universe-logo sample) */
-  --ds-accent-hover: #3a72b8;
-  --ds-accent-dim: rgba(43, 92, 155, 0.16);
-  --ds-teal: var(--ds-accent);             /* legacy alias */
-  --ds-teal-hover: var(--ds-accent-hover);
-  --ds-teal-dim: var(--ds-accent-dim);
-
-  /* -- semantic mapping (the legacy variables now point here) ----------- */
-  --bg: var(--canvas);
-  --panel: var(--ds-surface-1);
-  --panel-solid: var(--ds-surface-1);
-  --raise2: var(--ds-surface-2);
-  --raise3: var(--ds-surface-3);
-  --line: var(--ds-line);
-  --line-soft: var(--ds-surface-2);
-  --ink: var(--ds-ink);
-  --ink2: var(--ds-ink-2);
-  --ink3: var(--ds-ink-3);
-  --accent-cyan: var(--ds-accent);        /* legacy name -> Universe green */
-  --accent2: var(--ds-accent-hover);
-  --accent-dim: var(--ds-accent-dim);
-  --faint: rgba(255, 255, 255, 0.62);     /* attention tone: faint white, never orange */
-  --success: #2b5c9b;                     /* Universe logo blue */
-  --warning: var(--faint);                /* attention = faint white (orange retired) */
-  --amber: var(--faint);                  /* fixes dangling flow.css refs */
-  --rose: #e5484d;
-  --teal: var(--success);                 /* legacy success-teal */
-
-  /* -- shape & type (Linear discipline) --------------------------------- */
-  --ds-r-sm: 6px;
-  --ds-r-md: 8px;
-  --ds-r-lg: 10px;
-  --ds-ui-fs: 13px;
-  --ds-sidebar-w: 264px;
-
-  /* -- motion ----------------------------------------------------------- */
-  --ds-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ds-dur: 0.14s;
-}
 
 /* the glass/blur language is retired: flat surfaces, hairlines only.
    Universe separates sidebar and chat with a pure color step — no border. */
@@ -118,7 +61,7 @@
 }
 .sidebar .t-time {
   font-size: 10px;
-  color: var(--ds-ink-3);   /* Universe task ages are #999999 */
+  color: var(--ds-ink-3);   /* Universe task ages are var(--ds-ink-3) */
 }
 
 /* New task lives in the side-nav stack now (Universe order: New task →
@@ -152,8 +95,8 @@
 }
 .composer textarea::placeholder { color: var(--ds-ink-4); }
 .send-btn.ready {
-  background: #d4d4d4;   /* Universe's square composer button */
-  color: #161616;
+  background: var(--ds-ink);   /* Universe's square composer button */
+  color: var(--canvas);
 }
 .send-btn.stop {
   background: var(--ds-surface-3);
