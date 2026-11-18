@@ -35,6 +35,13 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { installBotsIpc } from "./bots-ipc";
+import {
+  cuaConnection,
+  grantBotsComputer,
+  setBotsCuaOrigin,
+  startBotsCua,
+  stopBotsCua,
+} from "./bots-cua";
 
 // ---- constants ------------------------------------------------------------
 
@@ -513,6 +520,7 @@ function bootstrapDesktop(): void {
     } catch (err) {
       console.log(`[bots] could not hand over the owner token: ${String(err)}`);
     }
+    grantBotsComputer(botsProc);
     void welcomeUniverseBots();
     botsProc.stdout?.on("data", (d: Buffer) => {
       const line = d.toString().trim();
@@ -525,6 +533,7 @@ function bootstrapDesktop(): void {
         const previous = BOTS_PORT;
         BOTS_PORT = bound[1];
         BOTS_ORIGIN = `http://127.0.0.1:${BOTS_PORT}`;
+        setBotsCuaOrigin(BOTS_ORIGIN);
         console.log(`[bots] port changed ${previous} -> ${BOTS_PORT}`);
         installBotsOwnerHeader(session.defaultSession);
         installBotsOwnerHeader(session.fromPartition(BOTS_VIEW_PARTITION));
@@ -683,7 +692,10 @@ function bootstrapDesktop(): void {
         },
       });
       botsView = view;
-      const handled = installBotsIpc(view.webContents.ipc, () => mainWindow);
+      const handled = installBotsIpc(view.webContents.ipc, () => mainWindow, () => {
+        const mode = cuaConnection()?.mode;
+        return mode === "embedded" || mode === "standalone";
+      });
       view.webContents.ipc.on("universe:create-bot-via-chat", event => {
         if (event.sender !== view.webContents) return;
         mainWindow?.webContents.send("universe:create-bot-via-chat");
@@ -1167,6 +1179,12 @@ function bootstrapDesktop(): void {
     registerAppProtocol();
     startBridge();
     startUniverseBots();
+    void startBotsCua(resolveRepoRoot(), BOTS_ORIGIN, connection => {
+      const ready = connection?.mode === "embedded" || connection?.mode === "standalone";
+      if (botsView && !botsView.webContents.isDestroyed())
+        botsView.webContents.send("desktop:capabilities-changed", { localComputerReady: ready });
+      if (ready) grantBotsComputer(botsProc);
+    });
     healthTimer = setInterval(pollHealth, HEALTH_POLL_MS);
     void createWindow();
     app.on("activate", () => {
@@ -1178,6 +1196,7 @@ function bootstrapDesktop(): void {
     appQuitting = true;
     if (healthTimer) clearInterval(healthTimer);
     disposeBotsViews();
+    void stopBotsCua();
     stopBridge();
     stopUniverseBots();
   });
@@ -1185,6 +1204,7 @@ function bootstrapDesktop(): void {
   app.on("window-all-closed", () => {
     appQuitting = true;
     disposeBotsViews();
+    void stopBotsCua();
     stopBridge();
     stopUniverseBots();
     if (process.platform !== "darwin") app.quit();

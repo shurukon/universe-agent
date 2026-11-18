@@ -1,4 +1,10 @@
 import { createRequire as __cr } from 'node:module'; import { fileURLToPath as __f2p } from 'node:url'; import * as __p from 'node:path'; const require = __cr(import.meta.url); const __dirname = __p.dirname(__f2p(import.meta.url));
+var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+}) : x)(function(x) {
+  if (typeof require !== "undefined") return require.apply(this, arguments);
+  throw Error('Dynamic require of "' + x + '" is not supported');
+});
 
 // electron/main.ts
 import {
@@ -18,7 +24,7 @@ import {
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import os2 from "node:os";
-import path from "node:path";
+import path2 from "node:path";
 import fs2 from "node:fs";
 import crypto from "node:crypto";
 
@@ -306,6 +312,7 @@ var bots_channels_default = [
 
 // electron/bots-ipc.ts
 var ARRAYISH = /(state|states|list|lists|routes|teams|servers|places|choices|sources|windows|sheets|notices|entries|items)$/;
+var cuaReady = () => false;
 function capabilities() {
   return {
     host: {
@@ -319,12 +326,11 @@ function capabilities() {
     screenPreview: { available: false, interaction: "none", reasonCode: "universe-host" },
     dictation: { available: false, engine: "none", onDevice: false, reasonCode: "universe-host" },
     localComputer: {
-      available: false,
-      support: "limited",
-      enabled: false,
-      status: "unavailable",
-      reasonCode: "universe-host",
-      message: "Computer use runs in the harness; this host does not expose the native driver."
+      available: cuaReady(),
+      support: "supported",
+      enabled: cuaReady(),
+      status: cuaReady() ? "ready" : "unavailable",
+      reasonCode: cuaReady() ? void 0 : "universe-host"
     }
   };
 }
@@ -359,7 +365,8 @@ function defaultFor(channel) {
   if (channel.includes(":pick") || channel.includes("save-file")) return null;
   return null;
 }
-function installBotsIpc(ipc, mainWindow) {
+function installBotsIpc(ipc, mainWindow, computerReady = () => false) {
+  cuaReady = computerReady;
   let registered = 0;
   const handled = /* @__PURE__ */ new Set();
   for (const channel of bots_channels_default) {
@@ -470,6 +477,65 @@ function installBotsIpc(ipc, mainWindow) {
   return registered;
 }
 
+// electron/bots-cua.ts
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+var cua = null;
+var originSetter = null;
+function cuaConnection() {
+  return connection;
+}
+var connection = null;
+async function startBotsCua(repoRoot, origin, onConnection) {
+  try {
+    const localOrigin = __require(path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"));
+    localOrigin.setLocalOrigin(origin);
+    originSetter = localOrigin.setLocalOrigin;
+    const moduleUrl = pathToFileURL(
+      path.join(repoRoot, "universe-bots", "electron", "cua.mjs")
+    ).href;
+    const loaded = await import(moduleUrl);
+    cua = loaded;
+    loaded.setCuaStateListener((next) => {
+      connection = next;
+      onConnection?.(next);
+    });
+    loaded.registerCuaIpc();
+    connection = await loaded.startCua();
+    onConnection?.(connection);
+    console.log(`[cua] ${connection?.mode ?? "unknown"}${connection?.reason ? ": " + connection.reason : ""}`);
+    return loaded;
+  } catch (error) {
+    console.log(`[cua] start failed: ${String(error)}`);
+    cua = null;
+    return null;
+  }
+}
+function grantBotsComputer(proc) {
+  if (!cua || !proc) return;
+  try {
+    cua.grantLocalComputer(proc, true);
+  } catch (error) {
+    console.log(`[cua] grant failed: ${String(error)}`);
+  }
+}
+function setBotsCuaOrigin(origin) {
+  try {
+    originSetter?.(origin);
+  } catch {
+  }
+}
+async function stopBotsCua() {
+  const loaded = cua;
+  cua = null;
+  if (!loaded) return;
+  try {
+    await loaded.stopCua();
+  } catch (error) {
+    console.log(`[cua] stop failed: ${String(error)}`);
+  }
+}
+
 // electron/main.ts
 var BRIDGE_PORT = process.env.UNIVERSE_BRIDGE_PORT || process.env.GALAXY_BRIDGE_PORT || "8738";
 var BRIDGE_URL = `http://127.0.0.1:${BRIDGE_PORT}`;
@@ -482,11 +548,11 @@ var BRIDGE_TOKEN = crypto.randomBytes(32).toString("base64url");
 function resolveRepoRoot() {
   const candidates = [
     process.env.UNIVERSE_ROOT || process.env.GALAXY_ROOT || "",
-    path.resolve(__dirname, "..", ".."),
-    path.resolve(__dirname, "..", "..", "..")
+    path2.resolve(__dirname, "..", ".."),
+    path2.resolve(__dirname, "..", "..", "..")
   ].filter(Boolean);
   for (const dir of candidates) {
-    if (fs2.existsSync(path.join(dir, "universe_desktop_bridge"))) return dir;
+    if (fs2.existsSync(path2.join(dir, "universe_desktop_bridge"))) return dir;
   }
   return candidates[candidates.length - 1] || process.cwd();
 }
@@ -550,7 +616,7 @@ function bootstrapDesktop() {
     }
   }
   function startBridge() {
-    if (app.isPackaged && !fs2.existsSync(path.join(resolveRepoRoot(), "universe_desktop_bridge"))) {
+    if (app.isPackaged && !fs2.existsSync(path2.join(resolveRepoRoot(), "universe_desktop_bridge"))) {
       pushStatus("failed", "Universe backend not found next to the app");
       return;
     }
@@ -566,7 +632,7 @@ function bootstrapDesktop() {
           UNIVERSE_BRIDGE_TOKEN: BRIDGE_TOKEN,
           // the bots surface asks the bridge where universe bots lives
           UNIVERSE_BOTS_ORIGIN: BOTS_ORIGIN,
-          UNIVERSE_BOTS_DATA_DIR: path.join(os2.homedir(), ".universe", "bots"),
+          UNIVERSE_BOTS_DATA_DIR: path2.join(os2.homedir(), ".universe", "bots"),
           // the bridge is this app's own process, so it carries the same
           // capability the harness gives the desktop: the routes that change
           // something refuse a request without it.
@@ -704,7 +770,7 @@ function bootstrapDesktop() {
     "pro-introduction-dismissed-v3"
   ];
   function markUniverseBotsWelcomed(dataDir) {
-    const file = path.join(dataDir, "config.json");
+    const file = path2.join(dataDir, "config.json");
     let config = {};
     try {
       const parsed = JSON.parse(fs2.readFileSync(file, "utf8"));
@@ -763,9 +829,9 @@ function bootstrapDesktop() {
   }
   function startUniverseBots() {
     if (botsProc && botsProc.exitCode === null) return;
-    const root = path.join(resolveRepoRoot(), "universe-bots");
-    const bundled = path.join(root, "dist-server", "index.js");
-    const source = path.join(root, "server", "universebots.ts");
+    const root = path2.join(resolveRepoRoot(), "universe-bots");
+    const bundled = path2.join(root, "dist-server", "index.js");
+    const source = path2.join(root, "server", "universebots.ts");
     let entry;
     let args;
     if (fs2.existsSync(bundled)) {
@@ -779,7 +845,7 @@ function bootstrapDesktop() {
       return;
     }
     botsAttempts += 1;
-    const dataDir = path.join(os2.homedir(), ".universe", "bots");
+    const dataDir = path2.join(os2.homedir(), ".universe", "bots");
     try {
       fs2.mkdirSync(dataDir, { recursive: true });
       markUniverseBotsWelcomed(dataDir);
@@ -788,8 +854,8 @@ function bootstrapDesktop() {
         env: {
           ...process.env,
           UB_PORT: BOTS_PORT,
-          UB_STATIC_DIR: path.join(root, "dist"),
-          UB_SKILLS_DIR: path.join(root, "skills"),
+          UB_STATIC_DIR: path2.join(root, "dist"),
+          UB_SKILLS_DIR: path2.join(root, "skills"),
           UB_DATA_DIR: dataDir,
           UB_FRAME_ANCESTORS: botsFrameAncestors(),
           UB_DESKTOP_PARENT: "1"
@@ -810,6 +876,7 @@ function bootstrapDesktop() {
     } catch (err) {
       console.log(`[bots] could not hand over the owner token: ${String(err)}`);
     }
+    grantBotsComputer(botsProc);
     void welcomeUniverseBots();
     botsProc.stdout?.on("data", (d) => {
       const line = d.toString().trim();
@@ -819,6 +886,7 @@ function bootstrapDesktop() {
         const previous = BOTS_PORT;
         BOTS_PORT = bound[1];
         BOTS_ORIGIN = `http://127.0.0.1:${BOTS_PORT}`;
+        setBotsCuaOrigin(BOTS_ORIGIN);
         console.log(`[bots] port changed ${previous} -> ${BOTS_PORT}`);
         installBotsOwnerHeader(session.defaultSession);
         installBotsOwnerHeader(session.fromPartition(BOTS_VIEW_PARTITION));
@@ -907,7 +975,7 @@ function bootstrapDesktop() {
   const BOTS_VIEW_PARTITION = "persist:universebots-embed";
   const TOP_BAR_H = 56;
   function botsPreloadPath() {
-    return path.join(resolveRepoRoot(), "universe-bots", "electron", "preload.cjs");
+    return path2.join(resolveRepoRoot(), "universe-bots", "electron", "preload.cjs");
   }
   function layoutBotsViews() {
     const view = botsView;
@@ -955,7 +1023,10 @@ function bootstrapDesktop() {
         }
       });
       botsView = view;
-      const handled = installBotsIpc(view.webContents.ipc, () => mainWindow);
+      const handled = installBotsIpc(view.webContents.ipc, () => mainWindow, () => {
+        const mode = cuaConnection()?.mode;
+        return mode === "embedded" || mode === "standalone";
+      });
       view.webContents.ipc.on("universe:create-bot-via-chat", (event) => {
         if (event.sender !== view.webContents) return;
         mainWindow?.webContents.send("universe:create-bot-via-chat");
@@ -975,7 +1046,7 @@ function bootstrapDesktop() {
       });
       const bar = new WebContentsView({
         webPreferences: {
-          preload: path.join(__dirname, "bots-switcher.cjs"),
+          preload: path2.join(__dirname, "bots-switcher.cjs"),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -1093,7 +1164,7 @@ function bootstrapDesktop() {
       // token are untouched by this.
       frame: false,
       webPreferences: {
-        preload: path.join(__dirname, "preload.js"),
+        preload: path2.join(__dirname, "preload.js"),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -1177,21 +1248,21 @@ function bootstrapDesktop() {
     ".map": "application/json"
   };
   function registerAppProtocol() {
-    const distDir = path.resolve(__dirname, "..", "dist", "public");
+    const distDir = path2.resolve(__dirname, "..", "dist", "public");
     protocol.handle("app", async (request) => {
       let rel = new URL(request.url).pathname.replace(/^\/+/, "") || "index.html";
-      let target = path.normalize(path.join(distDir, rel));
+      let target = path2.normalize(path2.join(distDir, rel));
       if (!target.startsWith(distDir))
         return new Response("forbidden", { status: 403 });
       if (!fs2.existsSync(target)) {
-        if (!path.extname(rel)) target = path.join(distDir, "index.html");
+        if (!path2.extname(rel)) target = path2.join(distDir, "index.html");
         else return new Response("not found", { status: 404 });
       }
       try {
         const data = await fs2.promises.readFile(target);
         return new Response(data, {
           headers: {
-            "Content-Type": MIME[path.extname(target).toLowerCase()] || "application/octet-stream"
+            "Content-Type": MIME[path2.extname(target).toLowerCase()] || "application/octet-stream"
           }
         });
       } catch {
@@ -1279,9 +1350,9 @@ function bootstrapDesktop() {
       try {
         const img = clipboard2.readImage();
         if (img.isEmpty()) return null;
-        const dir = path.join(os2.tmpdir(), "universe-attachments");
+        const dir = path2.join(os2.tmpdir(), "universe-attachments");
         await fs2.promises.mkdir(dir, { recursive: true });
-        const p = path.join(dir, `clipboard-${Date.now()}.png`);
+        const p = path2.join(dir, `clipboard-${Date.now()}.png`);
         await fs2.promises.writeFile(p, img.toPNG());
         return p;
       } catch {
@@ -1318,6 +1389,12 @@ function bootstrapDesktop() {
     registerAppProtocol();
     startBridge();
     startUniverseBots();
+    void startBotsCua(resolveRepoRoot(), BOTS_ORIGIN, (connection2) => {
+      const ready = connection2?.mode === "embedded" || connection2?.mode === "standalone";
+      if (botsView && !botsView.webContents.isDestroyed())
+        botsView.webContents.send("desktop:capabilities-changed", { localComputerReady: ready });
+      if (ready) grantBotsComputer(botsProc);
+    });
     healthTimer = setInterval(pollHealth, HEALTH_POLL_MS);
     void createWindow();
     app.on("activate", () => {
@@ -1328,12 +1405,14 @@ function bootstrapDesktop() {
     appQuitting = true;
     if (healthTimer) clearInterval(healthTimer);
     disposeBotsViews();
+    void stopBotsCua();
     stopBridge();
     stopUniverseBots();
   });
   app.on("window-all-closed", () => {
     appQuitting = true;
     disposeBotsViews();
+    void stopBotsCua();
     stopBridge();
     stopUniverseBots();
     if (process.platform !== "darwin") app.quit();

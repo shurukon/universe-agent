@@ -22,6 +22,7 @@ import os from "node:os";
 import channels from "./bots-channels.json";
 
 const ARRAYISH = /(state|states|list|lists|routes|teams|servers|places|choices|sources|windows|sheets|notices|entries|items)$/;
+let cuaReady = () => false;
 
 function capabilities() {
   return {
@@ -36,12 +37,11 @@ function capabilities() {
     screenPreview: { available: false, interaction: "none", reasonCode: "universe-host" },
     dictation: { available: false, engine: "none", onDevice: false, reasonCode: "universe-host" },
     localComputer: {
-      available: false,
-      support: "limited",
-      enabled: false,
-      status: "unavailable",
-      reasonCode: "universe-host",
-      message: "Computer use runs in the harness; this host does not expose the native driver.",
+      available: cuaReady(),
+      support: "supported",
+      enabled: cuaReady(),
+      status: cuaReady() ? "ready" : "unavailable",
+      reasonCode: cuaReady() ? undefined : "universe-host",
     },
   };
 }
@@ -80,7 +80,12 @@ function defaultFor(channel: string): unknown {
   return null;
 }
 
-export function installBotsIpc(ipc: IpcMain, mainWindow: () => BrowserWindow | null): number {
+export function installBotsIpc(
+  ipc: IpcMain,
+  mainWindow: () => BrowserWindow | null,
+  computerReady: () => boolean = () => false,
+): number {
+  cuaReady = computerReady;
   let registered = 0;
   const handled = new Set<string>();
 
