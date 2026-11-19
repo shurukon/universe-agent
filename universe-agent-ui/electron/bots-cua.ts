@@ -15,6 +15,7 @@ type CuaModule = {
   grantLocalComputer: (proc: unknown, isCurrent: boolean) => void;
   registerCuaIpc: () => void;
   setCuaStateListener: (listener: (connection: Connection) => void) => void;
+  cuaPermissionsStatus: () => Promise<unknown>;
 };
 
 let cua: CuaModule | null = null;
@@ -31,6 +32,13 @@ export async function startBotsCua(
   onConnection?: (connection: Connection) => void,
 ): Promise<CuaModule | null> {
   try {
+    if (!process.env.CUA_DRIVER_PATH) {
+      const staged = path.join(
+        repoRoot, "universe-bots", "dist-native", "cua-win32-x64",
+        process.platform === "win32" ? "cua-driver.exe" : "cua-driver",
+      );
+      if (require("node:fs").existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
+    }
     const localOrigin = require(
       path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"),
     ) as { setLocalOrigin: (origin: string) => void };
@@ -66,6 +74,16 @@ export function grantBotsComputer(proc: ChildProcess | null): void {
     cua.grantLocalComputer(proc, true);
   } catch (error) {
     console.log(`[cua] grant failed: ${String(error)}`);
+  }
+}
+
+export async function cuaPermissions(): Promise<unknown> {
+  if (!cua) return { available: false };
+  try {
+    return await cua.cuaPermissionsStatus();
+  } catch (error) {
+    console.log(`[cua] permissions query failed: ${String(error)}`);
+    return { available: false };
   }
 }
 

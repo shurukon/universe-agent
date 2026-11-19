@@ -12,6 +12,7 @@
 import {
   BrowserWindow,
   clipboard,
+  desktopCapturer,
   dialog,
   Notification,
   shell,
@@ -20,6 +21,7 @@ import {
 import fs from "node:fs";
 import os from "node:os";
 import channels from "./bots-channels.json";
+import { cuaConnection, cuaPermissions } from "./bots-cua";
 
 const ARRAYISH = /(state|states|list|lists|routes|teams|servers|places|choices|sources|windows|sheets|notices|entries|items)$/;
 let cuaReady = () => false;
@@ -71,8 +73,8 @@ function defaultFor(channel: string): unknown {
   if (channel === "workspaces:line") return { kind: "clean" };
   if (channel === "rail:offer" || channel === "rail:state") return null;
   if (channel === "perm:status") return { mic: false, pageMic: false };
-  if (channel === "cua:connection" || channel === "cua:permissions")
-    return { connected: false, permissions: [] };
+  if (channel === "cua:connection") return cuaConnection() ?? { mode: "unavailable" };
+  if (channel === "cua:permissions") return { available: false };
   if (channel === "cua:linux-status") return { available: false, enabled: false };
   if (channel.endsWith("-changed") || channel.endsWith(":changed")) return null;
   if (ARRAYISH.test(channel)) return [];
@@ -106,6 +108,22 @@ export function installBotsIpc(
 
   // --- real main-process capabilities ---------------------------------------
   handle("desktop:capabilities", () => capabilities());
+
+  // The computer panel polls this for a live frame of this computer. Return
+  // a data URL the renderer can put straight into an <img>.
+  handle("screen:frame", async () => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: { width: 1280, height: 720 },
+      });
+      const source = sources[0];
+      return source ? source.thumbnail.toDataURL() : null;
+    } catch (error) {
+      console.log(`[bots] screen frame failed: ${String(error)}`);
+      return null;
+    }
+  });
 
   handle("clipboard:write-text", args => {
     if (typeof args[0] !== "string") return false;
@@ -204,6 +222,8 @@ export function installBotsIpc(
   // No updater exists in the embedded host: an honest null keeps the UI from
   // showing a fabricated "update failed" banner.
   handle("update:get-state", () => null);
+  handle("cua:connection", () => cuaConnection() ?? { mode: "unavailable" });
+  handle("cua:permissions", () => cuaPermissions());
   handle("updates-consent:state", () => ({ choice: null }));
 
   // The remaining channels are `invoke` calls with no host implementation

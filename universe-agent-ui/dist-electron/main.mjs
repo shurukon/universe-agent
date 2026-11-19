@@ -31,6 +31,7 @@ import crypto from "node:crypto";
 // electron/bots-ipc.ts
 import {
   clipboard,
+  desktopCapturer,
   dialog,
   Notification,
   shell
@@ -310,6 +311,84 @@ var bots_channels_default = [
   "workspaces:state"
 ];
 
+// electron/bots-cua.ts
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+var cua = null;
+var originSetter = null;
+function cuaConnection() {
+  return connection;
+}
+var connection = null;
+async function startBotsCua(repoRoot, origin, onConnection) {
+  try {
+    if (!process.env.CUA_DRIVER_PATH) {
+      const staged = path.join(
+        repoRoot,
+        "universe-bots",
+        "dist-native",
+        "cua-win32-x64",
+        process.platform === "win32" ? "cua-driver.exe" : "cua-driver"
+      );
+      if (__require("node:fs").existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
+    }
+    const localOrigin = __require(path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"));
+    localOrigin.setLocalOrigin(origin);
+    originSetter = localOrigin.setLocalOrigin;
+    const moduleUrl = pathToFileURL(
+      path.join(repoRoot, "universe-bots", "electron", "cua.mjs")
+    ).href;
+    const loaded = await import(moduleUrl);
+    cua = loaded;
+    loaded.setCuaStateListener((next) => {
+      connection = next;
+      onConnection?.(next);
+    });
+    loaded.registerCuaIpc();
+    connection = await loaded.startCua();
+    onConnection?.(connection);
+    console.log(`[cua] ${connection?.mode ?? "unknown"}${connection?.reason ? ": " + connection.reason : ""}`);
+    return loaded;
+  } catch (error) {
+    console.log(`[cua] start failed: ${String(error)}`);
+    cua = null;
+    return null;
+  }
+}
+function grantBotsComputer(proc) {
+  if (!cua || !proc) return;
+  try {
+    cua.grantLocalComputer(proc, true);
+  } catch (error) {
+    console.log(`[cua] grant failed: ${String(error)}`);
+  }
+}
+async function cuaPermissions() {
+  if (!cua) return { available: false };
+  try {
+    return await cua.cuaPermissionsStatus();
+  } catch (error) {
+    console.log(`[cua] permissions query failed: ${String(error)}`);
+    return { available: false };
+  }
+}
+function setBotsCuaOrigin(origin) {
+  try {
+    originSetter?.(origin);
+  } catch {
+  }
+}
+async function stopBotsCua() {
+  const loaded = cua;
+  cua = null;
+  if (!loaded) return;
+  try {
+    await loaded.stopCua();
+  } catch (error) {
+    console.log(`[cua] stop failed: ${String(error)}`);
+  }
+}
+
 // electron/bots-ipc.ts
 var ARRAYISH = /(state|states|list|lists|routes|teams|servers|places|choices|sources|windows|sheets|notices|entries|items)$/;
 var cuaReady = () => false;
@@ -357,8 +436,8 @@ function defaultFor(channel) {
   if (channel === "workspaces:line") return { kind: "clean" };
   if (channel === "rail:offer" || channel === "rail:state") return null;
   if (channel === "perm:status") return { mic: false, pageMic: false };
-  if (channel === "cua:connection" || channel === "cua:permissions")
-    return { connected: false, permissions: [] };
+  if (channel === "cua:connection") return cuaConnection() ?? { mode: "unavailable" };
+  if (channel === "cua:permissions") return { available: false };
   if (channel === "cua:linux-status") return { available: false, enabled: false };
   if (channel.endsWith("-changed") || channel.endsWith(":changed")) return null;
   if (ARRAYISH.test(channel)) return [];
@@ -380,6 +459,19 @@ function installBotsIpc(ipc, mainWindow, computerReady = () => false) {
     ipc.handle(channel, (_event, ...args) => fn(args));
   };
   handle("desktop:capabilities", () => capabilities());
+  handle("screen:frame", async () => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: { width: 1280, height: 720 }
+      });
+      const source = sources[0];
+      return source ? source.thumbnail.toDataURL() : null;
+    } catch (error) {
+      console.log(`[bots] screen frame failed: ${String(error)}`);
+      return null;
+    }
+  });
   handle("clipboard:write-text", (args) => {
     if (typeof args[0] !== "string") return false;
     clipboard.writeText(args[0]);
@@ -467,6 +559,8 @@ function installBotsIpc(ipc, mainWindow, computerReady = () => false) {
   handle("workspaces:look", () => null);
   handle("rail:offer", () => null);
   handle("update:get-state", () => null);
+  handle("cua:connection", () => cuaConnection() ?? { mode: "unavailable" });
+  handle("cua:permissions", () => cuaPermissions());
   handle("updates-consent:state", () => ({ choice: null }));
   for (const channel of bots_channels_default) {
     if (!handled.has(channel)) {
@@ -475,65 +569,6 @@ function installBotsIpc(ipc, mainWindow, computerReady = () => false) {
     }
   }
   return registered;
-}
-
-// electron/bots-cua.ts
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-var cua = null;
-var originSetter = null;
-function cuaConnection() {
-  return connection;
-}
-var connection = null;
-async function startBotsCua(repoRoot, origin, onConnection) {
-  try {
-    const localOrigin = __require(path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"));
-    localOrigin.setLocalOrigin(origin);
-    originSetter = localOrigin.setLocalOrigin;
-    const moduleUrl = pathToFileURL(
-      path.join(repoRoot, "universe-bots", "electron", "cua.mjs")
-    ).href;
-    const loaded = await import(moduleUrl);
-    cua = loaded;
-    loaded.setCuaStateListener((next) => {
-      connection = next;
-      onConnection?.(next);
-    });
-    loaded.registerCuaIpc();
-    connection = await loaded.startCua();
-    onConnection?.(connection);
-    console.log(`[cua] ${connection?.mode ?? "unknown"}${connection?.reason ? ": " + connection.reason : ""}`);
-    return loaded;
-  } catch (error) {
-    console.log(`[cua] start failed: ${String(error)}`);
-    cua = null;
-    return null;
-  }
-}
-function grantBotsComputer(proc) {
-  if (!cua || !proc) return;
-  try {
-    cua.grantLocalComputer(proc, true);
-  } catch (error) {
-    console.log(`[cua] grant failed: ${String(error)}`);
-  }
-}
-function setBotsCuaOrigin(origin) {
-  try {
-    originSetter?.(origin);
-  } catch {
-  }
-}
-async function stopBotsCua() {
-  const loaded = cua;
-  cua = null;
-  if (!loaded) return;
-  try {
-    await loaded.stopCua();
-  } catch (error) {
-    console.log(`[cua] stop failed: ${String(error)}`);
-  }
 }
 
 // electron/main.ts
