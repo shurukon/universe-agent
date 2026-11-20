@@ -3,6 +3,7 @@
  * owned by the desktop host: it grants control to the harness server over the
  * utility process's private message port, exactly as the standalone app does.
  */
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
@@ -37,11 +38,11 @@ export async function startBotsCua(
         repoRoot, "universe-bots", "dist-native", "cua-win32-x64",
         process.platform === "win32" ? "cua-driver.exe" : "cua-driver",
       );
-      if (require("node:fs").existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
+      if (fs.existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
     }
-    const localOrigin = require(
-      path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"),
-    ) as { setLocalOrigin: (origin: string) => void };
+    const localOrigin = (await import(
+      pathToFileURL(path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs")).href
+    )) as { setLocalOrigin: (origin: string) => void };
     localOrigin.setLocalOrigin(origin);
     originSetter = localOrigin.setLocalOrigin;
 

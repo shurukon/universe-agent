@@ -199,9 +199,10 @@ export function installBotsIpc(
     if (!win) return false;
     if (action === "minimize") win.minimize();
     else if (action === "close") win.close();
-    else if (action === "toggle-maximize")
-      win.isMaximized() ? win.unmaximize() : win.maximize();
-    else return false;
+    else if (action === "toggle-maximize") {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    } else return false;
     return true;
   };
   for (const channel of ["window:minimize", "window:close", "window:toggle-maximize"]) {
