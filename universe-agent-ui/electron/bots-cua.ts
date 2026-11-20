@@ -5,8 +5,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
+
+// The esbuild banner (see package.json build:electron) defines a working
+// CommonJS `require` for loading modules that live outside the bundle, the
+// same loader the bots app itself uses for its CJS helpers.
+const nodeRequire = require as (id: string) => unknown;
 
 type Connection = { mode?: string; reason?: string; [key: string]: unknown };
 
@@ -40,16 +44,14 @@ export async function startBotsCua(
       );
       if (fs.existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
     }
-    const localOrigin = (await import(
-      pathToFileURL(path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs")).href
-    )) as { setLocalOrigin: (origin: string) => void };
+    const localOrigin = nodeRequire(
+      path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"),
+    ) as { setLocalOrigin: (origin: string) => void };
     localOrigin.setLocalOrigin(origin);
     originSetter = localOrigin.setLocalOrigin;
 
-    const moduleUrl = pathToFileURL(
-      path.join(repoRoot, "universe-bots", "electron", "cua.mjs"),
-    ).href;
-    const loaded = (await import(moduleUrl)) as unknown as CuaModule;
+    const modulePath = path.join(repoRoot, "universe-bots", "electron", "cua.mjs");
+    const loaded = nodeRequire(modulePath) as unknown as CuaModule;
     cua = loaded;
     loaded.setCuaStateListener(next => {
       connection = next;

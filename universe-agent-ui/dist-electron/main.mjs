@@ -25,7 +25,7 @@ import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import os2 from "node:os";
 import path2 from "node:path";
-import fs2 from "node:fs";
+import fs3 from "node:fs";
 import crypto from "node:crypto";
 
 // electron/bots-ipc.ts
@@ -36,7 +36,7 @@ import {
   Notification,
   shell
 } from "electron";
-import fs from "node:fs";
+import fs2 from "node:fs";
 import os from "node:os";
 
 // electron/bots-channels.json
@@ -312,8 +312,9 @@ var bots_channels_default = [
 ];
 
 // electron/bots-cua.ts
+import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+var nodeRequire = __require;
 var cua = null;
 var originSetter = null;
 function cuaConnection() {
@@ -330,15 +331,15 @@ async function startBotsCua(repoRoot, origin, onConnection) {
         "cua-win32-x64",
         process.platform === "win32" ? "cua-driver.exe" : "cua-driver"
       );
-      if (__require("node:fs").existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
+      if (fs.existsSync(staged)) process.env.CUA_DRIVER_PATH = staged;
     }
-    const localOrigin = __require(path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs"));
+    const localOrigin = nodeRequire(
+      path.join(repoRoot, "universe-bots", "electron", "local-origin.cjs")
+    );
     localOrigin.setLocalOrigin(origin);
     originSetter = localOrigin.setLocalOrigin;
-    const moduleUrl = pathToFileURL(
-      path.join(repoRoot, "universe-bots", "electron", "cua.mjs")
-    ).href;
-    const loaded = await import(moduleUrl);
+    const modulePath = path.join(repoRoot, "universe-bots", "electron", "cua.mjs");
+    const loaded = nodeRequire(modulePath);
     cua = loaded;
     loaded.setCuaStateListener((next) => {
       connection = next;
@@ -501,19 +502,19 @@ function installBotsIpc(ipc, mainWindow, computerReady = () => false) {
   });
   handle("desktop:reveal-file", (args) => {
     const target = String(args[0] ?? "");
-    if (!target || !fs.existsSync(target)) return false;
+    if (!target || !fs2.existsSync(target)) return false;
     shell.showItemInFolder(target);
     return true;
   });
   handle("desktop:open-folder", (args) => {
     const target = String(args[0] ?? "");
-    if (!target || !fs.existsSync(target)) return false;
+    if (!target || !fs2.existsSync(target)) return false;
     void shell.openPath(target);
     return true;
   });
   handle("desktop:open-html", (args) => {
     const source = String(args[0] ?? "");
-    if (!source || !fs.existsSync(source)) return false;
+    if (!source || !fs2.existsSync(source)) return false;
     void shell.openPath(source);
     return true;
   });
@@ -541,9 +542,10 @@ function installBotsIpc(ipc, mainWindow, computerReady = () => false) {
     if (!win) return false;
     if (action === "minimize") win.minimize();
     else if (action === "close") win.close();
-    else if (action === "toggle-maximize")
-      win.isMaximized() ? win.unmaximize() : win.maximize();
-    else return false;
+    else if (action === "toggle-maximize") {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    } else return false;
     return true;
   };
   for (const channel of ["window:minimize", "window:close", "window:toggle-maximize"]) {
@@ -587,7 +589,7 @@ function resolveRepoRoot() {
     path2.resolve(__dirname, "..", "..", "..")
   ].filter(Boolean);
   for (const dir of candidates) {
-    if (fs2.existsSync(path2.join(dir, "universe_desktop_bridge"))) return dir;
+    if (fs3.existsSync(path2.join(dir, "universe_desktop_bridge"))) return dir;
   }
   return candidates[candidates.length - 1] || process.cwd();
 }
@@ -651,7 +653,7 @@ function bootstrapDesktop() {
     }
   }
   function startBridge() {
-    if (app.isPackaged && !fs2.existsSync(path2.join(resolveRepoRoot(), "universe_desktop_bridge"))) {
+    if (app.isPackaged && !fs3.existsSync(path2.join(resolveRepoRoot(), "universe_desktop_bridge"))) {
       pushStatus("failed", "Universe backend not found next to the app");
       return;
     }
@@ -808,7 +810,7 @@ function bootstrapDesktop() {
     const file = path2.join(dataDir, "config.json");
     let config = {};
     try {
-      const parsed = JSON.parse(fs2.readFileSync(file, "utf8"));
+      const parsed = JSON.parse(fs3.readFileSync(file, "utf8"));
       if (parsed && typeof parsed === "object") {
         config = parsed;
       }
@@ -826,7 +828,7 @@ function bootstrapDesktop() {
       version: 1,
       hintsSeen: merged
     };
-    fs2.writeFileSync(file, `${JSON.stringify(config, null, 2)}
+    fs3.writeFileSync(file, `${JSON.stringify(config, null, 2)}
 `, "utf8");
   }
   async function welcomeUniverseBots() {
@@ -869,10 +871,10 @@ function bootstrapDesktop() {
     const source = path2.join(root, "server", "universebots.ts");
     let entry;
     let args;
-    if (fs2.existsSync(bundled)) {
+    if (fs3.existsSync(bundled)) {
       entry = bundled;
       args = [];
-    } else if (fs2.existsSync(source)) {
+    } else if (fs3.existsSync(source)) {
       entry = source;
       args = ["--experimental-strip-types", source, "serve"];
     } else {
@@ -882,7 +884,7 @@ function bootstrapDesktop() {
     botsAttempts += 1;
     const dataDir = path2.join(os2.homedir(), ".universe", "bots");
     try {
-      fs2.mkdirSync(dataDir, { recursive: true });
+      fs3.mkdirSync(dataDir, { recursive: true });
       markUniverseBotsWelcomed(dataDir);
       botsProc = utilityProcess.fork(entry, args, {
         cwd: root,
@@ -1043,7 +1045,7 @@ function bootstrapDesktop() {
   function createBotsViews() {
     if (botsView || !mainWindow || mainWindow.isDestroyed()) return;
     const preload = botsPreloadPath();
-    if (!fs2.existsSync(preload)) {
+    if (!fs3.existsSync(preload)) {
       console.log("[bots] no preload at " + preload);
       return;
     }
@@ -1289,12 +1291,12 @@ function bootstrapDesktop() {
       let target = path2.normalize(path2.join(distDir, rel));
       if (!target.startsWith(distDir))
         return new Response("forbidden", { status: 403 });
-      if (!fs2.existsSync(target)) {
+      if (!fs3.existsSync(target)) {
         if (!path2.extname(rel)) target = path2.join(distDir, "index.html");
         else return new Response("not found", { status: 404 });
       }
       try {
-        const data = await fs2.promises.readFile(target);
+        const data = await fs3.promises.readFile(target);
         return new Response(data, {
           headers: {
             "Content-Type": MIME[path2.extname(target).toLowerCase()] || "application/octet-stream"
@@ -1386,9 +1388,9 @@ function bootstrapDesktop() {
         const img = clipboard2.readImage();
         if (img.isEmpty()) return null;
         const dir = path2.join(os2.tmpdir(), "universe-attachments");
-        await fs2.promises.mkdir(dir, { recursive: true });
+        await fs3.promises.mkdir(dir, { recursive: true });
         const p = path2.join(dir, `clipboard-${Date.now()}.png`);
-        await fs2.promises.writeFile(p, img.toPNG());
+        await fs3.promises.writeFile(p, img.toPNG());
         return p;
       } catch {
         return null;
